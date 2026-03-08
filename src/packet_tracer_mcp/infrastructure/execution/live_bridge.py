@@ -14,6 +14,7 @@ import http.server
 import threading
 import time
 import json
+from http.server import ThreadingHTTPServer
 from queue import Queue, Empty
 
 
@@ -50,6 +51,13 @@ class PTCommandBridge:
                     ago = time.time() - bridge._last_poll_time
                     connected = bridge._last_poll_time > 0 and ago < 5.0
                     self._respond(200, json.dumps({"connected": connected, "last_poll_ago": round(ago, 1)}))
+                elif self.path == "/result":
+                    # Long-poll: block until PT posts a result (or timeout)
+                    try:
+                        result = bridge._results.get(timeout=9.0)
+                        self._respond(200, result)
+                    except Empty:
+                        self._respond(204, "")
                 else:
                     self._respond(404, "")
 
@@ -88,7 +96,7 @@ class PTCommandBridge:
             def log_message(self, format, *args):
                 pass  # Silence logs
 
-        self._server = http.server.HTTPServer(("127.0.0.1", self.port), Handler)
+        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
@@ -110,19 +118,16 @@ class PTCommandBridge:
         return True
 
     def send_and_wait(self, js_code: str, timeout: float = 10.0) -> str | None:
-        """Send a command and wait for result callback."""
-        # Wrap code to POST result back
+        """Send a command and wait for result callback.
+
+        Uses reportResult() from userfunctions.js which routes the HTTP
+        POST through the QWebEngine webview (XMLHttpRequest is NOT available
+        in the PT Script Engine, only in the webview).
+        """
         wrapped = (
             f"try {{ var __r = (function(){{ {js_code} }})(); "
-            f"var __x = new XMLHttpRequest(); "
-            f"__x.open('POST','http://127.0.0.1:{self.port}/result',true); "
-            f"__x.setRequestHeader('Content-Type','text/plain'); "
-            f"__x.send(String(__r)); "
-            f"}} catch(__e) {{ "
-            f"var __x = new XMLHttpRequest(); "
-            f"__x.open('POST','http://127.0.0.1:{self.port}/result',true); "
-            f"__x.setRequestHeader('Content-Type','text/plain'); "
-            f"__x.send('ERROR:' + __e); }}"
+            f"reportResult(String(__r)); "
+            f"}} catch(__e) {{ reportResult('ERROR:' + __e); }}"
         )
         self._queue.put(wrapped)
         try:

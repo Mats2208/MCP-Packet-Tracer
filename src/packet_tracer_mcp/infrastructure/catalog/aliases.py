@@ -13,4 +13,11 @@ MODEL_ALIASES: dict[str, str] = {
     "ap":        "AccessPoint-PT",
     "wifi":      "AccessPoint-PT",
     "access_point": "AccessPoint-PT",
+    "4321":      "ISR4321",
+    "isr4321":   "ISR4321",
+    "1941":      "1941",
+    "2901":      "2901",
+    "2911":      "2911",
+    "2960":      "2960-24TT",
+    "3560":      "3560-24PS",
 }

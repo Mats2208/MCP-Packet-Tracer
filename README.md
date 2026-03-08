@@ -26,7 +26,11 @@ pip install -e .
 python -m src.packet_tracer_mcp
 ```
 
-Esto inicia el servidor MCP en **`http://127.0.0.1:39000/mcp`** usando transporte streamable-http.
+Esto inicia:
+- **Servidor MCP** en `http://127.0.0.1:39000/mcp` (streamable-http)
+- **Bridge HTTP** en `http://127.0.0.1:54321` (comunicación con Packet Tracer)
+
+Ambos arrancan automáticamente. No se necesita ningún script adicional.
 
 > Para modo stdio (debug/legacy): `python -m src.packet_tracer_mcp --stdio`
 
@@ -58,7 +62,7 @@ Esto inicia el servidor MCP en **`http://127.0.0.1:39000/mcp`** usando transport
 
 ### 3. Usar desde el LLM
 
-Pedile al LLM que cree una red. El servidor expone 16 tools MCP que cubren todo el pipeline:
+Pedile al LLM que cree una red. El servidor expone 22 tools MCP que cubren todo el pipeline:
 
 | Tool | Qué hace |
 |------|----------|
@@ -76,6 +80,12 @@ Pedile al LLM que cree una red. El servidor expone 16 tools MCP que cubren todo 
 | `pt_deploy` | Copia script al portapapeles con instrucciones |
 | `pt_live_deploy` | Envía comandos directo a PT en tiempo real |
 | `pt_bridge_status` | Verifica conexión con PT |
+| `pt_query_topology` | Consulta dispositivos existentes en PT |
+| `pt_delete_device` | Elimina un dispositivo de PT |
+| `pt_rename_device` | Renombra un dispositivo en PT |
+| `pt_move_device` | Mueve un dispositivo en el canvas |
+| `pt_delete_link` | Elimina un enlace de PT |
+| `pt_send_raw` | Envía JS arbitrario a PT |
 | `pt_export` | Exporta plan + scripts + configs a archivos |
 | `pt_list_projects` / `pt_load_project` | Gestión de proyectos guardados |
 
@@ -126,18 +136,6 @@ Hay **dos servidores HTTP** corriendo:
 ```
 
 Eso hace que PTBuilder haga polling cada 500ms al bridge. Cuando el LLM genera comandos, el MCP Server los encola en el bridge y PT los ejecuta en tiempo real.
-
----
-
-## Deploy manual con script
-
-Si preferís desplegar sin el LLM, podés usar `deploy_to_pt.py`:
-
-```bash
-python deploy_to_pt.py
-```
-
-Carga un plan JSON, inicia el bridge, espera la conexión de PT y despliega la topología. Editá `PLAN_PATH` dentro del script para apuntar a tu plan.
 
 ---
 
@@ -211,7 +209,7 @@ Para que el polling arranque automáticamente al abrir Builder Code Editor:
 
 ---
 
-## MCP Tools (16)
+## MCP Tools (22)
 
 ### Consulta
 | Tool | Descripción |
@@ -246,14 +244,24 @@ Para que el polling arranque automáticamente al abrir Builder Code Editor:
 ### Pipeline completo
 | Tool | Descripción |
 |------|------------|
-| `pt_full_build` | Todo en uno: planifica → valida → genera → exporta |
+| `pt_full_build` | Todo en uno: planifica, valida, genera y exporta |
 
 ### Despliegue en vivo
 | Tool | Descripción |
 |------|------------|
 | `pt_deploy` | Copia script al portapapeles + instrucciones manuales |
-| `pt_live_deploy` | **Envía comandos directo a PT en tiempo real** via HTTP bridge |
+| `pt_live_deploy` | Envía comandos directo a PT en tiempo real via HTTP bridge |
 | `pt_bridge_status` | Verifica si el bridge está activo y PT está conectado |
+
+### Interacción con topología existente
+| Tool | Descripción |
+|------|------------|
+| `pt_query_topology` | Consulta qué dispositivos existen actualmente en PT |
+| `pt_delete_device` | Elimina un dispositivo y sus enlaces de PT |
+| `pt_rename_device` | Renombra un dispositivo en la topología activa |
+| `pt_move_device` | Mueve un dispositivo a nuevas coordenadas en el canvas |
+| `pt_delete_link` | Elimina el enlace de una interfaz específica |
+| `pt_send_raw` | Envía código JS arbitrario al Script Engine de PT |
 
 ### Exportación y proyectos
 | Tool | Descripción |
@@ -360,7 +368,7 @@ Para que el polling arranque automáticamente al abrir Builder Code Editor:
 ```
 src/packet_tracer_mcp/
 ├── adapters/mcp/              # MCP protocol layer
-│   ├── tool_registry.py       # 16 MCP tools
+│   ├── tool_registry.py       # 22 MCP tools
 │   └── resource_registry.py   # 5 MCP resources
 ├── application/               # Use cases + DTOs (requests/responses)
 ├── domain/                    # Core business logic
@@ -405,12 +413,12 @@ El directorio `PTBuilder/` contiene el código fuente del Script Module "Builder
 |---------|---------|
 | `source/main.js` | Entry point — crea menú y webview |
 | `source/runcode.js` | `runCode(scriptText)` — ejecuta JS en Script Engine |
-| `source/userfunctions.js` | `addDevice()`, `addLink()`, `configureIosDevice()`, `configurePcIp()` |
+| `source/userfunctions.js` | `addDevice()`, `addLink()`, `configureIosDevice()`, `configurePcIp()`, `queryTopology()`, `deleteDevice()`, `renameDevice()`, `moveDevice()`, `deleteLink()` |
 | `source/devices.js` | Mapeo modelo → tipo numérico de PT |
 | `source/links.js` | Mapeo tipo de cable → ID numérico |
 | `source/modules.js` | Mapeo módulos de hardware |
 | `source/window.js` | Gestión de la ventana webview (QWebEngine) |
-| `source/interface/` | HTML + JS del editor web |
+| `source/interface/` | HTML + JS del editor web (status panel + real-time logging) |
 | `Builder.pts` | Paquete compilado de la extensión (binario, no editable) |
 
 ### API principal de PTBuilder
@@ -466,27 +474,3 @@ Usuario:  "Creame una red con 2 routers, 2 switches, 4 PCs, DHCP y static routin
 
 → pt_live_deploy envía todo a Packet Tracer y aparecen los dispositivos configurados
 ```
-```
-
-## Ejemplo de uso
-
-```
-→ pt_estimate_plan(routers=3, pcs_per_lan=4, has_wan=true)
-→ pt_full_build(routers=3, pcs_per_lan=4, has_wan=true, dhcp=true)
-→ pt_explain_plan(plan_json)
-→ pt_fix_plan(plan_json)
-→ pt_export(plan_json, project_name="mi_red")
-```
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
-```
-
-## Para usar con PTBuilder
-
-1. Instala PTBuilder en Packet Tracer (Builder Code Editor)
-2. Genera el script con `pt_generate_script` o `pt_full_build`
-3. Copia el script JS en PTBuilder y ejecútalo
-4. Aplica las configs CLI en cada dispositivo

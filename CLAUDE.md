@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Packet Tracer MCP Server** — a Model Context Protocol server that enables LLMs to create, configure, validate, and **deploy in real-time** network topologies to Cisco Packet Tracer. The server provides 16 MCP tools and 5 MCP resources, including live deployment via HTTP bridge.
+This is a **Packet Tracer MCP Server** — a Model Context Protocol server that enables LLMs to create, configure, validate, and **deploy in real-time** network topologies to Cisco Packet Tracer. The server provides 22 MCP tools and 5 MCP resources, including live deployment via HTTP bridge.
 
 **Tech Stack:** Python 3.11+, Pydantic 2.0+, MCP (fastmcp), Streamable HTTP
 **Transport:** `http://127.0.0.1:39000/mcp` (streamable-http) | `--stdio` para legacy
@@ -110,9 +110,9 @@ Python HTTP bridge (`live_bridge.py`) on `127.0.0.1:54321` ↔ PTBuilder QWebEng
 
 ### Device Catalog
 
-Located in `infrastructure/catalog/`. Contains 11 device models (routers: 1941, 2901, 2911, 4321; switches: 2960, 3560; PCs, servers, etc.) with port definitions.
+Located in `infrastructure/catalog/`. Contains 11 device models (routers: 1941, 2901, 2911, ISR4321; switches: 2960-24TT, 3560-24PS; PC-PT, Server-PT, Laptop-PT, Cloud-PT, AccessPoint-PT) with verified port definitions. **No router has serial ports by default** — serial requires HWIC modules.
 
-## MCP Tools (16)
+## MCP Tools (22)
 
 **Consulta:** `pt_list_devices`, `pt_list_templates`, `pt_get_device_details`
 **Estimación:** `pt_estimate_plan` (dry-run)
@@ -121,6 +121,7 @@ Located in `infrastructure/catalog/`. Contains 11 device models (routers: 1941, 
 **Generación:** `pt_generate_script`, `pt_generate_configs`
 **Pipeline:** `pt_full_build` (complete workflow)
 **Despliegue:** `pt_deploy` (clipboard), `pt_live_deploy` (real-time HTTP bridge), `pt_bridge_status`
+**Interacción con topología existente:** `pt_query_topology`, `pt_delete_device`, `pt_rename_device`, `pt_move_device`, `pt_delete_link`, `pt_send_raw`
 **Export/Projects:** `pt_export`, `pt_list_projects`, `pt_load_project`
 
 ## MCP Resources (5)

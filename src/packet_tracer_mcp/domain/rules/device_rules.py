@@ -27,7 +27,7 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
                 code=ErrorCode.UNKNOWN_DEVICE_MODEL,
                 device=dev.name,
                 message=f"Modelo desconocido '{dev.model}'.",
-                suggestion="Usar un modelo válido: 1941, 2901, 2911, 4321, 2960-24TT, 3560-24PS, PC-PT, Server-PT, Laptop-PT, Cloud-PT, AccessPoint-PT.",
+                suggestion="Usar un modelo válido: 1941, 2901, 2911, ISR4321, 2960-24TT, 3560-24PS, PC-PT, Server-PT, Laptop-PT, Cloud-PT, AccessPoint-PT.",
             ))
 
     return errors

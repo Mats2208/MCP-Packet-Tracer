@@ -1,4 +1,9 @@
-"""Catálogo de dispositivos de Packet Tracer."""
+"""
+Catálogo de dispositivos de Packet Tracer.
+
+Puertos verificados contra PT 8.x en vivo — NO incluimos Vlan1
+porque no se usa para cableado físico (es SVI).
+"""
 
 from __future__ import annotations
 from dataclasses import dataclass
@@ -38,25 +43,25 @@ def _serial(slot: str) -> PortSpec:
     return PortSpec(PortSpeed.SERIAL, slot)
 
 
-# --- ROUTERS ---
+# --- ROUTERS (verified — no serial ports without HWIC modules) ---
 ROUTER_1941 = DeviceModel(
     pt_type="1941", category="router", display_name="Cisco 1941",
-    ports=(_gig("0/0"), _gig("0/1"), _serial("0/0/0"), _serial("0/0/1")),
+    ports=(_gig("0/0"), _gig("0/1")),
 )
 ROUTER_2901 = DeviceModel(
     pt_type="2901", category="router", display_name="Cisco 2901",
-    ports=(_gig("0/0"), _gig("0/1"), _serial("0/0/0"), _serial("0/0/1")),
+    ports=(_gig("0/0"), _gig("0/1")),
 )
 ROUTER_2911 = DeviceModel(
     pt_type="2911", category="router", display_name="Cisco 2911",
-    ports=(_gig("0/0"), _gig("0/1"), _gig("0/2"), _serial("0/0/0"), _serial("0/0/1")),
+    ports=(_gig("0/0"), _gig("0/1"), _gig("0/2")),
 )
 ROUTER_4321 = DeviceModel(
-    pt_type="4321", category="router", display_name="Cisco 4321",
+    pt_type="ISR4321", category="router", display_name="Cisco ISR 4321",
     ports=(_gig("0/0/0"), _gig("0/0/1")),
 )
 
-# --- SWITCHES ---
+# --- SWITCHES (verified: 24 FastEthernet + 2 GigabitEthernet) ---
 def _switch_2960_ports() -> tuple[PortSpec, ...]:
     fast = tuple(_fast(f"0/{i}") for i in range(1, 25))
     gig = (_gig("0/1"), _gig("0/2"))
@@ -76,21 +81,21 @@ SWITCH_3560 = DeviceModel(
     ports=_switch_3560_ports(),
 )
 
-# --- END DEVICES ---
+# --- END DEVICES (verified) ---
 PC_PT = DeviceModel(pt_type="PC-PT", category="pc", display_name="PC", ports=(_fast("0"),))
 SERVER_PT = DeviceModel(pt_type="Server-PT", category="server", display_name="Server", ports=(_fast("0"),))
 LAPTOP_PT = DeviceModel(pt_type="Laptop-PT", category="laptop", display_name="Laptop", ports=(_fast("0"),))
 
-# --- CLOUD / WAN ---
+# --- CLOUD / WAN (verified: Ethernet6 is the usable Ethernet port) ---
 CLOUD_PT = DeviceModel(
     pt_type="Cloud-PT", category="cloud", display_name="Cloud",
-    ports=tuple(PortSpec(PortSpeed.FAST_ETHERNET, str(i)) for i in range(6)),
+    ports=(PortSpec(PortSpeed.FAST_ETHERNET, "6", full_name="Ethernet6"),),
 )
 
-# --- ACCESS POINTS ---
+# --- ACCESS POINTS (verified: Port 0, Port 1) ---
 AP_PT = DeviceModel(
     pt_type="AccessPoint-PT", category="accesspoint", display_name="Access Point",
-    ports=(_fast("0"),),
+    ports=(PortSpec(PortSpeed.FAST_ETHERNET, "0", full_name="Port 0"),),
 )
 
 

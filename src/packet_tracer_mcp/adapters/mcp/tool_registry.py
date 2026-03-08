@@ -180,8 +180,8 @@ def register_tools(mcp: FastMCP) -> None:
         - has_wan: Incluir conexión WAN (Cloud)
         - dhcp: Configurar DHCP automáticamente
         - routing: Protocolo de enrutamiento (static, ospf, eigrp, rip, none)
-        - router_model: Modelo de router (1941, 2901, 2911, 4321)
-        - switch_model: Modelo de switch (2960, 3560)
+        - router_model: Modelo de router (1941, 2901, 2911, ISR4321)
+        - switch_model: Modelo de switch (2960-24TT, 3560-24PS)
         - template: Plantilla (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom)
         - floating_routes: Si True con routing=static, agrega rutas de respaldo con AD=254
@@ -351,8 +351,8 @@ def register_tools(mcp: FastMCP) -> None:
         - has_wan: Incluir WAN
         - dhcp: Configurar DHCP
         - routing: static, ospf, eigrp, rip, none
-        - router_model: 1941, 2901, 2911, 4321
-        - switch_model: 2960, 3560
+        - router_model: 1941, 2901, 2911, ISR4321
+        - switch_model: 2960-24TT, 3560-24PS
         - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom
         - deploy: Si True, copia script al portapapeles y exporta archivos
@@ -668,6 +668,9 @@ def register_tools(mcp: FastMCP) -> None:
                 return False  # puerto bloqueado por proceso externo no-bridge
         return _bridge_is_up()
 
+    # --- Arrancar bridge INMEDIATAMENTE al registrar tools ---
+    _ensure_bridge()
+
     @mcp.tool()
     def pt_live_deploy(
         plan_json: str,
@@ -696,7 +699,10 @@ def register_tools(mcp: FastMCP) -> None:
                 "Pega esto en Builder Code Editor (Extensions > Builder Code Editor) "
                 "y haz clic en Run:\n\n"
                 + _BOOTSTRAP
-                + "\n\nLuego llama a pt_live_deploy nuevamente."
+                + "\n\nLuego llama a pt_live_deploy nuevamente.\n\n"
+                "IMPORTANTE: XMLHttpRequest NO existe en el Script Engine de PT.\n"
+                "El bootstrap inyecta un polling loop en el webview (QWebEngine) "
+                "que SI tiene XMLHttpRequest."
             )
 
         plan = TopologyPlan.model_validate_json(plan_json)
@@ -742,3 +748,216 @@ def register_tools(mcp: FastMCP) -> None:
             "y haz clic en Run:\n\n"
             + _BOOTSTRAP
         )
+
+    # ------------------------------------------------------------------
+    # Helpers para tools bidireccionales (send command → wait for result)
+    # ------------------------------------------------------------------
+
+    def _js_escape(s: str) -> str:
+        """Escape a string for safe insertion into JS string literals."""
+        return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+
+    def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
+        """
+        Envia un comando JS al bridge y espera la respuesta (long-poll GET /result).
+        El comando debe llamar a reportResult(...) internamente para enviar datos back.
+        Requiere que el bridge esté activo y PT conectado.
+        """
+        status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", js_call)
+        if status_post != 200:
+            return None
+        status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
+        if status_get == 200:
+            return body
+        return None
+
+    def _check_bridge() -> str | None:
+        """Check bridge+PT connectivity. Returns error message or None if OK."""
+        if not _ensure_bridge():
+            return "No se pudo iniciar el bridge en :54321."
+        if not _bridge_pt_connected():
+            return (
+                "Bridge activo pero PT no está conectado.\n"
+                "Ejecuta el bootstrap en Builder Code Editor."
+            )
+        return None
+
+    # ------------------------------------------------------------------
+    # QUERY / INTERACT con topología existente en PT
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_query_topology() -> str:
+        """
+        Consulta qué dispositivos hay actualmente en Packet Tracer.
+        Devuelve nombre, tipo y modelo de cada dispositivo en la topología activa.
+        Requiere bridge conectado (pt_bridge_status para verificar).
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        result = _bridge_send_and_wait("queryTopology()", timeout=10.0)
+        if result is None:
+            return "Sin respuesta de PT (timeout). Verifica que el bootstrap esté corriendo."
+        try:
+            data = json.loads(result)
+        except Exception:
+            return f"Respuesta inesperada de PT: {result}"
+
+        devices = data.get("devices", [])
+        if not devices:
+            return "No hay dispositivos en la topología actual."
+
+        type_labels = {
+            0: "Router", 1: "Switch", 7: "AccessPoint", 8: "PC",
+            9: "Server", 16: "L3 Switch", 17: "Laptop", 18: "Tablet",
+        }
+        lines = [f"Dispositivos en Packet Tracer ({data.get('count', len(devices))}):", ""]
+        for d in devices:
+            tname = d.get("typeName") or type_labels.get(d.get("type"), f"type={d.get('type')}")
+            model = f" [{d['model']}]" if d.get("model") else ""
+            pos = f"  pos=({d['x']},{d['y']})" if d.get("x") is not None else ""
+            lines.append(f"  {d['name']:15}  {tname}{model}{pos}")
+        return "\n".join(lines)
+
+    @mcp.tool()
+    def pt_delete_device(device_name: str) -> str:
+        """
+        Elimina un dispositivo de la topología activa en Packet Tracer.
+        También elimina todos sus enlaces automáticamente.
+
+        Parámetros:
+        - device_name: nombre exacto del dispositivo (ej: "R1", "PC3", "Laptop-WAN")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        safe_name = _js_escape(device_name)
+        js = f'deleteDevice("{safe_name}")'
+        result = _bridge_send_and_wait(js, timeout=8.0)
+        if result is None:
+            return f"Sin respuesta de PT. El dispositivo '{device_name}' puede no existir."
+        try:
+            data = json.loads(result)
+            if data.get("success"):
+                return f"Dispositivo '{device_name}' eliminado correctamente."
+            else:
+                return f"Error al eliminar '{device_name}': {data.get('error', 'desconocido')}"
+        except Exception:
+            return f"Respuesta inesperada: {result}"
+
+    @mcp.tool()
+    def pt_rename_device(old_name: str, new_name: str) -> str:
+        """
+        Renombra un dispositivo en la topología activa de Packet Tracer.
+
+        Parámetros:
+        - old_name: nombre actual del dispositivo
+        - new_name: nuevo nombre
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        safe_old = _js_escape(old_name)
+        safe_new = _js_escape(new_name)
+        js = f'renameDevice("{safe_old}", "{safe_new}")'
+        result = _bridge_send_and_wait(js, timeout=8.0)
+        if result is None:
+            return f"Sin respuesta de PT."
+        try:
+            data = json.loads(result)
+            if data.get("success"):
+                return f"Dispositivo renombrado: '{old_name}' → '{new_name}'"
+            else:
+                return f"Error: {data.get('error', 'desconocido')}"
+        except Exception:
+            return f"Respuesta inesperada: {result}"
+
+    @mcp.tool()
+    def pt_move_device(device_name: str, x: int, y: int) -> str:
+        """
+        Mueve un dispositivo a nuevas coordenadas en el canvas de Packet Tracer.
+
+        Parámetros:
+        - device_name: nombre del dispositivo
+        - x: coordenada X (canvas logical view, ej: 100-800)
+        - y: coordenada Y (canvas logical view, ej: 100-600)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        safe_name = _js_escape(device_name)
+        js = f'moveDevice("{safe_name}", {int(x)}, {int(y)})'
+        result = _bridge_send_and_wait(js, timeout=8.0)
+        if result is None:
+            return f"Sin respuesta de PT."
+        try:
+            data = json.loads(result)
+            if data.get("success"):
+                return f"Dispositivo '{device_name}' movido a ({x}, {y})."
+            else:
+                return f"Error: {data.get('error', 'desconocido')}"
+        except Exception:
+            return f"Respuesta inesperada: {result}"
+
+    @mcp.tool()
+    def pt_delete_link(device_name: str, interface_name: str) -> str:
+        """
+        Elimina el enlace conectado a una interfaz específica de un dispositivo en PT.
+
+        Parámetros:
+        - device_name: nombre del dispositivo (ej: "R1")
+        - interface_name: nombre de la interfaz (ej: "GigabitEthernet0/0", "FastEthernet0/1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        safe_dev = _js_escape(device_name)
+        safe_iface = _js_escape(interface_name)
+        js = f'deleteLink("{safe_dev}", "{safe_iface}")'
+        result = _bridge_send_and_wait(js, timeout=8.0)
+        if result is None:
+            return f"Sin respuesta de PT."
+        try:
+            data = json.loads(result)
+            if data.get("success"):
+                return f"Enlace en {device_name}/{interface_name} eliminado."
+            else:
+                return f"Error: {data.get('error', 'desconocido')}\nNota: si el método no existe en esta versión de PT, prueba con pt_delete_device y recrear los enlaces."
+        except Exception:
+            return f"Respuesta inesperada: {result}"
+
+    @mcp.tool()
+    def pt_send_raw(js_code: str, wait_result: bool = False) -> str:
+        """
+        Envía código JavaScript arbitrario a Packet Tracer via bridge.
+        Útil para explorar la API ipc o ejecutar comandos personalizados.
+
+        Si wait_result=True, espera que el código llame a reportResult(...).
+        Ejemplo:
+          pt_send_raw("reportResult(getDevices('router'))", wait_result=True)
+          pt_send_raw("addDevice('TestR','2911',500,300)")
+
+        Parámetros:
+        - js_code: código JavaScript a ejecutar en el Script Engine de PT
+        - wait_result: si True, espera respuesta via reportResult()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        if wait_result:
+            result = _bridge_send_and_wait(js_code, timeout=10.0)
+            if result is None:
+                return "Sin respuesta (timeout). Asegúrate de que el código llame a reportResult(...)."
+            return result
+        else:
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", js_code)
+            if status == 200:
+                return "Comando enviado a PT."
+            return "Error al enviar comando al bridge."
