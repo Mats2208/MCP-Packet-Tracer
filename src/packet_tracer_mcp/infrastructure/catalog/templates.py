@@ -104,17 +104,6 @@ def get_template(key: TopologyTemplate) -> TemplateSpec:
     return TEMPLATES[key]
 
 
-def list_templates() -> list[dict]:
+def list_templates() -> list[TemplateSpec]:
     """Lista todas las plantillas con sus detalles."""
-    result = []
-    for t in TEMPLATES.values():
-        result.append({
-            "key": t.key.value,
-            "name": t.name,
-            "description": t.description,
-            "default_routers": t.default_routers,
-            "default_pcs_per_lan": t.default_pcs_per_lan,
-            "requires_wan": t.requires_wan,
-            "tags": list(t.tags),
-        })
-    return result
+    return list(TEMPLATES.values())

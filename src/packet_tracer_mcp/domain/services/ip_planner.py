@@ -7,6 +7,7 @@ genera pools DHCP, rutas estáticas y configuraciones OSPF.
 
 from __future__ import annotations
 import ipaddress
+from collections import deque
 
 from ..models.plans import (
     TopologyPlan, DevicePlan, DHCPPool, StaticRoute, OSPFConfig,
@@ -122,24 +123,64 @@ class IPPlanner:
                 end_dev, end_port = dev_a, link.port_a
 
             if end_dev and host_idx < len(hosts):
-                host_idx += 1
                 end_dev.interfaces[end_port] = f"{str(hosts[host_idx])}/{subnet.prefixlen}"
                 end_dev.gateway = gateway_ip
+                host_idx += 1
 
     def _plan_static_routes(
         self, plan: TopologyPlan, routers: list[DevicePlan],
         router_lans: dict[str, list[ipaddress.IPv4Network]],
         link_subnets: dict[tuple[str, str], ipaddress.IPv4Network],
     ):
+        # Adyacencia entre routers basada en los links inter-router.
+        adjacency: dict[str, set[str]] = {r.name: set() for r in routers}
+        for r1, r2 in link_subnets:
+            adjacency.setdefault(r1, set()).add(r2)
+            adjacency.setdefault(r2, set()).add(r1)
+
+        router_by_name = {r.name: r for r in routers}
+
+        def _first_hop(source: str, target: str) -> str | None:
+            if source == target:
+                return None
+            seen = {source}
+            q: deque[tuple[str, str | None]] = deque([(source, None)])
+            while q:
+                current, first = q.popleft()
+                for nxt in adjacency.get(current, set()):
+                    if nxt in seen:
+                        continue
+                    seen.add(nxt)
+                    first_hop = nxt if first is None else first
+                    if nxt == target:
+                        return first_hop
+                    q.append((nxt, first_hop))
+            return None
+
+        def _ip_on_subnet(router_name: str, subnet: ipaddress.IPv4Network) -> str | None:
+            router = router_by_name.get(router_name)
+            if not router:
+                return None
+            for ip_cidr in router.interfaces.values():
+                iface = ipaddress.IPv4Interface(ip_cidr)
+                if iface.network == subnet:
+                    return str(iface.ip)
+            return None
+
         for router in routers:
             for other in routers:
                 if other.name == router.name:
                     continue
-                key = tuple(sorted([router.name, other.name]))
-                if key not in link_subnets:
+                hop = _first_hop(router.name, other.name)
+                if not hop:
                     continue
-                link_hosts = list(link_subnets[key].hosts())
-                next_hop = str(link_hosts[1]) if key[0] == router.name else str(link_hosts[0])
+                key = tuple(sorted([router.name, hop]))
+                subnet = link_subnets.get(key)
+                if subnet is None:
+                    continue
+                next_hop = _ip_on_subnet(hop, subnet)
+                if not next_hop:
+                    continue
                 for lan_subnet in router_lans.get(other.name, []):
                     plan.static_routes.append(StaticRoute(
                         router=router.name,

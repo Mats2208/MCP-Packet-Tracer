@@ -16,8 +16,8 @@ class TestValidator:
             devices=[
                 DevicePlan(name="R1", model="2911", category="router", x=100, y=100,
                            interfaces={"GigabitEthernet0/0": "192.168.0.1/24"}),
-                DevicePlan(name="SW1", model="2960", category="switch", x=200, y=200),
-                DevicePlan(name="PC1", model="PC", category="pc", x=300, y=300,
+                DevicePlan(name="SW1", model="2960-24TT", category="switch", x=200, y=200),
+                DevicePlan(name="PC1", model="PC-PT", category="pc", x=300, y=300,
                            gateway="192.168.0.1"),
             ],
             links=[

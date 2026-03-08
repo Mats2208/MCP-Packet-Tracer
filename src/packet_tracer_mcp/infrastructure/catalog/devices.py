@@ -68,18 +68,18 @@ def _switch_3560_ports() -> tuple[PortSpec, ...]:
     return fast + gig
 
 SWITCH_2960 = DeviceModel(
-    pt_type="2960", category="switch", display_name="Cisco 2960",
+    pt_type="2960-24TT", category="switch", display_name="Cisco 2960",
     ports=_switch_2960_ports(),
 )
 SWITCH_3560 = DeviceModel(
-    pt_type="3560", category="switch", display_name="Cisco 3560-24PS",
+    pt_type="3560-24PS", category="switch", display_name="Cisco 3560-24PS",
     ports=_switch_3560_ports(),
 )
 
 # --- END DEVICES ---
-PC_PT = DeviceModel(pt_type="PC", category="pc", display_name="PC", ports=(_fast("0"),))
-SERVER_PT = DeviceModel(pt_type="Server", category="server", display_name="Server", ports=(_fast("0"),))
-LAPTOP_PT = DeviceModel(pt_type="Laptop", category="laptop", display_name="Laptop", ports=(_fast("0"),))
+PC_PT = DeviceModel(pt_type="PC-PT", category="pc", display_name="PC", ports=(_fast("0"),))
+SERVER_PT = DeviceModel(pt_type="Server-PT", category="server", display_name="Server", ports=(_fast("0"),))
+LAPTOP_PT = DeviceModel(pt_type="Laptop-PT", category="laptop", display_name="Laptop", ports=(_fast("0"),))
 
 # --- CLOUD / WAN ---
 CLOUD_PT = DeviceModel(

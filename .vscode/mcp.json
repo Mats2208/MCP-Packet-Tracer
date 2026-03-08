@@ -1,9 +1,7 @@
 {
   "servers": {
     "packet-tracer": {
-      "command": "python",
-      "args": ["-m", "src.packet_tracer_mcp"],
-      "cwd": "."
+      "url": "http://127.0.0.1:39000/mcp"
     }
   }
 }

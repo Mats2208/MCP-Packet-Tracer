@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "packet-tracer-mcp"
-version = "0.2.0"
+version = "0.4.0"
 description = "MCP server for Cisco Packet Tracer - topology planning, validation, auto-fix, generation, and configuration"
 requires-python = ">=3.11"
 dependencies = [

@@ -2,7 +2,7 @@
 
 # Router/switch por defecto
 DEFAULT_ROUTER = "2911"
-DEFAULT_SWITCH = "2960"
+DEFAULT_SWITCH = "2960-24TT"
 
 # Layout (posición en pixels para el canvas de Packet Tracer)
 LAYOUT_X_START = 100

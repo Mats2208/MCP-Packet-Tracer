@@ -3,6 +3,8 @@ Ejecutor manual: exporta archivos para que el usuario los copie/pegue.
 """
 
 from __future__ import annotations
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from ...domain.models.plans import TopologyPlan
 from ..generator.ptbuilder_generator import generate_ptbuilder_script, generate_full_script
@@ -16,9 +18,11 @@ class ManualExecutor(ExecutorBase):
     def __init__(self, output_dir: str | Path = "projects"):
         self.output_dir = Path(output_dir)
 
-    def execute(self, plan: TopologyPlan) -> dict:
+    def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
         """Genera todos los archivos de la topología."""
-        project_dir = self.output_dir / plan.name.replace(" ", "_")
+        base_name = (project_name or plan.name or "topology").strip() or "topology"
+        safe_name = base_name.replace(" ", "_")
+        project_dir = self.output_dir / safe_name
         project_dir.mkdir(parents=True, exist_ok=True)
 
         files: dict[str, str] = {}
@@ -43,10 +47,21 @@ class ManualExecutor(ExecutorBase):
             files[f"config_{device_name}"] = str(cfg_path)
 
         # Plan JSON
-        import json
         plan_path = project_dir / "plan.json"
         plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
         files["plan_json"] = str(plan_path)
+
+        # Metadata del proyecto
+        meta_path = project_dir / "metadata.json"
+        metadata = {
+            "project_name": safe_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "devices": len(plan.devices),
+            "links": len(plan.links),
+            "is_valid": plan.is_valid,
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        files["metadata"] = str(meta_path)
 
         return {
             "status": "exported",

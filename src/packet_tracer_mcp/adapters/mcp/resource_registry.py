@@ -48,11 +48,11 @@ def register_resources(mcp: FastMCP) -> None:
         for t in templates:
             data.append({
                 "name": t.name,
-                "key": t.key,
+                "key": t.key.value,
                 "description": t.description,
                 "routers": f"{t.min_routers}-{t.max_routers}",
-                "default_routing": t.default_routing,
-                "tags": t.tags,
+                "default_routing": t.default_routing.value,
+                "tags": list(t.tags),
             })
         return json.dumps(data, indent=2, ensure_ascii=False)
 

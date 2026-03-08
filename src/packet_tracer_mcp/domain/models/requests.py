@@ -16,7 +16,9 @@ class TopologyRequest(BaseModel):
     routers: int = Field(ge=1, le=20, default=2)
     switches_per_router: int = Field(ge=0, le=4, default=1)
     pcs_per_lan: list[int] | int = Field(default=3)
+    laptops_per_lan: list[int] | int = Field(default=0)
     servers: int = Field(ge=0, le=10, default=0)
+    access_points: int = Field(ge=0, le=20, default=0)
     has_wan: bool = False
     dhcp: bool = True
     routing: RoutingProtocol = RoutingProtocol.STATIC

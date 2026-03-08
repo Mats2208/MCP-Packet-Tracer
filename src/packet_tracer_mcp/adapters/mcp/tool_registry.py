@@ -6,6 +6,9 @@ Define todas las herramientas que el LLM puede invocar.
 
 from __future__ import annotations
 import json
+import time
+import urllib.request
+import urllib.error
 from mcp.server.fastmcp import FastMCP
 
 from ...domain.models.plans import TopologyPlan
@@ -24,11 +27,15 @@ from ...infrastructure.generator.cli_config_generator import (
     generate_pc_config,
 )
 from ...infrastructure.execution.manual_executor import ManualExecutor
+from ...infrastructure.execution.deploy_executor import DeployExecutor
+from ...infrastructure.execution.live_bridge import PTCommandBridge
+from ...infrastructure.execution.live_executor import LiveExecutor
+from ...infrastructure.generator.ptbuilder_generator import generate_executable_script
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS
 from ...infrastructure.catalog.cables import CABLE_TYPES
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
-from ...infrastructure.catalog.templates import list_templates, get_template
+from ...infrastructure.catalog.templates import list_templates
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE, CAPABILITIES
 
@@ -64,11 +71,11 @@ def register_tools(mcp: FastMCP) -> None:
         templates = list_templates()
         lines = []
         for t in templates:
-            lines.append(f"**{t.name}** (key: `{t.key}`)")
+            lines.append(f"**{t.name}** (key: `{t.key.value}`)")
             lines.append(f"  {t.description}")
             lines.append(f"  Routers: {t.min_routers}-{t.max_routers} (default: {t.default_routers})")
-            lines.append(f"  PCs/LAN: {t.default_pcs}  |  WAN: {'sí' if t.requires_wan else 'no'}")
-            lines.append(f"  Routing: {t.default_routing}")
+            lines.append(f"  PCs/LAN: {t.default_pcs_per_lan}  |  WAN: {'sí' if t.requires_wan else 'no'}")
+            lines.append(f"  Routing: {t.default_routing.value}")
             lines.append(f"  Tags: {', '.join(t.tags)}")
             lines.append("")
         return "\n".join(lines)
@@ -102,8 +109,10 @@ def register_tools(mcp: FastMCP) -> None:
     def pt_estimate_plan(
         routers: int = 2,
         pcs_per_lan: int = 3,
+        laptops_per_lan: int = 0,
         switches_per_router: int = 1,
         servers: int = 0,
+        access_points: int = 0,
         has_wan: bool = False,
         dhcp: bool = True,
         routing: str = "static",
@@ -115,8 +124,10 @@ def register_tools(mcp: FastMCP) -> None:
         Parámetros:
         - routers: Número de routers (1-20)
         - pcs_per_lan: PCs por LAN
+        - laptops_per_lan: Laptops por LAN (Laptop-PT)
         - switches_per_router: Switches por router
         - servers: Servidores
+        - access_points: Access Points (AccessPoint-PT)
         - has_wan: Incluir WAN
         - dhcp: Configurar DHCP
         - routing: static, ospf, eigrp, rip, none
@@ -124,8 +135,10 @@ def register_tools(mcp: FastMCP) -> None:
         request = TopologyRequest(
             routers=routers,
             pcs_per_lan=pcs_per_lan,
+            laptops_per_lan=laptops_per_lan,
             switches_per_router=switches_per_router,
             servers=servers,
+            access_points=access_points,
             has_wan=has_wan,
             dhcp=dhcp,
             routing=RoutingProtocol(routing),
@@ -140,13 +153,15 @@ def register_tools(mcp: FastMCP) -> None:
     def pt_plan_topology(
         routers: int = 2,
         pcs_per_lan: int = 3,
+        laptops_per_lan: int = 0,
         switches_per_router: int = 1,
         servers: int = 0,
+        access_points: int = 0,
         has_wan: bool = False,
         dhcp: bool = True,
         routing: str = "static",
         router_model: str = "2911",
-        switch_model: str = "2960",
+        switch_model: str = "2960-24TT",
         template: str = "multi_lan",
     ) -> str:
         """
@@ -155,8 +170,10 @@ def register_tools(mcp: FastMCP) -> None:
         Parámetros:
         - routers: Número de routers (1-20)
         - pcs_per_lan: PCs por cada LAN
+        - laptops_per_lan: Laptops por cada LAN (Laptop-PT)
         - switches_per_router: Switches por router (0-4)
         - servers: Número de servidores
+        - access_points: Número de Access Points (AccessPoint-PT), uno por LAN
         - has_wan: Incluir conexión WAN (Cloud)
         - dhcp: Configurar DHCP automáticamente
         - routing: Protocolo de enrutamiento (static, ospf, eigrp, rip, none)
@@ -171,8 +188,10 @@ def register_tools(mcp: FastMCP) -> None:
             template=TopologyTemplate(template),
             routers=routers,
             pcs_per_lan=pcs_per_lan,
+            laptops_per_lan=laptops_per_lan,
             switches_per_router=switches_per_router,
             servers=servers,
+            access_points=access_points,
             has_wan=has_wan,
             dhcp=dhcp,
             routing=RoutingProtocol(routing),
@@ -291,23 +310,31 @@ def register_tools(mcp: FastMCP) -> None:
     def pt_full_build(
         routers: int = 2,
         pcs_per_lan: int = 3,
+        laptops_per_lan: int = 0,
         switches_per_router: int = 1,
         servers: int = 0,
+        access_points: int = 0,
         has_wan: bool = False,
         dhcp: bool = True,
         routing: str = "static",
         router_model: str = "2911",
-        switch_model: str = "2960",
+        switch_model: str = "2960-24TT",
         template: str = "multi_lan",
+        deploy: bool = True,
     ) -> str:
         """
-        Pipeline completo: planifica, valida, genera, explica y estima.
+        Pipeline completo: planifica, valida, genera, explica, estima y despliega.
+
+        Si deploy=True (default), copia el script al portapapeles de Windows
+        y genera instrucciones paso a paso para Packet Tracer.
 
         Parámetros:
         - routers: Número de routers (1-20)
         - pcs_per_lan: PCs por LAN
+        - laptops_per_lan: Laptops por LAN (Laptop-PT)
         - switches_per_router: Switches por router
         - servers: Servidores
+        - access_points: Access Points (AccessPoint-PT), uno por LAN
         - has_wan: Incluir WAN
         - dhcp: Configurar DHCP
         - routing: static, ospf, eigrp, rip, none
@@ -315,13 +342,16 @@ def register_tools(mcp: FastMCP) -> None:
         - switch_model: 2960, 3560
         - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom
+        - deploy: Si True, copia script al portapapeles y exporta archivos
         """
         request = TopologyRequest(
             template=TopologyTemplate(template),
             routers=routers,
             pcs_per_lan=pcs_per_lan,
+            laptops_per_lan=laptops_per_lan,
             switches_per_router=switches_per_router,
             servers=servers,
+            access_points=access_points,
             has_wan=has_wan,
             dhcp=dhcp,
             routing=RoutingProtocol(routing),
@@ -411,6 +441,30 @@ def register_tools(mcp: FastMCP) -> None:
             for v in plan.validations:
                 parts.append(f"  {v.check_type}: {v.from_device} → {v.to_target} (esperado: {v.expected})")
 
+        # --- Deploy ---
+        if deploy:
+            parts.append("")
+            parts.append("=" * 60)
+            parts.append("DESPLIEGUE EN PACKET TRACER")
+            parts.append("=" * 60)
+            deploy_exec = DeployExecutor(output_dir="projects")
+            deploy_result = deploy_exec.execute(plan, project_name=f"build_{routers}r_{pcs_per_lan}pc")
+            if deploy_result["clipboard"]:
+                parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+                parts.append("")
+                parts.append("Instrucciones:")
+                parts.append("  1. Abre Packet Tracer")
+                parts.append("  2. Ve a Extensions > Scripting")
+                parts.append("  3. Pega (Ctrl+V) y ejecuta")
+                parts.append("")
+                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                parts.append("  Configs CLI en archivos *_config.txt")
+            else:
+                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
+            parts.append("")
+            parts.append(deploy_result["instructions"])
+
         # --- Plan JSON ---
         parts.append("")
         parts.append("=" * 60)
@@ -439,7 +493,7 @@ def register_tools(mcp: FastMCP) -> None:
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         executor = ManualExecutor(output_dir=output_dir)
-        result = executor.execute(plan)
+        result = executor.execute(plan, project_name=project_name)
 
         lines = [
             f"Archivos exportados en {result['project_dir']}:",
@@ -447,6 +501,55 @@ def register_tools(mcp: FastMCP) -> None:
         for key, path in result["files"].items():
             lines.append(f"  - {key}: {path}")
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # DEPLOY (clipboard + instrucciones)
+    # ------------------------------------------------------------------
+    @mcp.tool()
+    def pt_deploy(
+        plan_json: str,
+        project_name: str = "topology",
+        output_dir: str = "projects",
+    ) -> str:
+        """
+        Despliega un plan en Packet Tracer: copia el script al portapapeles
+        de Windows, exporta los archivos de configuracion, y genera
+        instrucciones paso a paso.
+
+        Uso: despues de pt_full_build o pt_plan_topology, pasa el plan JSON
+        aqui para preparar todo para Packet Tracer.
+
+        Parámetros:
+        - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
+        - project_name: Nombre del proyecto
+        - output_dir: Directorio de salida
+        """
+        plan = TopologyPlan.model_validate_json(plan_json)
+        executor = DeployExecutor(output_dir=output_dir)
+        result = executor.execute(plan, project_name=project_name)
+
+        parts: list[str] = []
+
+        if result["clipboard"]:
+            parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+            parts.append("Pega directamente en Packet Tracer > Extensions > Scripting")
+        else:
+            parts.append("ARCHIVOS EXPORTADOS (no se pudo copiar al portapapeles)")
+            parts.append(f"Abre {result['project_dir']}/topology.js y copia su contenido")
+
+        parts.append("")
+        parts.append(f"Proyecto: {result['project_dir']}")
+        parts.append(f"Dispositivos: {result['devices_count']}")
+        parts.append(f"Enlaces: {result['links_count']}")
+        parts.append("")
+
+        for key, path in result["files"].items():
+            parts.append(f"  {key}: {path}")
+
+        parts.append("")
+        parts.append(result["instructions"])
+
+        return "\n".join(parts)
 
     # ------------------------------------------------------------------
     # PROYECTOS
@@ -477,3 +580,144 @@ def register_tools(mcp: FastMCP) -> None:
         repo = ProjectRepository(base_dir=output_dir)
         plan = repo.load_plan(project_name)
         return plan.model_dump_json(indent=2)
+
+    # ------------------------------------------------------------------
+    # LIVE DEPLOY (direct to Packet Tracer)
+    # ------------------------------------------------------------------
+
+    _BRIDGE_URL = "http://127.0.0.1:54321"
+    _BOOTSTRAP = (
+        '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync('
+        '"setInterval(function(){var x=new XMLHttpRequest();'
+        "x.open('GET','http://127.0.0.1:54321/next',true);"
+        'x.onload=function(){if(x.status===200&&x.responseText)'
+        "{$se('runCode',x.responseText)}};x.onerror=function(){};"
+        'x.send()},500)");'
+    )
+
+    # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
+    _bridge_instance: PTCommandBridge | None = None
+
+    def _http_get(url: str, timeout: float = 2.0):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r:
+                return r.status, r.read().decode("utf-8")
+        except Exception:
+            return None, None
+
+    def _http_post(url: str, body: str, timeout: float = 3.0):
+        try:
+            data = body.encode("utf-8")
+            req = urllib.request.Request(url, data=data, method="POST")
+            req.add_header("Content-Type", "text/plain")
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, r.read().decode("utf-8")
+        except Exception:
+            return None, None
+
+    def _bridge_is_up() -> bool:
+        status, _ = _http_get(f"{_BRIDGE_URL}/ping", timeout=1.0)
+        return status == 200
+
+    def _bridge_pt_connected() -> bool:
+        status, body = _http_get(f"{_BRIDGE_URL}/status", timeout=1.0)
+        if status == 200 and body:
+            try:
+                return json.loads(body).get("connected", False)
+            except Exception:
+                pass
+        return False
+
+    def _ensure_bridge() -> bool:
+        """
+        Garantiza que exista un bridge escuchando en :54321.
+        Si ya hay uno (interno o externo), no hace nada.
+        Si no hay ninguno, arranca uno in-process como thread daemon.
+        Retorna True si el bridge está operativo.
+        """
+        nonlocal _bridge_instance
+        if _bridge_is_up():
+            return True  # ya hay uno activo (interno o external start_bridge.ps1)
+        if _bridge_instance is None:
+            try:
+                b = PTCommandBridge()
+                b.start()
+                _bridge_instance = b
+            except OSError:
+                return False  # puerto bloqueado por proceso externo no-bridge
+        return _bridge_is_up()
+
+    @mcp.tool()
+    def pt_live_deploy(
+        plan_json: str,
+        command_delay: float = 1.0,
+    ) -> str:
+        """
+        Envia comandos directamente a Packet Tracer en tiempo real.
+
+        El bridge HTTP se inicia automaticamente dentro del servidor MCP —
+        no necesitas correr start_bridge.ps1 ni ningun proceso externo.
+        Solo asegurate de tener el bootstrap corriendo en Builder Code Editor.
+
+        Parámetros:
+        - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
+        - command_delay: retardo entre comandos en segundos (default 1.0)
+        """
+        if not _ensure_bridge():
+            return (
+                "No se pudo iniciar el bridge HTTP en :54321.\n"
+                "Puerto bloqueado por otro proceso. Libera el puerto e intenta de nuevo."
+            )
+
+        if not _bridge_pt_connected():
+            return (
+                "Bridge activo en http://127.0.0.1:54321 pero PT NO esta conectado.\n\n"
+                "Pega esto en Builder Code Editor (Extensions > Builder Code Editor) "
+                "y haz clic en Run:\n\n"
+                + _BOOTSTRAP
+                + "\n\nLuego llama a pt_live_deploy nuevamente."
+            )
+
+        plan = TopologyPlan.model_validate_json(plan_json)
+        script = generate_executable_script(plan)
+        commands = [
+            line.strip() for line in script.splitlines()
+            if line.strip() and not line.strip().startswith("//")
+        ]
+
+        sent = 0
+        for cmd in commands:
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", cmd)
+            if status == 200:
+                sent += 1
+            time.sleep(command_delay)
+
+        return (
+            f"Topologia desplegada en Packet Tracer!\n"
+            f"  Comandos enviados: {sent}\n"
+            f"  Dispositivos: {len(plan.devices)}\n"
+            f"  Enlaces: {len(plan.links)}"
+        )
+
+    @mcp.tool()
+    def pt_bridge_status() -> str:
+        """
+        Verifica el estado del bridge HTTP con Packet Tracer.
+        El bridge se inicia automaticamente si no esta corriendo —
+        no necesitas ejecutar start_bridge.ps1 manualmente.
+        """
+        if not _ensure_bridge():
+            return (
+                "No se pudo iniciar el bridge HTTP en :54321.\n"
+                "Puerto bloqueado por otro proceso. Libera el puerto e intenta de nuevo."
+            )
+
+        if _bridge_pt_connected():
+            return "Bridge ACTIVO y CONECTADO. Packet Tracer esta recibiendo comandos en http://127.0.0.1:54321"
+
+        return (
+            "Bridge activo en http://127.0.0.1:54321 pero PT NO esta conectado.\n\n"
+            "Pega esto en Builder Code Editor (Extensions > Builder Code Editor) "
+            "y haz clic en Run:\n\n"
+            + _BOOTSTRAP
+        )

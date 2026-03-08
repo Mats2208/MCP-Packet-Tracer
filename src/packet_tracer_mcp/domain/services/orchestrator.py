@@ -31,9 +31,10 @@ def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, Validatio
     plan = TopologyPlan()
 
     pcs_list = _normalize_pcs(request)
+    laptops_list = _normalize_laptops(request)
 
-    _create_devices(plan, request, pcs_list)
-    _create_links(plan, request, pcs_list)
+    _create_devices(plan, request, pcs_list, laptops_list)
+    _create_links(plan, request, pcs_list, laptops_list)
 
     ip_planner = IPPlanner(
         lan_base=request.base_network,
@@ -56,7 +57,16 @@ def _normalize_pcs(req: TopologyRequest) -> list[int]:
     return pcs
 
 
-def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int]):
+def _normalize_laptops(req: TopologyRequest) -> list[int]:
+    if isinstance(req.laptops_per_lan, int):
+        return [req.laptops_per_lan] * req.routers
+    laptops = list(req.laptops_per_lan)
+    while len(laptops) < req.routers:
+        laptops.append(laptops[-1] if laptops else 0)
+    return laptops
+
+
+def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int], laptops_list: list[int]):
     router_model = req.router_model or DEFAULT_ROUTER
     switch_model = req.switch_model or DEFAULT_SWITCH
 
@@ -71,9 +81,10 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
             x=LAYOUT_X_START + i * LAYOUT_X_SPACING, y=LAYOUT_Y_ROUTER,
         ))
 
-    # Switches + PCs
+    # Switches + PCs + Laptops
     switch_idx = 0
     pc_idx = 0
+    laptop_idx = 0
     for i in range(req.routers):
         for s in range(req.switches_per_router):
             switch_idx += 1
@@ -82,20 +93,48 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
                 role=DeviceRole.ACCESS_SWITCH,
                 x=LAYOUT_X_START + i * LAYOUT_X_SPACING + s * 120, y=LAYOUT_Y_SWITCH,
             ))
-            n_pcs = pcs_list[i] if s == 0 else 0
-            for p in range(n_pcs):
-                pc_idx += 1
+            if s == 0:
+                n_pcs = pcs_list[i]
+                for p in range(n_pcs):
+                    pc_idx += 1
+                    plan.devices.append(DevicePlan(
+                        name=f"PC{pc_idx}", model="PC-PT", category="pc",
+                        role=DeviceRole.END_HOST,
+                        x=LAYOUT_X_START + i * LAYOUT_X_SPACING - (n_pcs * LAYOUT_PC_X_SPACING // 2) + p * LAYOUT_PC_X_SPACING,
+                        y=LAYOUT_Y_PC,
+                    ))
+                n_laptops = laptops_list[i]
+                for l in range(n_laptops):
+                    laptop_idx += 1
+                    plan.devices.append(DevicePlan(
+                        name=f"LT{laptop_idx}", model="Laptop-PT", category="laptop",
+                        role=DeviceRole.END_HOST,
+                        x=LAYOUT_X_START + i * LAYOUT_X_SPACING - (n_laptops * LAYOUT_PC_X_SPACING // 2) + l * LAYOUT_PC_X_SPACING,
+                        y=LAYOUT_Y_PC + 80,
+                    ))
+
+    # Access Points — uno por switch primario de cada router
+    if req.access_points > 0:
+        switches = plan.devices_by_category("switch")
+        spr = req.switches_per_router
+        ap_idx = 0
+        for i in range(req.routers):
+            if ap_idx >= req.access_points:
+                break
+            primary_sw = switches[i * spr] if i * spr < len(switches) else None
+            if primary_sw:
+                ap_idx += 1
                 plan.devices.append(DevicePlan(
-                    name=f"PC{pc_idx}", model="PC", category="pc",
+                    name=f"AP{ap_idx}", model="AccessPoint-PT", category="accesspoint",
                     role=DeviceRole.END_HOST,
-                    x=LAYOUT_X_START + i * LAYOUT_X_SPACING - (n_pcs * LAYOUT_PC_X_SPACING // 2) + p * LAYOUT_PC_X_SPACING,
-                    y=LAYOUT_Y_PC,
+                    x=primary_sw.x + 120,
+                    y=LAYOUT_Y_SWITCH,
                 ))
 
     # Servers
     for i in range(req.servers):
         plan.devices.append(DevicePlan(
-            name=f"SRV{i + 1}", model="Server", category="server",
+            name=f"SRV{i + 1}", model="Server-PT", category="server",
             role=DeviceRole.SERVER_HOST,
             x=LAYOUT_X_START + (req.routers + 1) * LAYOUT_X_SPACING,
             y=LAYOUT_Y_PC + i * 80,
@@ -111,7 +150,7 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
         ))
 
 
-def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int]):
+def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int], laptops_list: list[int]):
     router_model_obj = resolve_model(req.router_model or DEFAULT_ROUTER)
     switch_model_obj = resolve_model(req.switch_model or DEFAULT_SWITCH)
     if not router_model_obj or not switch_model_obj:
@@ -121,6 +160,8 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int])
     routers = plan.devices_by_category("router")
     switches = plan.devices_by_category("switch")
     pcs = plan.devices_by_category("pc")
+    laptops = plan.devices_by_category("laptop")
+    aps = plan.devices_by_category("accesspoint")
     servers = plan.devices_by_category("server")
     cloud = next((d for d in plan.devices if d.category == "cloud"), None)
 
@@ -183,6 +224,41 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int])
                     cable=infer_cable("switch", "pc"),
                 ))
             pc_idx += 1
+
+    # Switch ↔ Laptops
+    laptop_idx = 0
+    for i in range(req.routers):
+        primary_sw = switches[i * spr] if i * spr < len(switches) else None
+        if not primary_sw:
+            continue
+        for _ in range(laptops_list[i]):
+            if laptop_idx >= len(laptops):
+                break
+            lt = laptops[laptop_idx]
+            sp, lp = _fast(primary_sw.name, primary_sw.model), _fast(lt.name, lt.model)
+            if sp and lp:
+                plan.links.append(LinkPlan(
+                    device_a=primary_sw.name, port_a=sp,
+                    device_b=lt.name, port_b=lp,
+                    cable=infer_cable("switch", "pc"),
+                ))
+            laptop_idx += 1
+
+    # Switch ↔ Access Points
+    ap_idx = 0
+    for i in range(req.routers):
+        primary_sw = switches[i * spr] if i * spr < len(switches) else None
+        if not primary_sw or ap_idx >= len(aps):
+            continue
+        ap = aps[ap_idx]
+        sp, ap_port = _fast(primary_sw.name, primary_sw.model), _fast(ap.name, ap.model)
+        if sp and ap_port:
+            plan.links.append(LinkPlan(
+                device_a=primary_sw.name, port_a=sp,
+                device_b=ap.name, port_b=ap_port,
+                cable=infer_cable("switch", "pc"),
+            ))
+        ap_idx += 1
 
     # Switch ↔ Servers
     if servers and switches:

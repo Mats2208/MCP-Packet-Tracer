@@ -11,7 +11,7 @@ class ExecutorBase(ABC):
     """Interfaz para ejecutar un plan en Packet Tracer."""
 
     @abstractmethod
-    def execute(self, plan: TopologyPlan) -> dict:
+    def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
         """Ejecuta un plan y retorna resultado."""
         ...
 

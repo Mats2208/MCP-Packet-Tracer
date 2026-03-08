@@ -18,7 +18,8 @@ class ProjectRepository:
 
     def save_plan(self, plan: TopologyPlan, project_name: str | None = None) -> Path:
         """Guarda un plan como JSON."""
-        name = project_name or plan.name.replace(" ", "_")
+        base_name = (project_name or plan.name or "topology").strip() or "topology"
+        name = base_name.replace(" ", "_")
         project_dir = self.base_dir / name
         project_dir.mkdir(parents=True, exist_ok=True)
 

@@ -65,6 +65,7 @@ class ValidationCheck(BaseModel):
 
 class TopologyPlan(BaseModel):
     """Plan completo, validado, listo para generar scripts."""
+    name: str = "topology"
     devices: list[DevicePlan] = Field(default_factory=list)
     links: list[LinkPlan] = Field(default_factory=list)
     dhcp_pools: list[DHCPPool] = Field(default_factory=list)
