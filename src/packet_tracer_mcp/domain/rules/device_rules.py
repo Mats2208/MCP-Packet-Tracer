@@ -28,10 +28,22 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
                 device=dev.name,
                 message=f"Modelo desconocido '{dev.model}'.",
                 suggestion=(
-                    "Usar un modelo válido. Routers: 1841, 1941, 2811, 2901, 2911, ISR4321, ISR4331, Router-PT. "
-                    "Switches: 2950-24, 2950T-24, 2960-24TT, 3560-24PS, 3650-24PS, Switch-PT. "
-                    "End devices: PC-PT, Server-PT, Laptop-PT, TabletPC-PT, SMARTPHONE-PT, Printer-PT. "
-                    "Otros: Cloud-PT, AccessPoint-PT, Hub-PT, 5505, 5506-X, WLC-PT, DSL-Modem-PT, Cable-Modem-PT."
+                    "Usar un modelo válido. "
+                    "Routers: 1841, 1941, 2620XM, 2621XM, 2811, 2901, 2911, "
+                    "819HG-4G-IOX, 819HGW, 829, CGR1240, ISR4321, ISR4331, Router-PT, Router-PT-Empty. "
+                    "Switches: 2950-24, 2950T-24, 2960-24TT, 3560-24PS, 3650-24PS, IE-2000, "
+                    "Switch-PT, Switch-PT-Empty. "
+                    "End devices: PC-PT, Server-PT, Laptop-PT, TabletPC-PT, SMARTPHONE-PT, Printer-PT, "
+                    "WirelessEndDevice-PT, WiredEndDevice-PT, TV-PT, Home-VoIP-PT, Analog-Phone-PT, "
+                    "Embedded-Server-PT. "
+                    "Otros: Cloud-PT, Cloud-PT-Empty, AccessPoint-PT, AccessPoint-PT-A, "
+                    "AccessPoint-PT-N, AccessPoint-PT-AC, LAP-PT, 3702i, Hub-PT, Bridge-PT, "
+                    "Repeater-PT, CoAxialSplitter-PT, 5505, 5506-X, WLC-PT, WLC-2504, WLC-3504, "
+                    "DSL-Modem-PT, Cable-Modem-PT, Linksys-WRT300N, HomeRouter-PT-AC, "
+                    "7960, Cell-Tower, Central-Office-Server, 802, 803, Sniffer, "
+                    "MCU-PT, SBC-PT, DLC100, Meraki-MX65W, Meraki-Server, NetworkController, "
+                    "Power Distribution Device, Copper Patch Panel, Fiber Patch Panel, "
+                    "Copper Wall Mount, Fiber Wall Mount, Thing."
                 ),
             ))
 

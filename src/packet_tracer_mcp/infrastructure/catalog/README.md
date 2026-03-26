@@ -6,7 +6,7 @@ Esta carpeta es la **fuente de verdad** para qué dispositivos, puertos y cables
 
 ## Archivos
 
-### `devices.py` — Catálogo de dispositivos (33 modelos)
+### `devices.py` — Catálogo de dispositivos (74 modelos)
 
 **Modelos Pydantic:**
 - `PortSpec` — Especificación de puerto: `speed` (PortSpeed), `slot` (int), `full_name` (str completo como "GigabitEthernet0/0")
@@ -66,8 +66,8 @@ Esta carpeta es la **fuente de verdad** para qué dispositivos, puertos y cables
 ### `cables.py` — Tipos de cable y reglas de inferencia
 
 **Constantes:**
-- `CABLE_TYPES` — 5 tipos: `straight`, `cross`, `serial`, `fiber`, `console`
-- `CABLE_RULES` — 50+ reglas como tuplas `(category_a, category_b) → cable_type`
+- `CABLE_TYPES` — 15 tipos: `straight`, `cross`, `roll`, `serial`, `fiber`, `console`, `phone`, `cable`, `coaxial`, `auto`, `wireless`, `octal`, `cellular`, `usb`, `custom_io`
+- `CABLE_RULES` — 88 reglas como tuplas `(category_a, category_b) → cable_type`
 
 **Reglas principales:**
 | Combinación | Cable |
@@ -86,18 +86,18 @@ Infiere el cable correcto dadas dos categorías de dispositivo.
 
 ---
 
-### `aliases.py` — Aliases comunes para modelos
+### `aliases.py` — Aliases comunes para modelos (101 entradas)
 
 **Constante:** `MODEL_ALIASES: dict[str, str]`
 
 Mapea nombres informales a modelos del catálogo:
 ```
-"router" → "2911"     "switch" → "2960-24TT"    "pc" → "PC-PT"
-"server" → "Server-PT"  "laptop" → "Laptop-PT"    "cloud" → "Cloud-PT"
-"ap" → "AccessPoint-PT"  "cisco 2911" → "2911"     ...
+"router" → "2911"        "switch" → "2960-24TT"    "pc" → "PC-PT"
+"server" → "Server-PT"   "laptop" → "Laptop-PT"    "cloud" → "Cloud-PT"
+"ap" → "AccessPoint-PT"  "meraki" → "Meraki-MX65W" "iot" → "Thing" ...
 ```
 
-Usado por `resolve_model()` en `devices.py` para que el LLM pueda usar nombres naturales.
+Cubre 101 aliases para todos los tipos de dispositivo. Usado por `resolve_model()` en `devices.py` para que el LLM pueda usar nombres naturales.
 
 ---
 

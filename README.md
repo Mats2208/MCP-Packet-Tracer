@@ -17,7 +17,10 @@
   <img src="img/Foto2.png" alt="MCP server connected in Claude Code" width="700"/>
 </p>
 <p align="center"><em>MCP server connected in Claude Code — ready to receive tool calls</em></p>
-
+<p align="center">
+  <img src="img/LinuxCapture.png" alt="MCP server connected in Claude Code using Arch Linux" width="700"/>
+</p>
+<p align="center"><em>MCP server connected in Claude Code using Arch Linux — ready to receive tool calls</em></p>
 ---
 
 ## Table of Contents
@@ -68,7 +71,7 @@ Natural language prompt
 - Plan validation with 15 typed error codes + auto-fixer
 - Real-time deploy to a live Packet Tracer instance via HTTP bridge
 - Export plans, scripts and configs to files
-- 33 device models, 13 expansion modules, 8 cable types
+- 74 device models across 34 categories, 150 expansion modules, 15 cable types
 
 ---
 
@@ -176,7 +179,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 | Tool | Description |
 |------|-------------|
-| `pt_list_devices` | Lists all 33 supported devices with their port specs |
+| `pt_list_devices` | Lists all 74 supported devices with their port specs |
 | `pt_list_templates` | Lists available topology templates |
 | `pt_get_device_details` | Full port/interface details for a specific model |
 
@@ -252,7 +255,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 | URI | Description |
 |-----|-------------|
-| `pt://catalog/devices` | All 33 devices with ports and categories |
+| `pt://catalog/devices` | All 74 devices with ports and categories |
 | `pt://catalog/cables` | Cable types and inference rules |
 | `pt://catalog/aliases` | Model name aliases (e.g. `"router"` -> `"2911"`) |
 | `pt://catalog/templates` | Topology templates with default parameters |
@@ -294,24 +297,31 @@ This injects a `setInterval` into the PTBuilder webview that polls the bridge ev
 
 ## Supported Devices
 
-33 device models across 11 categories.
+74 device models across 34 categories.
 
-### Routers
+### Routers (15)
 
 | Model | Ports | Interface Name Format |
 |-------|-------|----------------------|
 | `1841` | 2x FastEthernet | Fa0/0, Fa0/1 |
-| `1941` | 2x GigabitEthernet | GigabitEthernet0/0, Gig0/1 |
+| `1941` | 2x GigabitEthernet | Gig0/0, Gig0/1 |
+| `2620XM` | 1x FastEthernet | Fa0/0 |
+| `2621XM` | 2x FastEthernet | Fa0/0, Fa0/1 |
 | `2811` | 2x FastEthernet | Fa0/0, Fa0/1 |
 | `2901` | 2x GigabitEthernet | Gig0/0, Gig0/1 |
 | **`2911`** | **3x GigabitEthernet** | **Gig0/0, Gig0/1, Gig0/2 — Default** |
+| `819HG-4G-IOX` | 1x Gig + 1x Fa | Gig0, Fa0 |
+| `819HGW` | 1x Gig + 1x Fa | Gig0, Fa0 |
+| `829` | 2x GigabitEthernet | Gig0, Gig1 |
+| `CGR1240` | 2x GigabitEthernet | Gig0/0, Gig0/1 |
 | `ISR4321` | 2x GigabitEthernet | Gig0/0/0, Gig0/0/1 |
 | `ISR4331` | 3x GigabitEthernet | Gig0/0/0, Gig0/0/1, Gig0/0/2 |
 | `Router-PT` | 2x FastEthernet | Fa0/0, Fa0/1 — Generic |
+| `Router-PT-Empty` | none | No ports (add via modules) |
 
 > **Note:** No router has Serial ports by default. Serial requires physical HWIC or NIM modules — see [Expansion Modules](#expansion-modules).
 
-### Switches — Layer 2
+### Switches — Layer 2 (5)
 
 | Model | Ports | Notes |
 |-------|-------|-------|
@@ -319,15 +329,17 @@ This injects a `setInterval` into the PTBuilder webview that polls the bridge ev
 | `2950T-24` | 24x Fa0/1-24 + 2x Gig0/1-2 | |
 | **`2960-24TT`** | 24x Fa0/1-24 + 2x Gig0/1-2 | **Default switch** |
 | `Switch-PT` | 8x Fa0/0-7 | Generic |
+| `Switch-PT-Empty` | none | No ports (add via modules) |
 
-### Switches — Layer 3
+### Switches — Layer 3 (3)
 
 | Model | Ports | Notes |
 |-------|-------|-------|
 | `3560-24PS` | 24x Fa0/1-24 + 2x Gig0/1-2 | L3 routing capable |
 | `3650-24PS` | 24x Fa0/1-24 + 2x Gig0/1-2 | L3 routing capable |
+| `IE-2000` | 8x Fa0/1-8 + 2x Gig0/1-2 | Industrial Ethernet |
 
-### End Devices
+### End Devices (12)
 
 | Model | Category | Port | Notes |
 |-------|----------|------|-------|
@@ -337,52 +349,144 @@ This injects a `setInterval` into the PTBuilder webview that polls the bridge ev
 | `TabletPC-PT` | `pc` | FastEthernet0 | |
 | `SMARTPHONE-PT` | `pc` | FastEthernet0 | |
 | `Printer-PT` | `pc` | FastEthernet0 | |
+| `WirelessEndDevice-PT` | `wireless_end_device` | — | Wireless-only end device |
+| `WiredEndDevice-PT` | `wired_end_device` | FastEthernet0 | |
+| `TV-PT` | `tv` | FastEthernet0 | |
+| `Home-VoIP-PT` | `voip` | FastEthernet0 | Home VoIP phone |
+| `Analog-Phone-PT` | `analog_phone` | Phone0 | |
+| `Embedded-Server-PT` | `embedded_server` | FastEthernet0 | |
 
-### Wireless & Security
+### Access Points & Wireless (8)
 
 | Model | Category | Ports | Notes |
 |-------|----------|-------|-------|
 | `AccessPoint-PT` | `accesspoint` | Port 0 | Standard AP |
+| `AccessPoint-PT-A` | `accesspoint` | Port 0 | 802.11a |
 | `AccessPoint-PT-N` | `accesspoint` | Port 0 | 802.11n |
 | `AccessPoint-PT-AC` | `accesspoint` | Port 0 | 802.11ac |
 | `LAP-PT` | `accesspoint` | Port 0 | Lightweight AP (managed by WLC) |
-| `WLC-PT` | `wlc` | Gig1-Gig8 | Wireless LAN Controller |
+| `3702i` | `accesspoint` | GigabitEthernet0 | Cisco 3702i AP |
+| `802` | `accesspoint` | Fa0 | Cisco 802 Wireless Bridge |
+| `803` | `accesspoint` | Fa0 | Cisco 803 Wireless Bridge |
+
+### Security (2)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `5505` | `firewall` | 8x Fa0/0-Fa0/7 | Cisco ASA 5505 |
+| `5506-X` | `firewall` | 8x Gig1/0-Gig1/7 | Cisco ASA 5506-X — Default |
+
+### Wireless LAN Controllers (3)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `WLC-PT` | `wlc` | Gig1-Gig8 | Generic WLC |
 | `WLC-2504` | `wlc` | Gig1-Gig4 | Cisco WLC 2504 |
 | `WLC-3504` | `wlc` | Gig1-Gig4 | Cisco WLC 3504 |
-| `5505` | `firewall` | Fa0/0-Fa0/7 | Cisco ASA 5505 |
-| `5506-X` | `firewall` | Gig1/0-Gig1/7 | Cisco ASA 5506-X |
 
-### Other Devices
+### Cloud / WAN (2)
 
 | Model | Category | Ports | Notes |
 |-------|----------|-------|-------|
 | `Cloud-PT` | `cloud` | Ethernet6 | WAN simulation |
-| `Hub-PT` | `hub` | Port 0-7 (8 ports) | |
+| `Cloud-PT-Empty` | `cloud` | none | Empty cloud (add via modules) |
+
+### Network Connectivity (4)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `Hub-PT` | `hub` | Port 0-7 (8 ports) | Layer 1 hub |
+| `Bridge-PT` | `bridge` | Port 0, Port 1 | |
+| `Repeater-PT` | `repeater` | Port 0, Port 1 | |
+| `CoAxialSplitter-PT` | `splitter` | Coaxial0-3 | 4-port coaxial splitter |
+
+### Modems (2)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
 | `DSL-Modem-PT` | `modem` | Ethernet0, Coaxial0 | |
 | `Cable-Modem-PT` | `modem` | Ethernet0, Coaxial0 | |
 
+### Home / Consumer Routers (2)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `Linksys-WRT300N` | `wireless_router` | Internet + 4x Ethernet | Linksys WRT300N |
+| `HomeRouter-PT-AC` | `home_gateway` | Internet + 4x Ethernet | Home Router AC |
+
+### IP Phone (1)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `7960` | `ip_phone` | Port 0 (switch), PC Port | Cisco IP Phone 7960 |
+
+### Meraki / SDN (2)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `Meraki-MX65W` | `meraki` | 12x GigabitEthernet | Meraki MX65W |
+| `Meraki-Server` | `meraki` | Gig0 | Meraki Dashboard Server |
+
+### Network Controllers (2)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `NetworkController` | `network_controller` | Gig0 | Generic SDN controller |
+| `DLC100` | `network_controller` | Fa0 | DWDM DLC-100 |
+
+### Telecom / Special (3)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `Cell-Tower` | `cell_tower` | Coaxial0 | Cellular tower |
+| `Central-Office-Server` | `central_office` | Ethernet0 | Telco central office |
+| `Sniffer` | `sniffer` | FastEthernet0 | Packet capture |
+
+### Embedded / IoT (3)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `MCU-PT` | `mcu` | — | Microcontroller (no fixed ports) |
+| `SBC-PT` | `sbc` | FastEthernet0 | Single Board Computer |
+| `Thing` | `iot` | — | Generic IoT device (represents ~80 IoT types) |
+
+### Physical Infrastructure (7)
+
+| Model | Category | Ports | Notes |
+|-------|----------|-------|-------|
+| `Copper Patch Panel` | `patch_panel` | 24x FastEthernet | |
+| `Fiber Patch Panel` | `patch_panel` | 24x Fiber | |
+| `Copper Wall Mount` | `wall_mount` | Fa0, Fa1 | |
+| `Fiber Wall Mount` | `wall_mount` | Fiber0, Fiber1 | |
+| `Power Distribution Device` | `power_dist` | — | |
+
 ### Device Aliases
 
-Common names the LLM can use that resolve to actual models:
+101 aliases total — common names the LLM can use that resolve to actual models:
 
-| Alias | Resolves to |
-|-------|-------------|
-| `router` | `2911` |
-| `switch` | `2960-24TT` |
-| `pc`, `computer` | `PC-PT` |
-| `server` | `Server-PT` |
-| `laptop` | `Laptop-PT` |
-| `tablet` | `TabletPC-PT` |
-| `smartphone`, `phone` | `SMARTPHONE-PT` |
-| `printer` | `Printer-PT` |
-| `cloud`, `wan` | `Cloud-PT` |
-| `ap`, `wifi`, `access_point` | `AccessPoint-PT` |
-| `hub` | `Hub-PT` |
-| `firewall`, `asa` | `5506-X` |
-| `wlc`, `wireless_controller` | `WLC-PT` |
-| `lap`, `lightweight_ap` | `LAP-PT` |
-| `dsl`, `modem` | `DSL-Modem-PT` |
-| `cable_modem` | `Cable-Modem-PT` |
+| Alias | Resolves to | Alias | Resolves to |
+|-------|-------------|-------|-------------|
+| `router` | `2911` | `switch` | `2960-24TT` |
+| `pc`, `computer` | `PC-PT` | `server` | `Server-PT` |
+| `laptop` | `Laptop-PT` | `tablet` | `TabletPC-PT` |
+| `smartphone`, `phone` | `SMARTPHONE-PT` | `printer` | `Printer-PT` |
+| `cloud`, `wan` | `Cloud-PT` | `ap`, `wifi` | `AccessPoint-PT` |
+| `hub` | `Hub-PT` | `firewall`, `asa` | `5506-X` |
+| `wlc`, `wireless_controller` | `WLC-PT` | `lap`, `lightweight_ap` | `LAP-PT` |
+| `dsl`, `modem` | `DSL-Modem-PT` | `cable_modem` | `Cable-Modem-PT` |
+| `2911`, `2901`, `1941` | (direct) | `isr4321`, `4321` | `ISR4321` |
+| `3560`, `3650`, `ie2000` | (direct) | `5505`, `5506`, `5506x` | (direct) |
+| `ip_phone`, `7960` | `7960` | `meraki` | `Meraki-MX65W` |
+| `bridge` | `Bridge-PT` | `repeater` | `Repeater-PT` |
+| `sniffer` | `Sniffer` | `mcu`, `microcontroller` | `MCU-PT` |
+| `sbc`, `raspberry` | `SBC-PT` | `iot`, `thing`, `sensor` | `Thing` |
+| `meraki_server` | `Meraki-Server` | `network_controller` | `NetworkController` |
+| `linksys`, `wrt300n` | `Linksys-WRT300N` | `home_router` | `HomeRouter-PT-AC` |
+| `tv` | `TV-PT` | `voip`, `home_voip` | `Home-VoIP-PT` |
+| `analog_phone` | `Analog-Phone-PT` | `patch_panel` | `Copper Patch Panel` |
+| `cell_tower` | `Cell-Tower` | `dwdm`, `dlc100` | `DLC100` |
+
+See `infrastructure/catalog/aliases.py` for the full 101-entry list.
 
 ---
 
@@ -445,7 +549,7 @@ The server infers the correct cable automatically from the two device categories
 
 ## Expansion Modules
 
-Expansion modules add extra ports to devices at runtime. The generator emits `addModule()` calls **after** `addDevice()` and **before** `addLink()`, which is the required PTBuilder execution order.
+150 expansion modules across 26 module categories. They add extra ports to devices at runtime. The generator emits `addModule()` calls **after** `addDevice()` and **before** `addLink()`, which is the required PTBuilder execution order.
 
 ```javascript
 addDevice("R1", "2911", 100, 100);
@@ -471,15 +575,46 @@ addLink("R1", "Serial0/0/0", "R2", "Serial0/0/0", "serial");
 |--------|-----------|-------------|-------------|
 | `NIM-2T` | NIM | Serial0/1/0, Serial0/1/1 | 2-port Serial for ISR 4000 series |
 | `NIM-ES2-4` | NIM | Gig0/1/0-Gig0/1/3 | 4-port GE Layer 2 |
+| `NIM-Cover` | NIM | — | NIM slot cover plate |
 
-### NM Modules — legacy routers
+### NM Modules — legacy routers (14 total)
 
 | Module | Slot Type | Ports Added | Description |
 |--------|-----------|-------------|-------------|
-| `NM-1FE-TX` | NM | FastEthernet1/0 | 1-port FastEthernet |
+| `NM-1E` | NM | Ethernet1/0 | 1-port Ethernet |
+| `NM-1FE-TX` | NM | FastEthernet1/0 | 1-port FastEthernet (copper) |
+| `NM-1FE-FX` | NM | FastEthernet1/0 | 1-port FastEthernet (fiber) |
 | `NM-2FE2W` | NM | Fa1/0, Fa1/1 | 2-port FastEthernet + 2 WIC slots |
+| `NM-4E` | NM | Eth1/0-1/3 | 4-port Ethernet |
 | `NM-4A/S` | NM | Serial1/0-1/3 | 4-port Async/Sync Serial |
+| `NM-8A/S` | NM | Serial1/0-1/7 | 8-port Async/Sync Serial |
+| `NM-8AM` | NM | Modem1/0-1/7 | 8-port Analog Modem |
 | `NM-ESW-161` | NM | Fa1/0-Fa1/15 | 16-port Ethernet switch module |
+
+### Other Module Families
+
+The catalog contains 150 modules total across all device types:
+
+| Module Family | Count | Applies To |
+|---------------|-------|------------|
+| Router NM (Type 1) | 14 | Legacy routers |
+| Router HWIC/WIC/NIM (Type 2) | 16 | 1941, 2901, 2911, ISR4321/4331 |
+| PT Router NM (Type 3) | 9 | Router-PT |
+| PT Switch NM (Type 4) | 8 | Switch-PT |
+| PT Cloud NM (Type 5) | 8 | Cloud-PT |
+| PT Repeater NM (Type 6) | 6 | Repeater-PT |
+| PT Host NM (Type 7) | 12 | PC-PT, Server-PT |
+| PT Modem NM (Type 8) | 3 | DSL/Cable Modem |
+| PT Laptop NM (Type 9) | 11 | Laptop-PT |
+| PT TabletPC NM (Type 12) | 10 | TabletPC-PT |
+| PT PDA/Smartphone NM (Type 13) | 10 | SMARTPHONE-PT |
+| PT Wireless End Device NM (Type 14) | 8 | WirelessEndDevice-PT |
+| PT Wired End Device NM (Type 15) | 7 | WiredEndDevice-PT |
+| SFP modules (Type 30) | 5 | 3560, 3650, ISR4000 |
+| Built-in factory modules (Type 32) | 5 | 3650, ISR4321/4331 |
+| IoT / Cell / Audio / Power | 17 | IoT, Cell Tower, IP Phone, AP |
+
+See `infrastructure/catalog/modules.py` for the complete list.
 
 ### Automatic serial module selection
 
@@ -587,10 +722,10 @@ src/packet_tracer_mcp/
 │
 ├── infrastructure/
 │   ├── catalog/
-│   │   ├── devices.py             # 33 DeviceModel definitions with port specs
-│   │   ├── modules.py             # 13 expansion module specs (HWIC, NIM, NM, WIC)
-│   │   ├── cables.py              # Cable types, PT codes, inference rules
-│   │   ├── aliases.py             # Model name alias resolution (~50 entries)
+│   │   ├── devices.py             # 74 DeviceModel definitions across 34 categories
+│   │   ├── modules.py             # 150 expansion module specs (NM, HWIC, NIM, WIC, SFP...)
+│   │   ├── cables.py              # 15 cable types, PT codes, 88 inference rules
+│   │   ├── aliases.py             # 101 model name aliases
 │   │   └── templates.py           # 9 topology template definitions
 │   ├── generator/
 │   │   ├── ptbuilder_generator.py # Generates addDevice/addModule/addLink JS

@@ -1,9 +1,0 @@
-{
-  "servers": {
-    "packet-tracer": {
-      "command": "python",
-      "args": ["-m", "packet_tracer_mcp", "--stdio"],
-      "cwd": "/Users/mateosoto/PROYECTOS/MCP-Packet-Tracer"
-    }
-  }
-}

@@ -31,20 +31,94 @@ MODEL_ALIASES: dict[str, str] = {
     # Routers by model number
     "1841":         "1841",
     "1941":         "1941",
+    "2620xm":       "2620XM",
+    "2621xm":       "2621XM",
     "2811":         "2811",
     "2901":         "2901",
     "2911":         "2911",
+    "819hg":        "819HG-4G-IOX",
+    "819hgw":       "819HGW",
+    "829":          "829",
+    "cgr1240":      "CGR1240",
     "4321":         "ISR4321",
     "isr4321":      "ISR4321",
     "4331":         "ISR4331",
     "isr4331":      "ISR4331",
+    "router_empty": "Router-PT-Empty",
     # Switches by model number
     "2950":         "2950-24",
     "2960":         "2960-24TT",
     "3560":         "3560-24PS",
     "3650":         "3650-24PS",
+    "ie2000":       "IE-2000",
+    "ie-2000":      "IE-2000",
+    "switch_empty": "Switch-PT-Empty",
     # ASA firewalls
     "5505":         "5505",
     "5506":         "5506-X",
     "5506x":        "5506-X",
+    # Wireless / Home routers
+    "linksys":      "Linksys-WRT300N",
+    "wrt300n":      "Linksys-WRT300N",
+    "home_router":  "HomeRouter-PT-AC",
+    "home_gateway": "HomeRouter-PT-AC",
+    # End devices
+    "tv":           "TV-PT",
+    "voip":         "Home-VoIP-PT",
+    "home_voip":    "Home-VoIP-PT",
+    "analog_phone": "Analog-Phone-PT",
+    "wireless_device": "WirelessEndDevice-PT",
+    "wired_device": "WiredEndDevice-PT",
+    "embedded_server": "Embedded-Server-PT",
+    # IP Phone
+    "ip_phone":     "7960",
+    "7960":         "7960",
+    "cisco_phone":  "7960",
+    # Network Infrastructure
+    "bridge":       "Bridge-PT",
+    "repeater":     "Repeater-PT",
+    "splitter":     "CoAxialSplitter-PT",
+    "coaxial_splitter": "CoAxialSplitter-PT",
+    # Access Points extended
+    "ap_a":         "AccessPoint-PT-A",
+    "ap_n":         "AccessPoint-PT-N",
+    "ap_ac":        "AccessPoint-PT-AC",
+    "3702i":        "3702i",
+    # Telecom
+    "cell_tower":   "Cell-Tower",
+    "central_office": "Central-Office-Server",
+    # Special devices
+    "sniffer":      "Sniffer",
+    "mcu":          "MCU-PT",
+    "microcontroller": "MCU-PT",
+    "sbc":          "SBC-PT",
+    "single_board": "SBC-PT",
+    "raspberry":    "SBC-PT",
+    # DWDM
+    "dlc100":       "DLC100",
+    "dwdm":         "DLC100",
+    # Meraki
+    "meraki":       "Meraki-MX65W",
+    "meraki_mx65w": "Meraki-MX65W",
+    "meraki_server": "Meraki-Server",
+    # Network Controller
+    "network_controller": "NetworkController",
+    "controller":   "NetworkController",
+    # Infrastructure
+    "patch_panel":  "Copper Patch Panel",
+    "copper_patch": "Copper Patch Panel",
+    "fiber_patch":  "Fiber Patch Panel",
+    "wall_mount":   "Copper Wall Mount",
+    "copper_wall":  "Copper Wall Mount",
+    "fiber_wall":   "Fiber Wall Mount",
+    "power_dist":   "Power Distribution Device",
+    # Cloud variants
+    "cloud_empty":  "Cloud-PT-Empty",
+    # IoT generic
+    "thing":        "Thing",
+    "iot":          "Thing",
+    "sensor":       "Thing",
+    # Wireless bridges
+    "802":          "802",
+    "803":          "803",
 }
