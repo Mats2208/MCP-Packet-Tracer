@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PT-MCP Control Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* ================================================================
+           DESIGN TOKENS
+        ================================================================ */
+        :root {
+            --bg-base:        #0d0f1a;
+            --bg-panel:       #131622;
+            --bg-surface:     #1a1d2e;
+            --bg-surface2:    #1f2235;
+            --bg-input:       #10121f;
+            --bg-hover:       #252840;
+
+            --text-primary:   #e8eaf0;
+            --text-secondary: #8b90a7;
+            --text-muted:     #545873;
+            --text-dim:       #3a3e54;
+
+            --accent:         #4f8ef7;
+            --accent-glow:    rgba(79,142,247,0.2);
+            --accent-dim:     #3a6bc4;
+            --green:          #3ecf8e;
+            --green-glow:     rgba(62,207,142,0.2);
+            --yellow:         #f5a623;
+            --yellow-glow:    rgba(245,166,35,0.15);
+            --red:            #f06292;
+            --red-glow:       rgba(240,98,146,0.2);
+            --purple:         #b39ddb;
+            --cyan:           #4dd0e1;
+
+            --border:         rgba(255,255,255,0.06);
+            --border-strong:  rgba(255,255,255,0.1);
+            --separator:      rgba(255,255,255,0.04);
+
+            --radius-sm:      4px;
+            --radius:         8px;
+            --radius-lg:      12px;
+
+            --font-ui:   'Inter', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+            --transition: 150ms ease;
+        }
+
+        /* ================================================================
+           RESET & BASE
+        ================================================================ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            font-size: 12.5px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ================================================================
+           LAYOUT
+        ================================================================ */
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ================================================================
+           HEADER
+        ================================================================ */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            height: 38px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(79,142,247,0.04) 0%, transparent 60%);
+            pointer-events: none;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .app-logo {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logo-icon {
+            width: 18px; height: 18px;
+            background: linear-gradient(135deg, var(--accent) 0%, #6e5ef7 100%);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: #fff;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 0.3px;
+        }
+
+        .version-badge {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--accent);
+            background: var(--accent-glow);
+            border: 1px solid rgba(79,142,247,0.25);
+            border-radius: 3px;
+            padding: 1px 5px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Connection status */
+        .conn-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .conn-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 0 2px var(--red-glow);
+            flex-shrink: 0;
+            transition: background var(--transition), box-shadow var(--transition);
+        }
+        .conn-dot.connected {
+            background: var(--green);
+            box-shadow: 0 0 0 2px var(--green-glow);
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+        .conn-dot.bridge-only {
+            background: var(--yellow);
+            box-shadow: 0 0 0 2px var(--yellow-glow);
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 2px var(--green-glow); }
+            50% { box-shadow: 0 0 0 5px var(--green-glow); }
+        }
+
+        .conn-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ================================================================
+           TABS (nav)
+        ================================================================ */
+        .tab-nav {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 0 6px;
+            height: 34px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: var(--font-ui);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: color var(--transition), background var(--transition);
+            position: relative;
+        }
+
+        .tab-btn:hover { color: var(--text-secondary); background: var(--bg-hover); }
+
+        .tab-btn.active {
+            color: var(--accent);
+            background: rgba(79,142,247,0.08);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0; right: 0;
+            height: 2px;
+            background: var(--accent);
+            border-radius: 2px 2px 0 0;
+        }
+
+        .tab-icon { font-size: 12px; }
+
+        .tab-badge {
+            background: var(--red);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            border-radius: 10px;
+            padding: 0 4px;
+            min-width: 14px;
+            text-align: center;
+            display: none;
+        }
+        .tab-badge.active { display: inline-block; }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 8px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .toolbar-sep { width: 1px; height: 16px; background: var(--border-strong); margin: 0 3px; }
+
+        .toolbar-spacer { flex: 1; }
+
+        /* ================================================================
+           BUTTONS
+        ================================================================ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 9px;
+            border-radius: var(--radius-sm);
+            border: 1px solid transparent;
+            font-family: var(--font-ui);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        .btn-run {
+            background: rgba(62,207,142,0.12);
+            border-color: rgba(62,207,142,0.25);
+            color: var(--green);
+        }
+        .btn-run:hover { background: rgba(62,207,142,0.2); border-color: rgba(62,207,142,0.4); }
+
+        .btn-accent {
+            background: var(--accent-glow);
+            border-color: rgba(79,142,247,0.3);
+            color: var(--accent);
+        }
+        .btn-accent:hover { background: rgba(79,142,247,0.25); }
+
+        .btn-ghost {
+            background: transparent;
+            border-color: var(--border-strong);
+            color: var(--text-secondary);
+        }
+        .btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        .btn-danger {
+            background: rgba(240,98,146,0.1);
+            border-color: rgba(240,98,146,0.2);
+            color: var(--red);
+        }
+        .btn-danger:hover { background: rgba(240,98,146,0.2); }
+
+        .btn-warn {
+            background: rgba(245,166,35,0.1);
+            border-color: rgba(245,166,35,0.2);
+            color: var(--yellow);
+        }
+        .btn-warn:hover { background: rgba(245,166,35,0.2); }
+
+        .btn-build {
+            background: linear-gradient(135deg, var(--accent), #6e5ef7);
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            padding: 6px 18px;
+            font-size: 12px;
+            border-radius: var(--radius);
+        }
+        .btn-build:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(79,142,247,0.3); }
+        .btn-build:active { transform: none; }
+
+        /* ================================================================
+           TAB PANES
+        ================================================================ */
+        .panes {
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+            position: relative;
+        }
+
+        .pane {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+        .pane.active { display: flex; }
+
+        /* ================================================================
+           EDITOR PANE
+        ================================================================ */
+        .editor-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            padding: 6px 8px 8px;
+            gap: 6px;
+        }
+
+        .editor-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .editor-meta-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .save-indicator {
+            font-size: 10px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .save-indicator.saved { color: var(--green); }
+
+        .history-select {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-family: var(--font-ui);
+            font-size: 10.5px;
+            padding: 2px 6px;
+            cursor: pointer;
+            max-width: 160px;
+        }
+        .history-select option { background: var(--bg-surface2); }
+
+        .editor-shortcuts {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .kbd {
+            display: inline-block;
+            background: var(--bg-surface2);
+            border: 1px solid var(--border-strong);
+            border-radius: 3px;
+            padding: 0 4px;
+            font-family: var(--font-mono);
+            font-size: 9.5px;
+            color: var(--text-secondary);
+        }
+
+        #codeeditor {
+            flex: 1;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius);
+            font-family: var(--font-mono);
+            font-size: 12.5px;
+            line-height: 1.65;
+            resize: none;
+            padding: 10px 12px;
+            width: 100%;
+            outline: none;
+            transition: border-color var(--transition), box-shadow var(--transition);
+            min-height: 0;
+            tab-size: 2;
+        }
+        #codeeditor:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        #codeeditor::placeholder { color: var(--text-dim); }
+
+        /* ================================================================
+           TERMINAL PANE
+        ================================================================ */
+        .terminal-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 8px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .filter-btn {
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border-strong);
+            background: transparent;
+            font-family: var(--font-ui);
+            font-size: 10.5px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+        .filter-btn:hover { color: var(--text-secondary); border-color: var(--border-strong); background: var(--bg-hover); }
+        .filter-btn.active {
+            color: var(--accent);
+            border-color: rgba(79,142,247,0.4);
+            background: var(--accent-glow);
+        }
+
+        .filter-btn.f-err.active  { color: var(--red);    border-color: rgba(240,98,146,0.4);  background: var(--red-glow); }
+        .filter-btn.f-cmd.active  { color: var(--purple); border-color: rgba(179,157,219,0.4); background: rgba(179,157,219,0.1); }
+        .filter-btn.f-recv.active { color: var(--cyan);   border-color: rgba(77,208,225,0.4);  background: rgba(77,208,225,0.1); }
+
+        .log-search {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            font-size: 11px;
+            padding: 2px 7px;
+            outline: none;
+            transition: border-color var(--transition);
+            max-width: 200px;
+        }
+        .log-search:focus { border-color: var(--accent); }
+        .log-search::placeholder { color: var(--text-dim); }
+
+        .log-count {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        #logPanel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            line-height: 1.7;
+            min-height: 0;
+            background: var(--bg-base);
+        }
+
+        #logPanel::-webkit-scrollbar { width: 5px; }
+        #logPanel::-webkit-scrollbar-track { background: transparent; }
+        #logPanel::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+        .log-line {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            padding: 1px 10px;
+            transition: background var(--transition);
+        }
+        .log-line:hover { background: var(--bg-surface); }
+
+        .log-ts {
+            color: var(--text-dim);
+            font-size: 10px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            min-width: 56px;
+        }
+
+        .log-tag {
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .log-msg { word-break: break-all; }
+
+        .log-line.info .log-tag { color: var(--accent);  background: var(--accent-glow); }
+        .log-line.ok   .log-tag { color: var(--green);   background: var(--green-glow); }
+        .log-line.warn .log-tag { color: var(--yellow);  background: var(--yellow-glow); }
+        .log-line.err  .log-tag { color: var(--red);     background: var(--red-glow); }
+        .log-line.cmd  .log-tag { color: var(--purple);  background: rgba(179,157,219,0.12); }
+        .log-line.recv .log-tag { color: var(--cyan);    background: rgba(77,208,225,0.1); }
+
+        .log-line.err  .log-msg { color: var(--red); }
+        .log-line.ok   .log-msg { color: rgba(232,234,240,0.8); }
+
+        .log-highlight { background: rgba(245,166,35,0.25); border-radius: 2px; }
+
+        .log-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 8px;
+            color: var(--text-dim);
+        }
+        .log-empty-icon { font-size: 28px; opacity: 0.4; }
+        .log-empty-text { font-size: 11px; }
+
+        /* ================================================================
+           STATUS PANE
+        ================================================================ */
+        .status-wrap {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .status-wrap::-webkit-scrollbar { width: 5px; }
+        .status-wrap::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--color, var(--border));
+            opacity: 0.7;
+        }
+
+        .stat-card.ok   { --color: var(--green); }
+        .stat-card.err  { --color: var(--red); }
+        .stat-card.warn { --color: var(--yellow); }
+        .stat-card.info { --color: var(--accent); }
+
+        .stat-label {
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+        }
+
+        .stat-value.ok   { color: var(--green); }
+        .stat-value.err  { color: var(--red); }
+        .stat-value.warn { color: var(--yellow); }
+        .stat-value.info { color: var(--accent); }
+
+        .stat-sub {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Sparkline */
+        .sparkline-section {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+        }
+
+        .section-title {
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        #sparkline {
+            width: 100%;
+            height: 36px;
+            display: block;
+        }
+
+        /* Bootstrap snippet */
+        .bootstrap-section {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+        }
+
+        .bootstrap-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .snippet-wrap {
+            position: relative;
+        }
+
+        .snippet-code {
+            background: var(--bg-input);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            padding: 8px 10px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--cyan);
+            overflow-x: auto;
+            white-space: nowrap;
+            line-height: 1.5;
+        }
+
+        .snippet-code::-webkit-scrollbar { height: 3px; }
+        .snippet-code::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+        .snippet-copy-btn {
+            margin-top: 6px;
+        }
+
+        /* Connection timeline */
+        .timeline {
+            height: 6px;
+            background: var(--bg-input);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .timeline-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--red), var(--yellow) 40%, var(--green));
+            border-radius: 3px;
+            transition: width 500ms ease;
+            width: 0%;
+        }
+
+        /* ================================================================
+           QUICK BUILD PANE
+        ================================================================ */
+        .qb-wrap {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .qb-wrap::-webkit-scrollbar { width: 5px; }
+        .qb-wrap::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+        .qb-section {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .form-row:last-child { margin-bottom: 0; }
+
+        .form-field { display: flex; flex-direction: column; gap: 3px; }
+        .form-field.full { grid-column: 1 / -1; }
+
+        .form-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .form-select, .form-input {
+            background: var(--bg-input);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            font-size: 11.5px;
+            padding: 4px 7px;
+            outline: none;
+            transition: border-color var(--transition);
+            width: 100%;
+        }
+        .form-select option { background: var(--bg-surface2); }
+        .form-select:focus, .form-input:focus { border-color: var(--accent); }
+
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-range {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 4px;
+            background: var(--bg-input);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+        .form-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+        }
+
+        .range-val {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 20px;
+            text-align: right;
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .toggle-label-text {
+            font-size: 11.5px;
+            color: var(--text-secondary);
+        }
+
+        .toggle {
+            position: relative;
+            width: 32px; height: 17px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--bg-input);
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+            transition: all var(--transition);
+        }
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 11px; height: 11px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            left: 2px; top: 2px;
+            transition: all var(--transition);
+        }
+        .toggle input:checked + .toggle-slider { background: var(--accent-glow); border-color: rgba(79,142,247,0.4); }
+        .toggle input:checked + .toggle-slider::before { transform: translateX(15px); background: var(--accent); }
+
+        .qb-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .qb-preview {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 4px 8px;
+            flex: 1;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        /* ================================================================
+           SCROLLBARS
+        ================================================================ */
+        *::-webkit-scrollbar { width: 5px; height: 5px; }
+        *::-webkit-scrollbar-track { background: transparent; }
+        *::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+        /* ================================================================
+           NOTIFICATION STRIP
+        ================================================================ */
+        .notif-strip {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(240,98,146,0.1);
+            border-bottom: 1px solid rgba(240,98,146,0.2);
+            font-size: 11px;
+            color: var(--red);
+            flex-shrink: 0;
+        }
+        .notif-strip.active { display: flex; }
+        .notif-close { margin-left: auto; cursor: pointer; opacity: 0.7; }
+        .notif-close:hover { opacity: 1; }
+
+        /* ================================================================
+           BOTTOM STATUS BAR
+        ================================================================ */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 10px;
+            height: 20px;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .status-bar-item { display: flex; align-items: center; gap: 4px; }
+        .status-bar-dot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+        .status-bar-dot.ok { background: var(--green); }
+        .status-bar-dot.err { background: var(--red); }
+        .status-bar-dot.warn { background: var(--yellow); }
+
+        .status-bar-sep { width: 1px; height: 10px; background: var(--border-strong); }
+    </style>
+</head>
+
+<body>
+<div class="app">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <div class="app-logo">
+                <div class="logo-icon">PT</div>
+                <span class="app-title">MCP Control Center</span>
+            </div>
+            <span class="version-badge">v3</span>
+        </div>
+        <div class="conn-status">
+            <div class="conn-dot" id="connDot"></div>
+            <span class="conn-label" id="connLabel">Bridge: offline</span>
+        </div>
+    </div>
+
+    <!-- NOTIFICATION STRIP -->
+    <div class="notif-strip" id="notifStrip">
+        <span>⚠</span>
+        <span id="notifMsg"></span>
+        <span class="notif-close" onclick="closeNotif()">✕</span>
+    </div>
+
+    <!-- TAB NAV -->
+    <div class="tab-nav">
+        <button class="tab-btn active" id="tab-editor" onclick="switchTab('editor')">
+            <span class="tab-icon">✏️</span> Editor
+        </button>
+        <button class="tab-btn" id="tab-terminal" onclick="switchTab('terminal')">
+            <span class="tab-icon">📟</span> Terminal
+            <span class="tab-badge" id="errBadge">0</span>
+        </button>
+        <button class="tab-btn" id="tab-status" onclick="switchTab('status')">
+            <span class="tab-icon">📊</span> Status
+        </button>
+        <button class="tab-btn" id="tab-quickbuild" onclick="switchTab('quickbuild')">
+            <span class="tab-icon">⚡</span> Quick Build
+        </button>
+    </div>
+
+    <!-- EDITOR TOOLBAR -->
+    <div class="toolbar" id="editor-toolbar">
+        <button class="btn btn-run" onclick="executeCode()" title="Run (Ctrl+Enter)">▶ Run</button>
+        <div class="toolbar-sep"></div>
+        <button class="btn btn-ghost" onclick="pasteFromClipboard()">⬇ Paste</button>
+        <button class="btn btn-ghost" onclick="copyToClipboard()">⬆ Copy</button>
+        <div class="toolbar-sep"></div>
+        <button class="btn btn-danger" onclick="clearEditor()">✕ Clear</button>
+        <div class="toolbar-spacer"></div>
+        <button class="btn btn-warn" onclick="clearLog()" title="Clear log">🗑 Clear Log</button>
+    </div>
+
+    <!-- PANES -->
+    <div class="panes">
+
+        <!-- ── EDITOR ── -->
+        <div class="pane active" id="pane-editor">
+            <div class="editor-wrap">
+                <div class="editor-meta">
+                    <div class="editor-meta-left">
+                        <select class="history-select" id="historySelect" onchange="loadFromHistory(this.value)" title="Script history">
+                            <option value="">— History —</option>
+                        </select>
+                        <span class="save-indicator" id="saveIndicator">● auto-save</span>
+                    </div>
+                    <span class="editor-shortcuts">
+                        <span class="kbd">Ctrl+Enter</span> Run &nbsp;
+                        <span class="kbd">Ctrl+K</span> Clear &nbsp;
+                        <span class="kbd">↑↓</span> History
+                    </span>
+                </div>
+                <textarea id="codeeditor"
+                    placeholder="// Enter PTBuilder commands here...
+// Examples:
+//   addDevice('R1', '2911', 200, 200)
+//   addDevice('PC1', 'PC-PT', 400, 200)
+//   addLink('R1', 'GigabitEthernet0/0', 'PC1', 'FastEthernet0')
+//
+// Use Quick Build tab to generate a full topology automatically."
+                    oninput="onEditorInput()"
+                    onkeydown="editorKeyDown(event)"></textarea>
+            </div>
+        </div>
+
+        <!-- ── TERMINAL ── -->
+        <div class="pane" id="pane-terminal">
+            <div class="terminal-toolbar">
+                <button class="filter-btn active" id="f-all" onclick="setFilter('all')">All</button>
+                <button class="filter-btn f-err" id="f-err" onclick="setFilter('err')">Errors</button>
+                <button class="filter-btn f-cmd" id="f-cmd" onclick="setFilter('cmd')">Commands</button>
+                <button class="filter-btn f-recv" id="f-recv" onclick="setFilter('recv')">Received</button>
+                <div class="toolbar-sep"></div>
+                <input class="log-search" id="logSearch" type="text" placeholder="🔍 Search logs…" oninput="renderLog()">
+                <div class="toolbar-sep"></div>
+                <button class="btn btn-ghost" onclick="exportLogs()" style="font-size:10.5px;padding:2px 7px;">⬆ Export</button>
+                <button class="btn btn-warn" onclick="clearLog()" style="font-size:10.5px;padding:2px 7px;">🗑 Clear</button>
+                <span class="log-count" id="logCount">0 entries</span>
+            </div>
+            <div id="logPanel"></div>
+        </div>
+
+        <!-- ── STATUS ── -->
+        <div class="pane" id="pane-status">
+            <div class="status-wrap">
+                <div class="status-grid">
+                    <div class="stat-card" id="card-bridge">
+                        <div class="stat-label">Bridge HTTP</div>
+                        <div class="stat-value err" id="st-bridge">DOWN</div>
+                        <div class="stat-sub">port :54321</div>
+                    </div>
+                    <div class="stat-card" id="card-pt">
+                        <div class="stat-label">PT Connection</div>
+                        <div class="stat-value err" id="st-pt">Offline</div>
+                        <div class="stat-sub" id="st-poll-sub">not polling</div>
+                    </div>
+                    <div class="stat-card info">
+                        <div class="stat-label">Commands Sent</div>
+                        <div class="stat-value info" id="st-cmds">0</div>
+                        <div class="stat-sub">this session</div>
+                    </div>
+                    <div class="stat-card" id="card-uptime">
+                        <div class="stat-label">Uptime</div>
+                        <div class="stat-value" id="st-uptime">00:00</div>
+                        <div class="stat-sub" id="st-last">no activity</div>
+                    </div>
+                </div>
+
+                <!-- Connection health bar -->
+                <div class="qb-section">
+                    <div class="section-title">Connection Health</div>
+                    <div class="timeline">
+                        <div class="timeline-fill" id="timelineFill"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9.5px;color:var(--text-muted)">
+                        <span>Offline</span><span>Bridge Up</span><span>PT Connected</span>
+                    </div>
+                </div>
+
+                <!-- Sparkline -->
+                <div class="sparkline-section">
+                    <div class="section-title">Poll Activity (last 20)</div>
+                    <svg id="sparkline" viewBox="0 0 200 36" preserveAspectRatio="none"></svg>
+                </div>
+
+                <!-- Bootstrap snippet -->
+                <div class="bootstrap-section">
+                    <div class="section-title">Bootstrap Snippet</div>
+                    <p class="bootstrap-desc">
+                        Paste this in PT <strong>Extensions → Builder Code Editor</strong> and click <strong>Run</strong> to start the polling loop.
+                    </p>
+                    <div class="snippet-wrap">
+                        <div class="snippet-code" id="bootstrapSnippet"></div>
+                        <button class="btn btn-accent snippet-copy-btn" onclick="copyBootstrap()">📋 Copy to Clipboard</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── QUICK BUILD ── -->
+        <div class="pane" id="pane-quickbuild">
+            <div class="qb-wrap">
+
+                <div class="qb-section">
+                    <div class="section-title">Topology</div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label class="form-label">Template</label>
+                            <select class="form-select" id="qb-template" onchange="updateQBPreview()">
+                                <option value="multi_lan">Multi LAN</option>
+                                <option value="single_lan">Single LAN</option>
+                                <option value="multi_lan_wan">Multi LAN + WAN</option>
+                                <option value="star">Star</option>
+                                <option value="hub_spoke">Hub & Spoke</option>
+                                <option value="branch_office">Branch Office</option>
+                                <option value="router_on_a_stick">Router-on-a-Stick</option>
+                                <option value="three_router_triangle">Triangle</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="form-label">Routing Protocol</label>
+                            <select class="form-select" id="qb-routing" onchange="updateQBPreview()">
+                                <option value="static">Static</option>
+                                <option value="ospf">OSPF</option>
+                                <option value="eigrp">EIGRP</option>
+                                <option value="rip">RIP</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-field">
+                            <label class="form-label">Router Model</label>
+                            <select class="form-select" id="qb-router-model" onchange="updateQBPreview()">
+                                <option value="2911">Cisco 2911</option>
+                                <option value="2901">Cisco 2901</option>
+                                <option value="1941">Cisco 1941</option>
+                                <option value="ISR4321">ISR 4321</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label class="form-label">Switch Model</label>
+                            <select class="form-select" id="qb-switch-model" onchange="updateQBPreview()">
+                                <option value="2960-24TT">Catalyst 2960-24TT</option>
+                                <option value="3560-24PS">Catalyst 3560-24PS</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qb-section">
+                    <div class="section-title">Device Counts</div>
+                    <div class="form-field" style="margin-bottom:8px">
+                        <label class="form-label">Routers: <span id="lbl-routers">2</span></label>
+                        <div class="range-row">
+                            <input type="range" class="form-range" id="qb-routers" min="1" max="10" value="2"
+                                oninput="document.getElementById('lbl-routers').textContent=this.value; updateQBPreview()">
+                        </div>
+                    </div>
+                    <div class="form-field" style="margin-bottom:8px">
+                        <label class="form-label">PCs per LAN: <span id="lbl-pcs">3</span></label>
+                        <div class="range-row">
+                            <input type="range" class="form-range" id="qb-pcs" min="0" max="10" value="3"
+                                oninput="document.getElementById('lbl-pcs').textContent=this.value; updateQBPreview()">
+                        </div>
+                    </div>
+                    <div class="form-field" style="margin-bottom:8px">
+                        <label class="form-label">Switches per Router: <span id="lbl-switches">1</span></label>
+                        <div class="range-row">
+                            <input type="range" class="form-range" id="qb-switches" min="0" max="4" value="1"
+                                oninput="document.getElementById('lbl-switches').textContent=this.value; updateQBPreview()">
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label">Servers: <span id="lbl-servers">0</span></label>
+                        <div class="range-row">
+                            <input type="range" class="form-range" id="qb-servers" min="0" max="5" value="0"
+                                oninput="document.getElementById('lbl-servers').textContent=this.value; updateQBPreview()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qb-section">
+                    <div class="section-title">Options</div>
+                    <div class="toggle-row" style="margin-bottom:8px">
+                        <span class="toggle-label-text">Enable DHCP</span>
+                        <label class="toggle"><input type="checkbox" id="qb-dhcp" checked onchange="updateQBPreview()"><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="toggle-row" style="margin-bottom:8px">
+                        <span class="toggle-label-text">Include WAN (Cloud)</span>
+                        <label class="toggle"><input type="checkbox" id="qb-wan" onchange="updateQBPreview()"><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="toggle-label-text">Floating Routes (backup)</span>
+                        <label class="toggle"><input type="checkbox" id="qb-floating" onchange="updateQBPreview()"><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+
+                <div class="qb-section">
+                    <div class="section-title">Action</div>
+                    <div class="qb-actions">
+                        <div class="qb-preview" id="qbPreview">—</div>
+                        <button class="btn btn-build" onclick="quickBuild()">⚡ Build & Deploy</button>
+                    </div>
+                    <div style="margin-top:8px;font-size:10.5px;color:var(--text-muted);line-height:1.5">
+                        Sends the complete topology script to Packet Tracer via the live bridge.
+                        Make sure PT is connected (Status tab) before building.
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div><!-- /panes -->
+
+    <!-- STATUS BAR -->
+    <div class="status-bar">
+        <div class="status-bar-item">
+            <div class="status-bar-dot" id="sb-bridge-dot"></div>
+            <span id="sb-bridge-label">Bridge: offline</span>
+        </div>
+        <div class="status-bar-sep"></div>
+        <div class="status-bar-item">
+            <span id="sb-cmds">0 cmds</span>
+        </div>
+        <div class="status-bar-sep"></div>
+        <div class="status-bar-item">
+            <span id="sb-uptime">00:00</span>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="status-bar-item" style="color:var(--text-dim)">
+            PT-MCP Builder Code Editor
+        </div>
+    </div>
+
+</div><!-- /app -->
+
+<script src="interface.js"></script>
+<script>init();</script>
+</body>
+</html>
