@@ -23,9 +23,6 @@ env/
 # macOS
 .DS_Store
 
-# Packet Tracer native files
-*.pts
-*.pkt
 
 # Generated runtime artifacts
 data/test_*
