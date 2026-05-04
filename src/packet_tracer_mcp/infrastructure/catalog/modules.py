@@ -26,75 +26,94 @@ class ModuleSpec:
 # =====================================================================
 # Type 1 — Router NM Modules (Network Modules)
 # =====================================================================
+# Solo los routers ISR G1 / 2600 series y el genérico Router-PT aceptan NM.
+# Los ISR G2 (1941/2901/2911) NO tienen slot NM — solo HWIC + SM.
+# Para 4 seriales en un 2911, instala 2× HWIC-2T en slots "0/0" y "0/1".
+_NM_COMPATIBLE = ("Router-PT", "Router-PT-Empty", "2811", "2620XM", "2621XM")
+
 NM_1E = ModuleSpec(
     name="NM-1E", module_type=1, category="router_nm",
     ports_added=("Ethernet1/0",),
     description="1-port Ethernet",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_1E2W = ModuleSpec(
     name="NM-1E2W", module_type=1, category="router_nm",
     ports_added=("Ethernet1/0",),
     description="1-port Ethernet + 2 WIC slots",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_1FE_FX = ModuleSpec(
     name="NM-1FE-FX", module_type=1, category="router_nm",
     ports_added=("FastEthernet1/0",),
     description="1-port FastEthernet (fiber)",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_1FE_TX = ModuleSpec(
     name="NM-1FE-TX", module_type=1, category="router_nm",
     ports_added=("FastEthernet1/0",),
     description="1-port FastEthernet (copper)",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_1FE2W = ModuleSpec(
     name="NM-1FE2W", module_type=1, category="router_nm",
     ports_added=("FastEthernet1/0",),
     description="1-port FastEthernet + 2 WIC slots",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_2E2W = ModuleSpec(
     name="NM-2E2W", module_type=1, category="router_nm",
     ports_added=("Ethernet1/0", "Ethernet1/1"),
     description="2-port Ethernet + 2 WIC slots",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_2FE2W = ModuleSpec(
     name="NM-2FE2W", module_type=1, category="router_nm",
     ports_added=("FastEthernet1/0", "FastEthernet1/1"),
     description="2-port FastEthernet + 2 WIC slots",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_2W = ModuleSpec(
     name="NM-2W", module_type=1, category="router_nm",
     ports_added=(),
     description="2 WIC slots only (no ports)",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_4A_S = ModuleSpec(
     name="NM-4A/S", module_type=1, category="router_nm",
     ports_added=("Serial1/0", "Serial1/1", "Serial1/2", "Serial1/3"),
-    description="4-port Async/Sync Serial",
+    description="4-port Async/Sync Serial — NOT supported on 2911 (use 2× HWIC-2T)",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_4E = ModuleSpec(
     name="NM-4E", module_type=1, category="router_nm",
     ports_added=("Ethernet1/0", "Ethernet1/1", "Ethernet1/2", "Ethernet1/3"),
     description="4-port Ethernet",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_8A_S = ModuleSpec(
     name="NM-8A/S", module_type=1, category="router_nm",
     ports_added=tuple(f"Serial1/{i}" for i in range(8)),
     description="8-port Async/Sync Serial",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_8AM = ModuleSpec(
     name="NM-8AM", module_type=1, category="router_nm",
     ports_added=tuple(f"Modem1/{i}" for i in range(8)),
     description="8-port Analog Modem",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_COVER = ModuleSpec(
     name="NM-Cover", module_type=1, category="router_nm",
     ports_added=(),
     description="NM slot cover plate",
+    compatible_with=_NM_COMPATIBLE,
 )
 NM_ESW_161 = ModuleSpec(
     name="NM-ESW-161", module_type=1, category="router_nm",
     ports_added=tuple(f"FastEthernet1/{i}" for i in range(16)),
     description="16-port Ethernet Switch module",
+    compatible_with=_NM_COMPATIBLE,
 )
 
 # =====================================================================

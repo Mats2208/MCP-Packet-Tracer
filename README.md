@@ -17,7 +17,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>27 MCP Tools</strong></td>
+<td align="center"><strong>30 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -83,7 +83,7 @@
 - [Installation](#-installation)
 - [Quick Start](#-quick-start)
 - [How It Works](#-how-it-works)
-- [MCP Tools (27)](#-mcp-tools)
+- [MCP Tools (30)](#-mcp-tools)
 - [MCP Resources (5)](#-mcp-resources)
 - [Live Deploy Setup](#-live-deploy-setup)
 - [Supported Devices (74)](#-supported-devices)
@@ -100,7 +100,7 @@
 
 ## ◈ What It Does
 
-A **Model Context Protocol (MCP) server** that gives any LLM (GitHub Copilot, Claude, Codex, etc.) full programmatic control over Cisco Packet Tracer. 27 MCP tools and 5 MCP resources cover the complete workflow:
+A **Model Context Protocol (MCP) server** that gives any LLM (GitHub Copilot, Claude, Codex, etc.) full programmatic control over Cisco Packet Tracer. 30 MCP tools and 5 MCP resources cover the complete workflow:
 
 ```
 Natural language prompt
@@ -356,7 +356,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 ## ◈ MCP Tools
 
-27 tools across 9 groups.
+30 tools across 10 groups.
 
 ### Catalog
 
@@ -429,6 +429,24 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 | `pt_export` | Exports plan, JS script and CLI configs to files |
 | `pt_list_projects` | Lists saved projects |
 | `pt_load_project` | Loads a previously saved project |
+
+### Modules
+
+Hot-install expansion modules (HWIC, NM, NIM, WIC) on routers already placed in the active topology. The runtime patch powers the device off, installs the module and powers it back on automatically — no manual shutdown needed.
+
+| Tool | Description |
+|------|-------------|
+| `pt_list_modules` | Lists modules in the catalog. Optional filter by router model (e.g. `2911`) or category (`router_hwic`, `router_nm`, `router_nim`, `router_wic`) |
+| `pt_add_module` | Installs a single module in a slot of an existing device. Validates module exists, slot is a non-empty string, device is present in PT and module/router compatibility before sending |
+| `pt_install_modules_batch` | Installs N modules across one or more devices in a single power-cycle. Recommended over multiple `pt_add_module` calls — avoids the per-call power-on delay that can time out the bridge bootstrap |
+
+> Slot is a **string** that mirrors the addressing PT expects:
+> - HWIC on 1941/2901/2911 → `"0/0"`, `"0/1"`, `"0/2"`, `"0/3"` (chassis-slot/hwic-subslot)
+> - NIM on ISR4321/4331 → `"0"`, `"1"`
+> - NM on Router-PT / 2811 / 2620XM / 2621XM → `"1"`, `"2"` *(ISR G2 like 2911/2901/1941 do **not** have NM slots — use 2× HWIC-2T for 4 serials)*
+> - Cloud-PT / hosts → `"0"`, `"1"`, … per the device's slot map
+>
+> Integers are accepted and auto-coerced to strings, but prefer the literal string format above to match PT's slot semantics — particularly for HWIC where `"0/0"` and `0` address different slots.
 
 ### ACL
 
@@ -778,7 +796,7 @@ The server infers the correct cable automatically from the two device categories
 
 ```javascript
 addDevice("R1", "2911", 100, 100);
-addModule("R1", 0, "HWIC-2T");       // installs 2 serial ports in slot 0
+addModule("R1", "0/0", "HWIC-2T");   // installs 2 serial ports in HWIC slot 0/0
 addLink("R1", "Serial0/0/0", "R2", "Serial0/0/0", "serial");
 ```
 
@@ -928,7 +946,7 @@ Templates are hints that guide the orchestrator's topology-building logic.
 src/packet_tracer_mcp/
 ├── adapters/
 │   └── mcp/
-│       ├── tool_registry.py       # All 27 MCP tools (@mcp.tool decorators)
+│       ├── tool_registry.py       # All 30 MCP tools (@mcp.tool decorators)
 │       └── resource_registry.py   # All 5 MCP resources (@mcp.resource decorators)
 │
 ├── application/

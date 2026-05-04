@@ -46,6 +46,7 @@ from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ...infrastructure.catalog.cables import CABLE_TYPES
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
+from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE, CAPABILITIES
 
@@ -1079,6 +1080,342 @@ def register_tools(mcp: FastMCP) -> None:
             if status == 200:
                 return "Comando enviado a PT."
             return "Error al enviar comando al bridge."
+
+    # ------------------------------------------------------------------
+    # MODULES — instalar módulos de expansión en dispositivos vivos
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_list_modules(
+        router_model: str = "",
+        category: str = "",
+    ) -> str:
+        """
+        Lista módulos de expansión disponibles del catálogo PT.
+
+        Sin filtros devuelve TODOS los módulos. Útil para descubrir nombres
+        exactos antes de llamar a pt_add_module.
+
+        Parámetros:
+        - router_model: si se especifica (ej: "2911", "ISR4321"), filtra a
+          módulos compatibles con ese router. Incluye módulos genéricos
+          (sin lista compatible_with) y los que listan ese modelo.
+        - category: filtra por categoría (ej: "router_hwic", "router_nm",
+          "router_nim", "router_wic"). Vacío = todas.
+
+        Devuelve JSON con: name, description, category, ports_added,
+        compatible_with.
+        """
+        rm = (router_model or "").strip()
+        cat = (category or "").strip().lower()
+
+        items = []
+        for mod in ALL_MODULES.values():
+            if cat and mod.category.lower() != cat:
+                continue
+            if rm and mod.compatible_with and rm not in mod.compatible_with:
+                continue
+            items.append({
+                "name": mod.name,
+                "description": mod.description,
+                "category": mod.category,
+                "module_type": mod.module_type,
+                "ports_added": list(mod.ports_added),
+                "compatible_with": list(mod.compatible_with) if mod.compatible_with else "any",
+            })
+
+        items.sort(key=lambda x: (x["category"], x["name"]))
+        return json.dumps({
+            "count": len(items),
+            "filter": {"router_model": rm or None, "category": cat or None},
+            "modules": items,
+        }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_add_module(
+        device_name: str,
+        slot: str,
+        module_name: str,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Instala un módulo de expansión en un dispositivo de la topología activa.
+
+        El runtime patch ya inyectado en PT apaga el dispositivo, instala el
+        módulo y vuelve a encenderlo (con skipBoot). NO necesitas apagar a mano.
+
+        Parámetros:
+        - device_name: nombre exacto del dispositivo en PT (ej: "R1"). Usa
+          pt_query_topology para listar nombres válidos.
+        - slot: identificador del slot como STRING. El formato depende del
+          tipo de slot del dispositivo:
+            * HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
+              (chassis-slot/hwic-subslot)
+            * NM en 2911            → "1" o "2"
+            * NIM en ISR4321/4331   → "0" o "1"
+            * Cloud-PT/Server-PT/PCs → "0", "1", ... según el slot disponible
+          Si pasas un entero también se acepta y se convierte a string.
+        - module_name: nombre exacto del módulo, ej: "HWIC-2T", "NM-4A/S",
+          "NIM-2T", "HWIC-1GE-SFP". Usa pt_list_modules para descubrirlos.
+        - dry_run: si True, valida y devuelve el JS payload sin enviarlo.
+
+        Ejemplo: agregar 2 puertos seriales a R1 en el HWIC slot 0:
+          pt_add_module(device_name="R1", slot="0/0", module_name="HWIC-2T")
+        """
+        # Coercer slot a string (acepta int por compat) y validar no vacío
+        if isinstance(slot, bool) or slot is None:
+            return f"Error: slot inválido (recibido: {slot!r})."
+        slot_s = str(slot).strip()
+        if not slot_s:
+            return "Error: slot no puede ser vacío."
+
+        # Validar nombre de módulo
+        spec = resolve_module(module_name)
+        if not spec:
+            return (
+                f"Error: módulo '{module_name}' no encontrado en el catálogo.\n"
+                f"Llama a pt_list_modules para ver los nombres válidos."
+            )
+
+        # Construir JS payload
+        safe_name = _js_escape(device_name)
+        safe_module = _js_escape(spec.name)
+        safe_slot = _js_escape(slot_s)
+        ports_added = ", ".join(spec.ports_added) if spec.ports_added else "(sin puertos)"
+
+        if dry_run:
+            return json.dumps({
+                "summary": f"[dry_run] Payload generado para instalar {spec.name} en {device_name} slot {slot_s}.",
+                "device": device_name,
+                "slot": slot_s,
+                "module": spec.name,
+                "description": spec.description,
+                "ports_added": list(spec.ports_added),
+                "compatible_with": list(spec.compatible_with) if spec.compatible_with else "any",
+                "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
+                "sent": False,
+                "dry_run": True,
+            }, indent=2, ensure_ascii=False)
+
+        # Verificar bridge + PT
+        err = _check_bridge()
+        if err:
+            return err
+
+        # Verificar que el dispositivo existe y validar compatibilidad
+        devices = _query_pt_devices()
+        if devices:
+            target = next((d for d in devices if d.get("name") == device_name), None)
+            if target is None:
+                names = sorted({d.get("name", "") for d in devices if d.get("name")})
+                return (
+                    f"Error: dispositivo '{device_name}' no existe en PT.\n"
+                    f"Dispositivos actuales: {', '.join(names) or '(ninguno)'}"
+                )
+            if spec.compatible_with:
+                target_model = target.get("model", "") or ""
+                if target_model and target_model not in spec.compatible_with:
+                    return (
+                        f"Error: módulo '{spec.name}' no es compatible con modelo '{target_model}'.\n"
+                        f"Compatible con: {', '.join(spec.compatible_with)}"
+                    )
+
+        # Enviar al bridge — el patch runtime maneja el power cycle automáticamente.
+        # Esperamos respuesta para confirmar éxito (la instalación toma unos segundos).
+        js = (
+            f'var __ok = addModule("{safe_name}", "{safe_slot}", "{safe_module}"); '
+            f'return JSON.stringify({{success: __ok === true, returned: __ok}});'
+        )
+        result = _bridge_send_and_wait(js, timeout=15.0)
+
+        if result is None:
+            return (
+                f"Sin respuesta de PT (timeout). Posibles causas:\n"
+                f"  - El módulo se está instalando aún (power cycle puede tardar)\n"
+                f"  - El nombre del módulo no existe en allModuleTypes de PT\n"
+                f"  - El slot '{slot_s}' ya está ocupado o no existe\n"
+                f"Verifica manualmente con pt_query_topology."
+            )
+
+        try:
+            data = json.loads(result)
+            success = bool(data.get("success"))
+        except Exception:
+            return f"Respuesta inesperada de PT: {result}"
+
+        if success:
+            return (
+                f"Módulo instalado en {device_name}.\n"
+                f"  Slot: {slot_s}\n"
+                f"  Módulo: {spec.name} — {spec.description}\n"
+                f"  Puertos agregados: {ports_added}\n"
+                f"  PT apagó/encendió el dispositivo automáticamente."
+            )
+        return (
+            f"PT rechazó la instalación de '{spec.name}' en {device_name} slot '{slot_s}'.\n"
+            f"Causas habituales:\n"
+            f"  - Slot ocupado por otro módulo\n"
+            f"  - Módulo incompatible con el modelo del dispositivo\n"
+            f"  - Slot fuera de rango o formato incorrecto (HWIC: '0/0', NM: '1', NIM: '0')"
+        )
+
+    @mcp.tool()
+    def pt_install_modules_batch(
+        modules: list[dict],
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Instala N módulos en un solo runCode JS — power-off → addModule×N → power-on.
+
+        Útil cuando hay que poner varios módulos seriales (HWIC-2T, NIM-2T, etc.) en
+        varios routers a la vez. PREFERIR esta tool sobre llamadas múltiples a
+        pt_add_module: cada power-cycle individual puede pausar el script engine de PT
+        > 5s y matar el polling del bootstrap del bridge.
+
+        Parámetros:
+        - modules: lista de dicts con {device, slot, module}. Ejemplo para RTR-4 con
+          4 puertos seriales en un 2911 (que NO acepta NM-4A/S):
+            [
+              {"device": "RTR-4", "slot": "0/0", "module": "HWIC-2T"},
+              {"device": "RTR-4", "slot": "0/1", "module": "HWIC-2T"}
+            ]
+          → genera Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.
+        - dry_run: si True, valida y devuelve el JS payload sin enviarlo.
+
+        Reglas del slot (string):
+          HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
+          NIM en ISR4321/4331    → "0", "1"
+          Cloud-PT / hosts        → "0".."7"
+
+        Retorna JSON con summary, status por módulo y js_payload.
+        """
+        if not isinstance(modules, list) or not modules:
+            return json.dumps({"error": "modules debe ser lista no vacía de {device, slot, module}."})
+
+        # Validar cada entry contra el catálogo
+        validated = []
+        errors = []
+        for idx, entry in enumerate(modules):
+            if not isinstance(entry, dict):
+                errors.append(f"[{idx}] no es dict")
+                continue
+            dev = entry.get("device")
+            slot = entry.get("slot")
+            mod = entry.get("module")
+            if not dev or not isinstance(dev, str):
+                errors.append(f"[{idx}] device requerido (str)")
+                continue
+            if slot is None or isinstance(slot, bool):
+                errors.append(f"[{idx}] slot requerido")
+                continue
+            slot_s = str(slot).strip()
+            if not slot_s:
+                errors.append(f"[{idx}] slot vacío")
+                continue
+            if not mod or not isinstance(mod, str):
+                errors.append(f"[{idx}] module requerido (str)")
+                continue
+            spec = resolve_module(mod)
+            if not spec:
+                errors.append(f"[{idx}] módulo '{mod}' no existe (usa pt_list_modules)")
+                continue
+            validated.append({
+                "device": dev, "slot": slot_s,
+                "module": spec.name,
+                "ports_added": list(spec.ports_added),
+                "compatible_with": list(spec.compatible_with) if spec.compatible_with else None,
+            })
+
+        if errors:
+            return json.dumps({
+                "error": "Validación falló",
+                "details": errors,
+            }, indent=2, ensure_ascii=False)
+
+        # Construir un único JS one-liner: power-off de devices únicos → addModule × N → power-on
+        unique_devs = []
+        seen = set()
+        for v in validated:
+            if v["device"] not in seen:
+                seen.add(v["device"])
+                unique_devs.append(v["device"])
+
+        # JS literal arrays para devices y módulos
+        devs_js = "[" + ",".join(f'"{_js_escape(d)}"' for d in unique_devs) + "]"
+        mods_js = "[" + ",".join(
+            f'["{_js_escape(v["device"])}","{_js_escape(v["slot"])}","{_js_escape(v["module"])}"]'
+            for v in validated
+        ) + "]"
+
+        js = (
+            f"var DEVS={devs_js};var MODS={mods_js};"
+            "var saved=[];"
+            "for(var i=0;i<DEVS.length;i++){"
+            "var d=ipc.network().getDevice(DEVS[i]);"
+            "if(!d)continue;"
+            "var hp=typeof d.getPower===\"function\";"
+            "var was=hp?d.getPower():false;"
+            "if(hp&&was)d.setPower(false);"
+            "saved.push({n:DEVS[i],hp:hp,was:was});"
+            "}"
+            "for(var j=0;j<MODS.length;j++){"
+            "var m=MODS[j];var dd=ipc.network().getDevice(m[0]);"
+            "if(!dd)continue;"
+            "dd.addModule(m[1],allModuleTypes[m[2]],m[2]);"
+            "}"
+            "for(var k=0;k<saved.length;k++){"
+            "var s=saved[k];if(!s.hp||!s.was)continue;"
+            "var dx=ipc.network().getDevice(s.n);if(!dx)continue;"
+            "dx.setPower(true);"
+            "if(typeof dx.skipBoot===\"function\")dx.skipBoot();"
+            "}"
+        )
+
+        summary = {
+            "total_modules": len(validated),
+            "devices_affected": unique_devs,
+            "modules": validated,
+            "js_payload": js,
+            "dry_run": dry_run,
+            "sent": False,
+        }
+
+        if dry_run:
+            summary["summary"] = f"[dry_run] {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s)."
+            return json.dumps(summary, indent=2, ensure_ascii=False)
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        # Verificar dispositivos existen + validar compatibilidad de módulos
+        pt_devices = _query_pt_devices()
+        if pt_devices:
+            by_name = {d.get("name"): d for d in pt_devices}
+            for v in validated:
+                if v["device"] not in by_name:
+                    return f"Error: dispositivo '{v['device']}' no existe en PT."
+                if v["compatible_with"]:
+                    target_model = by_name[v["device"]].get("model", "") or ""
+                    if target_model and target_model not in v["compatible_with"]:
+                        return (
+                            f"Error: módulo '{v['module']}' incompatible con modelo "
+                            f"'{target_model}' (dispositivo '{v['device']}').\n"
+                            f"Compatible con: {', '.join(v['compatible_with'])}"
+                        )
+
+        # Fire-and-forget — el batch hace todo en un runCode, no necesitamos esperar.
+        # Esperar puede dar timeout porque el power-on al final tarda en estabilizar.
+        if not _bridge_send_payload(js):
+            return "Error al enviar batch al bridge."
+
+        summary["sent"] = True
+        summary["summary"] = (
+            f"Batch enviado: {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s).\n"
+            f"PT está apagando, instalando y reencendiendo en un solo paso. "
+            f"Verifica con pt_query_topology o consultando getPorts() en cada router."
+        )
+        return json.dumps(summary, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
     # ACL — aplicar y eliminar Access Control Lists vía bridge
