@@ -12,7 +12,7 @@ class TestFullBuild:
         assert result.is_valid
         assert len(result.errors) == 0
         assert len(result.explanation) > 0
-        assert "addDevice" in result.script
+        assert "lwAddDevice" in result.script
         assert len(result.configs) >= 2  # at least 2 routers
 
     def test_3_routers_wan(self):

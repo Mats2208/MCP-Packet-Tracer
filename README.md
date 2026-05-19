@@ -17,7 +17,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>30 MCP Tools</strong></td>
+<td align="center"><strong>33 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -83,7 +83,7 @@
 - [Installation](#-installation)
 - [Quick Start](#-quick-start)
 - [How It Works](#-how-it-works)
-- [MCP Tools (30)](#-mcp-tools)
+- [MCP Tools (33)](#-mcp-tools)
 - [MCP Resources (5)](#-mcp-resources)
 - [Live Deploy Setup](#-live-deploy-setup)
 - [Supported Devices (74)](#-supported-devices)
@@ -356,7 +356,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 ## ◈ MCP Tools
 
-30 tools across 10 groups.
+33 tools across 11 groups.
 
 ### Catalog
 

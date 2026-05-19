@@ -51,16 +51,19 @@ def validate_nat_against_topology(
     model = resolve_model(device.get("model", ""))
     if model is not None:
         valid_ports = {p.full_name for p in model.ports}
+        # Acepta sub-interfaces (ej "GigabitEthernet0/0/1.20") validando que el puerto
+        # base exista — PT las crea dinámicamente al configurar encapsulation dot1Q.
         for iface_label, iface in [
             ("inside_interface", config.inside_interface),
             ("outside_interface", config.outside_interface),
         ]:
-            if iface not in valid_ports:
+            base_iface = iface.split(".", 1)[0]
+            if iface not in valid_ports and base_iface not in valid_ports:
                 errors.append(PlanError(
                     code=ErrorCode.NAT_INTERFACE_NOT_FOUND,
                     device=config.router,
                     message=f"{iface_label} '{iface}' no existe en {device.get('model')}.",
-                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))}",
+                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))} (las sub-interfaces .N son válidas si el puerto base existe)",
                 ))
 
     return ValidationResult(errors=errors, warnings=warnings)

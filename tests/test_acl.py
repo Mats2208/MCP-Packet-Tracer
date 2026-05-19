@@ -273,6 +273,23 @@ class TestApplyACLUseCase:
         assert any(e["error_code"] == ErrorCode.ACL_INTERFACE_NOT_FOUND.value
                    for e in result["errors"])
 
+    def test_accepts_subinterface_when_base_port_exists(self):
+        """Sub-interfaces (G0/0/1.20) son válidas si el puerto base (G0/0/1) existe.
+        PT las crea dinámicamente al configurar encapsulation dot1Q."""
+        plan = build_acl_plan(
+            router="R1", name_or_number="101", acl_type="extended",
+            entries_dicts=[{"action": "permit", "source": "any", "destination": "any"}],
+        )
+        binding = ACLBinding(router="R1", interface="GigabitEthernet0/0.20",
+                              acl_id="101", direction="in")
+        result = apply_acl_uc(
+            plan=plan,
+            binding=binding,
+            query_pt_topology=lambda: [{"name": "R1", "model": "2911"}],
+            dry_run=True,
+        )
+        assert result["valid"], f"Sub-interface rechazada: {result.get('errors')}"
+
     def test_valid_plan_sends_when_bridge_ok(self):
         plan = build_acl_plan(
             router="R1", name_or_number="101", acl_type="extended",

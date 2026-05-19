@@ -69,16 +69,20 @@ def validate_against_topology(
 
     if binding is not None:
         # Verifica interfaz contra catálogo (best-effort).
+        # Acepta sub-interfaces (ej "GigabitEthernet0/0/1.20") validando que el puerto
+        # base exista — PT crea las sub-interfaces dinámicamente al configurar dot1Q.
         from ...infrastructure.catalog.devices import resolve_model
         model = resolve_model(device.get("model", ""))
         if model is not None:
             valid_ports = {p.full_name for p in model.ports}
-            if binding.interface not in valid_ports:
+            iface = binding.interface
+            base_iface = iface.split(".", 1)[0]
+            if iface not in valid_ports and base_iface not in valid_ports:
                 errors.append(PlanError(
                     code=ErrorCode.ACL_INTERFACE_NOT_FOUND,
                     device=plan.router,
                     message=f"Interfaz '{binding.interface}' no existe en {device.get('model')}.",
-                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))}",
+                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))} (las sub-interfaces .N son válidas si el puerto base existe)",
                 ))
 
     return ValidationResult(errors=errors, warnings=warnings)

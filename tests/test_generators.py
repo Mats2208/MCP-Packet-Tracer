@@ -13,7 +13,9 @@ from src.packet_tracer_mcp.infrastructure.generator.cli_config_generator import 
 
 
 class TestPTBuilderGenerator:
-    def test_generates_add_device(self):
+    def test_generates_lw_add_device(self):
+        """El generador emite lwAddDevice con el enum DeviceType correcto.
+        Los devices aparecen en Logical view sin save+reload."""
         plan = TopologyPlan(
             name="test",
             devices=[
@@ -22,9 +24,23 @@ class TestPTBuilderGenerator:
             links=[],
         )
         script = generate_ptbuilder_script(plan)
-        assert 'addDevice("R1", "2911", 100, 200)' in script
+        # router → DeviceType eRouter = 0
+        assert 'lwAddDevice("R1", 0, "2911", 100, 200)' in script
 
-    def test_generates_add_link(self):
+    def test_lw_add_device_uses_switch_enum(self):
+        plan = TopologyPlan(
+            name="test",
+            devices=[
+                DevicePlan(name="SW1", model="2960", category="switch", x=0, y=0),
+            ],
+            links=[],
+        )
+        script = generate_ptbuilder_script(plan)
+        # switch → DeviceType eSwitch = 1
+        assert 'lwAddDevice("SW1", 1, "2960", 0, 0)' in script
+
+    def test_generates_lw_add_link(self):
+        """El generador emite lwAddLink con el enum ConnectType correcto."""
         plan = TopologyPlan(
             name="test",
             devices=[
@@ -37,8 +53,8 @@ class TestPTBuilderGenerator:
             ],
         )
         script = generate_ptbuilder_script(plan)
-        assert 'addLink("R1"' in script
-        assert '"straight"' in script
+        # straight → ConnectType ETHERNET_STRAIGHT = 8100
+        assert 'lwAddLink("R1", "Gig0/0", "SW1", "Fa0/1", 8100)' in script
 
 
 class TestCLIConfigGenerator:
