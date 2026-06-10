@@ -49,7 +49,7 @@ class PTCommandBridge:
                     bridge._connected = True
                 elif self.path == "/status":
                     ago = time.time() - bridge._last_poll_time
-                    connected = bridge._last_poll_time > 0 and ago < 5.0
+                    connected = bridge._last_poll_time > 0 and ago < 10.0
                     self._respond(200, json.dumps({"connected": connected, "last_poll_ago": round(ago, 1)}))
                 elif self.path == "/result":
                     # Long-poll: block until PT posts a result (or timeout)
@@ -110,21 +110,45 @@ class PTCommandBridge:
     def is_connected(self) -> bool:
         if self._last_poll_time == 0:
             return False
-        return time.time() - self._last_poll_time < 5.0
+        return time.time() - self._last_poll_time < 10.0
 
     def send(self, js_code: str, timeout: float = 10.0) -> bool:
         """Queue a JavaScript command for execution in PT."""
         self._queue.put(js_code)
         return True
 
+    def _report_result_fn(self) -> str:
+        """Generate the reportResult() JS function for injection into Script Engine.
+
+        Defined inline with each command so it shares the same runCode scope.
+        Routes results back via the webview's XMLHttpRequest.
+        """
+        q = chr(39)   # '
+        dq = chr(34)  # "
+        bs = chr(92)  # \
+        return (
+            "function reportResult(d){"
+            "var s=String(d)"
+            f".replace(/{bs}{bs}/g,{q}{bs}{bs}{bs}{bs}{q})"
+            f".replace(/{q}/g,{dq}{bs}{bs}{q}{dq})"
+            f".replace(/{bs}n/g,{q}{bs}{bs}n{q});"
+            "window.webview.evaluateJavaScriptAsync("
+            f"{q}var x=new XMLHttpRequest();"
+            f"x.open({bs}{q}POST{bs}{q},{bs}{q}http://127.0.0.1:{self.port}/result{bs}{q},true);"
+            f"x.setRequestHeader({bs}{q}Content-Type{bs}{q},{bs}{q}text/plain{bs}{q});"
+            f"x.send({bs}{q}{q}+s+{q}{bs}{q});{q}"
+            ")}"
+        )
+
     def send_and_wait(self, js_code: str, timeout: float = 10.0) -> str | None:
         """Send a command and wait for result callback.
 
-        Uses reportResult() from userfunctions.js which routes the HTTP
-        POST through the QWebEngine webview (XMLHttpRequest is NOT available
-        in the PT Script Engine, only in the webview).
+        Injects reportResult() into each command's scope so it can POST
+        results back through the QWebEngine webview.
         """
+        report_fn = self._report_result_fn()
         wrapped = (
+            f"{report_fn};"
             f"try {{ var __r = (function(){{ {js_code} }})(); "
             f"reportResult(String(__r)); "
             f"}} catch(__e) {{ reportResult('ERROR:' + __e); }}"
@@ -152,19 +176,37 @@ class PTCommandBridge:
             f"x.open('GET','http://127.0.0.1:{self.port}/next',true);"
             "x.onload=function(){"
             "if(x.status===200&&x.responseText){"
-            "$se('runCode',x.responseText)"
+            "try{$se('runCode',x.responseText)}catch(e){}"
             "}};"
             "x.onerror=function(){};"
             "x.send()"
             "},500)"
         )
 
+        # reportResult: defined in Script Engine so send_and_wait() works.
+        # It escapes the data and POSTs it back via the webview's XMLHttpRequest.
+        report_fn = (
+            "function reportResult(d){"
+            "var s=String(d)"
+            ".replace(/\\\\/g,'\\\\\\\\')"
+            ".replace(/'/g,\"\\\\'\")"
+            ".replace(/\\n/g,'\\\\n');"
+            "window.webview.evaluateJavaScriptAsync("
+            "\"var x=new XMLHttpRequest();"
+            f"x.open('POST','http://127.0.0.1:{self.port}/result',true);"
+            "x.setRequestHeader('Content-Type','text/plain');"
+            "x.send('\"+s+\"');\")"
+            "}"
+        )
+
         # The outer JS runs in the Script Engine via runCode().
-        # It accesses the PTBuilder webview to inject the polling loop.
+        # It accesses the PTBuilder webview to inject the polling loop,
+        # then defines reportResult() for bidirectional communication.
         # Safe with newlines stripped since we use /* */ comments and semicolons.
         return (
             f'/* PT-MCP Bridge - paste in Builder Code Editor and click Run */\n'
             f'window.webview.evaluateJavaScriptAsync("{inner_js}");\n'
+            f'{report_fn}\n'
         )
 
 
