@@ -31,10 +31,12 @@ Para interactuar con una topología existente en PT:
 - Switches 2960/3560: GigabitEthernet0/1 (uplink), FastEthernet0/1 … FastEthernet0/24
 - PCs / Laptops / Servers: FastEthernet0
 
-## addLink — firma correcta
-  addLink("dispositivo1", "puerto1", "dispositivo2", "puerto2")
-  addLink("dispositivo1", "puerto1", "dispositivo2", "puerto2", "tipoCable")
-  Tipos de cable: "straight", "crossover", "serial", "fiber" (opcional, PT auto-detecta si se omite)
+## addLink — usa pt_add_link (recomendado) o addLink directo
+  PREFERIR pt_add_link — valida dispositivos, puertos y cable antes de crear.
+  Si usas addLink directo, el 5to argumento (cable type) es OBLIGATORIO.
+  Tipos de cable válidos: "straight", "cross", "serial", "fiber", "console", "roll", "phone", "coaxial", "auto", "usb"
+  Aliases aceptados por pt_add_link: "crossover"→"cross", "rollover"→"roll"
+  NUNCA uses "crossover" — el valor correcto es "cross".
 
 ## Live Deploy (PT en tiempo real)
 Para enviar comandos a Packet Tracer directamente:
@@ -52,8 +54,9 @@ Para enviar comandos a Packet Tracer directamente:
   2960-24TT | 3560-24PS
 
 ## Importante
-- El único script engine de PT acepta: addDevice, addLink, addModule, configureIosDevice, configurePcIp
-- El MCP ya tiene 22 tools. Usa siempre pt_full_build para el caso general.
+- Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
+- Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
+- El MCP tiene 24 tools. Usa pt_full_build para el caso general.
 - Si el usuario pide algo que no está en el catálogo, informa claramente en lugar de inventar.
 """
 
