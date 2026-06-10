@@ -25,8 +25,11 @@ addLink('R1', 'GigabitEthernet0/0', 'SW1', 'GigabitEthernet0/1', 'straight');
 // Configuración IOS (configureIosDevice)
 configureIosDevice('R1', 'hostname R1\ninterface GigabitEthernet0/0\n ip address 192.168.1.1 255.255.255.0\n...');
 
-// Configuración PC (configurePcIp)
-configurePcIp('PC1', '192.168.1.2', '255.255.255.0', '192.168.1.1');
+// Configuración PC (configurePcIp). Firma real:
+//   configurePcIp(deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer)
+// El segundo arg es BOOLEAN (no la IP). La interfaz está hardcoded a FastEthernet0.
+configurePcIp('PC1', true);                                                    // DHCP
+configurePcIp('PC2', false, '192.168.1.2', '255.255.255.0', '192.168.1.1');    // estática
 ```
 
 ---

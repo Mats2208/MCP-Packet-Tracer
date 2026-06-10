@@ -19,7 +19,8 @@ build/
 .venv/
 venv/
 env/
-
+UI-HELPER/
+UI-HELPER-TOOLS/
 # macOS
 .DS_Store
 
@@ -28,6 +29,7 @@ env/
 data/test_*
 tmp/
 
+CLAUDE.md
 # Project exports (runtime output, not source)
 projects/
 

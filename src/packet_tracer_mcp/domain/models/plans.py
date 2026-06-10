@@ -1,7 +1,7 @@
 """Modelos de plan — el resultado validado y completo."""
 
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...shared.enums import DeviceRole
 
@@ -28,10 +28,28 @@ class LinkPlan(BaseModel):
 
 
 class ModulePlan(BaseModel):
-    """Un módulo de expansión a instalar en un dispositivo."""
+    """Un módulo de expansión a instalar en un dispositivo.
+
+    `slot` se pasa tal cual al `addModule(device, slot, model)` de PTBuilder.
+    El formato depende del tipo de slot del dispositivo:
+      - HWIC (1941/2901/2911): "0/0", "0/1", "0/2", "0/3"
+      - NM (2911):             "1" o "2"
+      - NIM (ISR4321/4331):    "0" o "1"
+      - Cloud-PT/Server:       "0".."6" según el slot disponible
+    """
     device: str
-    slot: int
+    slot: str
     module: str  # e.g. "HWIC-2T", "NIM-2T"
+
+    @field_validator("slot", mode="before")
+    @classmethod
+    def _coerce_slot_to_str(cls, v):
+        # Aceptamos int (ej: 0) por retrocompatibilidad y los convertimos a "0".
+        if isinstance(v, bool):
+            raise ValueError("slot debe ser str o int, no bool")
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class DHCPPool(BaseModel):

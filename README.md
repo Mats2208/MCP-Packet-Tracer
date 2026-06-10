@@ -17,10 +17,10 @@
 
 <table>
 <tr>
-<td align="center"><strong>22 MCP Tools</strong></td>
+<td align="center"><strong>33 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
-<td align="center"><strong>150 Modules</strong></td>
+<td align="center"><strong>151 Modules</strong></td>
 <td align="center"><strong>15 Cable Types</strong></td>
 </tr>
 </table>
@@ -83,12 +83,12 @@
 - [Installation](#-installation)
 - [Quick Start](#-quick-start)
 - [How It Works](#-how-it-works)
-- [MCP Tools (22)](#-mcp-tools)
+- [MCP Tools (33)](#-mcp-tools)
 - [MCP Resources (5)](#-mcp-resources)
 - [Live Deploy Setup](#-live-deploy-setup)
 - [Supported Devices (74)](#-supported-devices)
 - [Cable Types (15)](#-cable-types)
-- [Expansion Modules (150)](#-expansion-modules)
+- [Expansion Modules (151)](#-expansion-modules)
 - [IP Addressing](#-ip-addressing)
 - [Routing Protocols](#-routing-protocols)
 - [Topology Templates](#-topology-templates)
@@ -100,7 +100,7 @@
 
 ## ◈ What It Does
 
-A **Model Context Protocol (MCP) server** that gives any LLM (GitHub Copilot, Claude, Codex, etc.) full programmatic control over Cisco Packet Tracer. 22 MCP tools and 5 MCP resources cover the complete workflow:
+A **Model Context Protocol (MCP) server** that gives any LLM (GitHub Copilot, Claude, Codex, etc.) full programmatic control over Cisco Packet Tracer. 30 MCP tools and 5 MCP resources cover the complete workflow:
 
 ```
 Natural language prompt
@@ -125,10 +125,12 @@ Natural language prompt
 | **IP Addressing** | Automatic /24 LANs + /30 WAN links | Sequential assignment, gateway at `.1` |
 | **DHCP** | Auto pool generation | One pool per LAN, gateway excluded |
 | **Routing** | Static / OSPF / EIGRP / RIP | Full IOS command generation |
-| **Validation** | 15 typed error codes + auto-fixer | Wrong cables, missing ports, model upgrades |
+| **Validation** | 24 typed error codes + auto-fixer | Wrong cables, missing ports, model upgrades |
+| **ACL** | Standard, extended and named ACLs | Apply, bind and remove ACLs on live routers |
+| **NAT / PAT** | Static NAT, dynamic NAT, PAT overload | Translate addresses on live routers via bridge |
 | **Deploy** | Real-time HTTP bridge to Packet Tracer | No copy-paste — commands stream directly |
 | **Export** | Plans, JS scripts, CLI configs to disk | Reusable project files |
-| **Catalog** | 74 devices · 150 modules · 15 cables | 34 categories, 101 aliases |
+| **Catalog** | 74 devices · 151 modules · 15 cables | 34 categories, 101 aliases |
 
 ---
 
@@ -144,25 +146,111 @@ pip install -e .
 
 ## ◈ Quick Start
 
-### 1 &mdash; Start the server
+After running `pip install -e .` (see [Installation](#-installation)) the module `packet_tracer_mcp` is importable from any directory. That means **`python -m packet_tracer_mcp --stdio` works from anywhere** — no need to `cd` into the repo, no need to keep a server running in background. Most clients below use this stdio entry point and auto-launch the server on demand.
+
+> **Two transport modes:**
+> - **stdio** (recommended for desktop clients): the client spawns the server as a child process. Zero manual steps, works from any directory. The internal HTTP bridge to Packet Tracer (`:54321`) still starts automatically inside the spawned process — live deploy works the same.
+> - **streamable-http** (`http://127.0.0.1:39000/mcp`): you start the server yourself with `python -m packet_tracer_mcp` and multiple clients can share the same instance. Useful for VS Code multi-window setups or remote/shared scenarios.
+
+### 1 &mdash; Connect your MCP client
+
+Pick your client. All examples assume you already ran `pip install -e .`.
+
+<details open>
+<summary><img src="https://img.shields.io/badge/Claude%20Code-D97757?style=flat-square&logo=anthropic&logoColor=white" alt="Claude Code"/> &ensp; <strong>One CLI command</strong></summary>
 
 ```bash
-python -m packet_tracer_mcp
+claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
 ```
 
-This starts two services automatically:
+- `--scope user` registers the server in your global `~/.claude.json`, so it's available from **any** directory you launch `claude` in (not tied to a single project).
+- The `--` separator passes everything after it to the spawned process verbatim.
 
-| Service | Endpoint | Purpose |
-|---------|----------|---------|
-| MCP Server | `http://127.0.0.1:39000/mcp` | Receives tool calls from your editor/LLM |
-| HTTP Bridge | `http://127.0.0.1:54321` | Sends commands to PTBuilder inside Packet Tracer |
+Verify:
 
-> For stdio mode (debug/legacy): `python -m packet_tracer_mcp --stdio`
+```bash
+claude mcp list
+# packet-tracer: python -m packet_tracer_mcp --stdio - ✓ Connected
+```
 
-### 2 &mdash; Connect your MCP client
+To remove later:
+
+```bash
+claude mcp remove packet-tracer --scope user
+```
+
+</details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/VS%20Code-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code"/> &ensp; <code>.vscode/mcp.json</code></summary>
+<summary><img src="https://img.shields.io/badge/Claude%20Desktop-D97757?style=flat-square&logo=anthropic&logoColor=white" alt="Claude Desktop"/> &ensp; <strong>Edit <code>claude_desktop_config.json</code></strong></summary>
+
+The config path depends on **how Claude Desktop was installed**. This matters on Windows because the Microsoft Store version sandboxes AppData and the official docs only mention the standard path.
+
+| OS / install source | Config path |
+|---|---|
+| Windows — installer from [claude.ai/download](https://claude.ai/download) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Windows — Microsoft Store / MSIX | `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json` |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+> **How to tell which install you have on Windows:** run `Get-Process claude \| Select-Object -ExpandProperty Path` in PowerShell. If the path contains `WindowsApps\Claude_*`, you have MSIX — use the second row above. Otherwise use the first.
+
+Add (or merge into the existing file):
+
+```json
+{
+  "mcpServers": {
+    "packet-tracer": {
+      "command": "python",
+      "args": ["-m", "packet_tracer_mcp", "--stdio"]
+    }
+  }
+}
+```
+
+After saving, **fully quit** Claude Desktop and reopen — closing the window is not enough if "run in background" is on. On Windows: right-click the tray icon → **Quit**, or run `Get-Process claude | Stop-Process -Force`.
+
+> **Windows / MSIX gotcha:** the sandbox may not expose `python` on PATH. If the MCP indicator never lights up, replace `"python"` with the absolute path to your interpreter:
+> ```json
+> "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
+> ```
+> Find your interpreter with `where.exe python` (PowerShell) or `which python` (bash/zsh). Logs are at `<config-dir>\logs\mcp-server-packet-tracer.log`.
+
+</details>
+
+<details>
+<summary><img src="https://img.shields.io/badge/Codex%20CLI-000000?style=flat-square&logo=openai&logoColor=white" alt="Codex"/> &ensp; <strong>Edit <code>~/.codex/config.toml</code></strong></summary>
+
+OpenAI Codex CLI uses TOML, not JSON. Open `~/.codex/config.toml` (Windows: `%USERPROFILE%\.codex\config.toml`) and append:
+
+```toml
+[mcp_servers.packet-tracer]
+command = "python"
+args = ["-m", "packet_tracer_mcp", "--stdio"]
+```
+
+Restart your `codex` session. Codex picks up MCP servers on launch.
+
+</details>
+
+<details>
+<summary><img src="https://img.shields.io/badge/VS%20Code-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white" alt="VS Code"/> &ensp; <strong><code>.vscode/mcp.json</code> (Copilot, Continue, Cline)</strong></summary>
+
+Two options. **stdio** is the simplest — VS Code spawns the server when needed:
+
+```json
+{
+  "servers": {
+    "packet-tracer": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "packet_tracer_mcp", "--stdio"]
+    }
+  }
+}
+```
+
+**streamable-http** if you want to keep one server running outside VS Code (e.g. shared across multiple windows):
 
 ```json
 {
@@ -174,30 +262,54 @@ This starts two services automatically:
 }
 ```
 
+For HTTP, start the server first in any terminal: `python -m packet_tracer_mcp`. Default endpoint is `http://127.0.0.1:39000/mcp` and the bridge runs at `:54321`.
+
 </details>
 
 <details>
-<summary><img src="https://img.shields.io/badge/Claude%20Desktop-D97757?style=flat-square&logo=anthropic&logoColor=white" alt="Claude Desktop"/> &ensp; <code>claude_desktop_config.json</code></summary>
+<summary><img src="https://img.shields.io/badge/Cursor-000000?style=flat-square&logo=cursor&logoColor=white" alt="Cursor"/> &ensp; <strong><code>.cursor/mcp.json</code></strong></summary>
+
+Per-user (global): `~/.cursor/mcp.json`. Per-project: `<workspace>/.cursor/mcp.json`.
 
 ```json
 {
   "mcpServers": {
     "packet-tracer": {
-      "url": "http://127.0.0.1:39000/mcp"
+      "command": "python",
+      "args": ["-m", "packet_tracer_mcp", "--stdio"]
     }
   }
 }
 ```
 
+Reload the Cursor window after saving (Cmd/Ctrl+Shift+P → "Reload Window").
+
 </details>
 
-### 3 &mdash; Ask your LLM to build a network
+<details>
+<summary><strong>◇ Generic stdio template — any other MCP client</strong></summary>
+
+The vast majority of MCP clients accept the same three fields. Translate to whatever syntax your client expects:
+
+| Field | Value |
+|---|---|
+| `command` | `python` (or absolute interpreter path on sandboxed/MSIX systems) |
+| `args` | `["-m", "packet_tracer_mcp", "--stdio"]` |
+| `transport` / `type` | `stdio` |
+
+For HTTP-only clients, start the server with `python -m packet_tracer_mcp` and point the client at `http://127.0.0.1:39000/mcp`.
+
+</details>
+
+### 2 &mdash; Ask your LLM to build a network
 
 ```
 "Create a network with 2 routers, 2 switches, 4 PCs, DHCP and static routing"
 ```
 
 The server handles the rest: **planning → validation → generation → deploy**.
+
+> For live deploy into a running Packet Tracer instance, also paste the [bootstrap snippet](#-live-deploy-setup) once into PT's *Builder Code Editor*. The MCP tools work even without it (you can still plan, generate scripts and configs, and export to disk).
 
 ---
 
@@ -244,7 +356,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 ## ◈ MCP Tools
 
-22 tools across 7 groups.
+33 tools across 11 groups.
 
 ### Catalog
 
@@ -272,7 +384,7 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 
 | Tool | Description |
 |------|-------------|
-| `pt_validate_plan` | Validates a plan against 15 typed error codes |
+| `pt_validate_plan` | Validates a plan against 24 typed error codes |
 | `pt_fix_plan` | Auto-corrects common errors (wrong cables, missing ports, model upgrades) |
 | `pt_explain_plan` | Returns a natural-language explanation of every decision in the plan |
 
@@ -317,6 +429,49 @@ Port 39000 was chosen to avoid collisions with common ports (3000, 5000, 8000, 8
 | `pt_export` | Exports plan, JS script and CLI configs to files |
 | `pt_list_projects` | Lists saved projects |
 | `pt_load_project` | Loads a previously saved project |
+
+### Modules
+
+Hot-install expansion modules (HWIC, NM, NIM, WIC) on routers already placed in the active topology. The runtime patch powers the device off, installs the module and powers it back on automatically — no manual shutdown needed.
+
+| Tool | Description |
+|------|-------------|
+| `pt_list_modules` | Lists modules in the catalog. Optional filter by router model (e.g. `2911`) or category (`router_hwic`, `router_nm`, `router_nim`, `router_wic`) |
+| `pt_add_module` | Installs a single module in a slot of an existing device. Validates module exists, slot is a non-empty string, device is present in PT and module/router compatibility before sending |
+| `pt_install_modules_batch` | Installs N modules across one or more devices in a single power-cycle. Recommended over multiple `pt_add_module` calls — avoids the per-call power-on delay that can time out the bridge bootstrap |
+
+> Slot is a **string** that mirrors the addressing PT expects:
+> - HWIC on 1941/2901/2911 → `"0/0"`, `"0/1"`, `"0/2"`, `"0/3"` (chassis-slot/hwic-subslot)
+> - NIM on ISR4321/4331 → `"0"`, `"1"`
+> - NM on Router-PT / 2811 / 2620XM / 2621XM → `"1"`, `"2"` *(ISR G2 like 2911/2901/1941 do **not** have NM slots — use 2× HWIC-2T for 4 serials)*
+> - Cloud-PT / hosts → `"0"`, `"1"`, … per the device's slot map
+>
+> Integers are accepted and auto-coerced to strings, but prefer the literal string format above to match PT's slot semantics — particularly for HWIC where `"0/0"` and `0` address different slots.
+
+### ACL
+
+Apply and remove Access Control Lists on live routers via the HTTP bridge. Works independently of `pt_live_deploy` — you can add ACLs to any existing topology.
+
+| Tool | Description |
+|------|-------------|
+| `pt_apply_acl` | Applies a standard, extended or named ACL to a router interface. Validates number ranges, wildcard masks, protocol/port coherence and unreachable rules before sending |
+| `pt_remove_acl` | Removes an ACL (and optionally its interface binding) from a router |
+
+> **When to use each type:** Standard ACL (1–99) — filter by source IP only. Extended ACL (100–199) — filter by source, destination, protocol and ports. Named ACL — any string identifier, easier to read and edit in IOS.
+
+### NAT / PAT
+
+Configure address translation on live routers via the HTTP bridge. Three modes map directly to the three IOS NAT variants taught in CCNA.
+
+| Tool | Description |
+|------|-------------|
+| `pt_apply_nat` | Applies Static NAT, Dynamic NAT or PAT (NAT Overload) to a router. Marks inside/outside interfaces, generates the ACL and pool inline, validates IPs and pool ranges |
+| `pt_remove_nat` | Removes NAT translation rules, pool and ACL from a router and unmarks its interfaces |
+
+> **When to use each mode:**
+> - `static` — one private IP always maps to the same public IP. Use for servers that must be reachable from the internet with a fixed address.
+> - `dynamic` — pool of public IPs assigned on demand. Use when you have more public IPs than PAT justifies but fewer than private hosts.
+> - `pat` — many private IPs share one public IP using port numbers. Use in virtually every home and enterprise network (`use_interface_overload=True` uses the WAN interface IP directly).
 
 ---
 
@@ -637,11 +792,11 @@ The server infers the correct cable automatically from the two device categories
 
 ## ◈ Expansion Modules
 
-150 expansion modules across 26 module categories. They add extra ports to devices at runtime. The generator emits `addModule()` calls **after** `addDevice()` and **before** `addLink()`, which is the required PTBuilder execution order.
+151 expansion modules across 26 module categories. They add extra ports to devices at runtime. The generator emits `addModule()` calls **after** `addDevice()` and **before** `addLink()`, which is the required PTBuilder execution order.
 
 ```javascript
 addDevice("R1", "2911", 100, 100);
-addModule("R1", 0, "HWIC-2T");       // installs 2 serial ports in slot 0
+addModule("R1", "0/0", "HWIC-2T");   // installs 2 serial ports in HWIC slot 0/0
 addLink("R1", "Serial0/0/0", "R2", "Serial0/0/0", "serial");
 ```
 
@@ -686,7 +841,7 @@ addLink("R1", "Serial0/0/0", "R2", "Serial0/0/0", "serial");
 
 #### Other Module Families
 
-The catalog contains 150 modules total across all device types:
+The catalog contains 151 modules total across all device types:
 
 | Module Family | Count | Applies To |
 |---------------|-------|------------|
@@ -791,7 +946,7 @@ Templates are hints that guide the orchestrator's topology-building logic.
 src/packet_tracer_mcp/
 ├── adapters/
 │   └── mcp/
-│       ├── tool_registry.py       # All 22 MCP tools (@mcp.tool decorators)
+│       ├── tool_registry.py       # All 30 MCP tools (@mcp.tool decorators)
 │       └── resource_registry.py   # All 5 MCP resources (@mcp.resource decorators)
 │
 ├── application/
@@ -802,7 +957,9 @@ src/packet_tracer_mcp/
 │   ├── models/
 │   │   ├── requests.py            # TopologyRequest -- input from LLM
 │   │   ├── plans.py               # TopologyPlan, DevicePlan, LinkPlan, ModulePlan
-│   │   └── errors.py              # PlanError, ErrorCode (15 codes), ValidationResult
+│   │   ├── acls.py                # ACLPlan, ACLEntry, ACLBinding
+│   │   ├── nat.py                 # NATConfig, NATPool, NATStaticMapping (3 modes)
+│   │   └── errors.py              # PlanError, ErrorCode (24 codes), ValidationResult
 │   ├── services/
 │   │   ├── orchestrator.py        # Main pipeline: request -> TopologyPlan
 │   │   ├── ip_planner.py          # Assigns /24 LANs and /30 inter-router links
@@ -813,18 +970,22 @@ src/packet_tracer_mcp/
 │   └── rules/
 │       ├── device_rules.py        # Validates device models against catalog
 │       ├── cable_rules.py         # Validates cable types and port conflicts
-│       └── ip_rules.py            # Validates IP uniqueness and subnet conflicts
+│       ├── ip_rules.py            # Validates IP uniqueness and subnet conflicts
+│       ├── acl_rules.py           # Validates ACL entries, numbers, wildcards
+│       └── nat_rules.py           # Validates NAT IPs, pool ranges, interface coherence
 │
 ├── infrastructure/
 │   ├── catalog/
 │   │   ├── devices.py             # 74 DeviceModel definitions across 34 categories
-│   │   ├── modules.py             # 150 expansion module specs (NM, HWIC, NIM, WIC, SFP...)
+│   │   ├── modules.py             # 151 expansion module specs (NM, HWIC, NIM, WIC, SFP...)
 │   │   ├── cables.py              # 15 cable types, PT codes, 88 inference rules
 │   │   ├── aliases.py             # 101 model name aliases
 │   │   └── templates.py           # 9 topology template definitions
 │   ├── generator/
-│   │   ├── ptbuilder_generator.py # Generates addDevice/addModule/addLink JS
-│   │   └── cli_config_generator.py # Generates IOS CLI blocks (DHCP, routing, ...)
+│   │   ├── ptbuilder_generator.py  # Generates addDevice/addModule/addLink JS
+│   │   ├── cli_config_generator.py # Generates IOS CLI blocks (DHCP, routing, ...)
+│   │   ├── acl_cli_generator.py    # Generates access-list / ip access-group CLI
+│   │   └── nat_cli_generator.py    # Generates ip nat inside/outside / pool / overload CLI
 │   ├── execution/
 │   │   ├── live_bridge.py         # PTCommandBridge HTTP server (:54321)
 │   │   ├── live_executor.py       # Converts TopologyPlan -> JS commands -> bridge
