@@ -37,6 +37,7 @@ from ...infrastructure.generator.cli_config_generator import (
     generate_all_configs,
     generate_pc_config,
 )
+from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import PTCommandBridge
