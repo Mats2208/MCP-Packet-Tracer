@@ -1,5 +1,0 @@
-enable
-configure terminal
-hostname SW-LAN3
-end
-write memory

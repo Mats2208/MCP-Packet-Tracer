@@ -19,8 +19,12 @@ build/
 .venv/
 venv/
 env/
+
+# UI helper working copies — the .pts script-engine dev copies (dash names).
+# NOTE: the committed "UI HELPER/" folder (with a space) is the real webview UI source and stays tracked.
 UI-HELPER/
 UI-HELPER-TOOLS/
+
 # macOS
 .DS_Store
 
@@ -30,11 +34,15 @@ data/test_*
 tmp/
 
 CLAUDE.md
-# Project exports (runtime output, not source)
+# Project exports / generated topology artifacts (runtime output, not source)
 projects/
+output/
 
 # Tooling
 .claude/
 .vscode/settings.json
 *.log
+
+# Large demo media (README embeds the GIF; keep heavy video out of git)
+demo/*.mp4
 
