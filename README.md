@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="https://www.netacad.com/skillsforall/img/desktop/cisco_packet_tracer.png" width="36" align="center"/> Packet Tracer MCP Server
+<img src="demo/banner.png" alt="Packet Tracer MCP — AI-powered Cisco Packet Tracer automation: generate, validate and deploy network topologies from natural-language prompts" width="100%"/>
 
 **Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
 
@@ -107,6 +107,9 @@ own **MCP Control Center** extension once — the `.pts` from
 [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) — via
 **Extensions → Scripting → Configure PT Script Modules → Add…**, then open
 **Extensions → MCP BUILDER**. It auto-connects to the bridge — no snippet to paste.
+
+<p align="center"><img src="demo/install-demo.gif" alt="Installing the MCP Control Center extension in Packet Tracer" width="760"/></p>
+<p align="center"><sub>Installing the MCP Control Center extension (V4) in Packet Tracer</sub></p>
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 

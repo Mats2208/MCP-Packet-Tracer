@@ -26,6 +26,8 @@ You do **not** need any third-party extension.
 
 That's it — the module is now registered.
 
+![Installing the MCP Control Center extension in Packet Tracer](https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/install-demo.gif)
+
 ## Use it (each session)
 
 1. Open **Cisco Packet Tracer 8.2+**
