@@ -1,0 +1,89 @@
+site_name: Packet Tracer MCP
+site_description: AI-powered Cisco Packet Tracer automation via the Model Context Protocol — plan, validate, generate and deploy full network topologies from natural language.
+site_url: https://mats2208.github.io/MCP-Packet-Tracer/
+site_author: Mats2208
+repo_url: https://github.com/Mats2208/MCP-Packet-Tracer
+repo_name: Mats2208/MCP-Packet-Tracer
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Mateo (Mats2208) — MIT License
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Mats2208/MCP-Packet-Tracer
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quick Start: quickstart.md
+      - Live Deploy Setup: live-deploy.md
+  - Reference:
+      - MCP Tools: tools.md
+      - MCP Resources: resources.md
+      - Supported Devices: devices.md
+      - Cable Types: cables.md
+      - Expansion Modules: modules.md
+  - Networking:
+      - IP Addressing: ip-addressing.md
+      - Routing Protocols: routing.md
+      - Topology Templates: templates.md
+  - Internals:
+      - Architecture: architecture.md
+      - Testing: testing.md
+  - Credits & Attribution: credits.md
