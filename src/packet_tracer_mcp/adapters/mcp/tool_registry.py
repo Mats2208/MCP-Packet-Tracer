@@ -1162,9 +1162,8 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_delete_device(device_name: str) -> str:
         """
-        Attempt to delete a device from the active topology in Packet Tracer.
-        NOTE: PT's IPC does not support device deletion. This tool checks if the
-        device exists and reports the limitation.
+        Delete a device from the active topology in Packet Tracer.
+        Uses getLogicalWorkspace().removeDevice() and verifies the device is gone.
 
         Parameters:
         - device_name: exact device name (e.g. "R1", "PC3", "Laptop-WAN")
@@ -1179,7 +1178,14 @@ def register_tools(mcp: FastMCP) -> None:
             f'  var dev = ipc.network().getDevice("{safe_name}");'
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
             "  else {"
-            "    reportResult('EXISTS:' + dev.getName() + '|' + dev.getModel());"
+            "    var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+            "    if (typeof lw.removeDevice !== 'function') {"
+            "      reportResult('ERROR:removeDevice API not available in this PT build');"
+            "    } else {"
+            "      lw.removeDevice(dev.getName());"
+            f'      var still = ipc.network().getDevice("{safe_name}");'
+            "      reportResult(still ? 'ERROR:device still present after removeDevice' : 'OK:deleted');"
+            "    }"
             "  }"
             "} catch(e) { reportResult('ERROR:' + e); }"
         )
@@ -1188,11 +1194,7 @@ def register_tools(mcp: FastMCP) -> None:
             return f"No response from PT. Device '{device_name}' may not exist."
         if result.startswith("ERROR:"):
             return f"Error: {result[6:]}"
-        return (
-            f"Device '{device_name}' found but cannot be deleted via IPC — "
-            f"PT's Script Engine does not expose a device deletion API. "
-            f"Please delete it manually in Packet Tracer (right-click → Delete)."
-        )
+        return f"Device '{device_name}' deleted from the topology."
 
     @mcp.tool()
     def pt_rename_device(old_name: str, new_name: str) -> str:
