@@ -505,10 +505,24 @@ The live deploy feature sends commands directly to a running Packet Tracer insta
 | **39000** | MCP server (streamable-http) | Receives tool calls from the LLM or editor |
 | **54321** | HTTP bridge | Queues JS commands for PTBuilder to execute in PT |
 
+### Prerequisite (one-time): install PTBuilder
+
+Live deploy relies on **[PTBuilder](https://github.com/kimmknight/PTBuilder)** by
+[@kimmknight](https://github.com/kimmknight) — a **third-party** Packet Tracer
+extension. It is **not** built into Packet Tracer, so you must install it once:
+
+1. Download **[`Builder.pts`](https://github.com/kimmknight/PTBuilder/blob/main/Builder.pts)**
+2. In Packet Tracer, go to **Extensions → Scripting → Configure PT Script Modules**
+3. Click **Add…** and select the `Builder.pts` file you downloaded
+
+> The **Extensions → Builder Code Editor** menu only appears *after* PTBuilder is
+> registered as a script module. If you don't see it (e.g. on PT 9.0.0), this step
+> is what's missing.
+
 ### Setup (once per PT session)
 
 1. Open **Cisco Packet Tracer 8.2+**
-2. Go to **Extensions → Builder Code Editor**
+2. Go to **Extensions → Builder Code Editor** *(available only after installing PTBuilder, above)*
 3. Paste this bootstrap script and click **Run**:
 
 ```javascript
@@ -1042,7 +1056,7 @@ python -m pytest tests/test_full_build.py::TestFullBuild::test_basic_2_routers -
 | Pydantic | 2.0+ | |
 | FastMCP / mcp[cli] | 1.0+ | |
 | Cisco Packet Tracer | 8.2+ | For live deploy only |
-| PTBuilder extension | — | Built into PT 8.2+, required for live deploy |
+| [PTBuilder](https://github.com/kimmknight/PTBuilder) (by [@kimmknight](https://github.com/kimmknight)) | latest | **Third-party** PT extension — **must be installed manually** (it is *not* built into Packet Tracer); required for live deploy |
 
 ---
 
@@ -1071,6 +1085,22 @@ Generated:  8x addDevice, 7x addLink, 2x configureIosDevice, 4x configurePcIp
 **`pt_live_deploy`** sends all 21 commands through the bridge and the topology appears in Packet Tracer fully configured.
 
 ---
+
+---
+
+## Credits & Acknowledgements
+
+The **live-deploy bridge** — the JavaScript that drives Packet Tracer's Script Engine
+(`devices.js`, `links.js`, `modules.js`, `runcode.js`, `userfunctions.js`, `window.js`,
+`main.js`) — is **derived from [PTBuilder](https://github.com/kimmknight/PTBuilder) by
+Kim Knight ([@kimmknight](https://github.com/kimmknight))**. Huge thanks to him — this
+project's live-deploy feature would not exist without PTBuilder. If you reuse the bridge
+code, please credit kimmknight/PTBuilder as the upstream source.
+
+> **Note on licensing:** PTBuilder does not currently ship an explicit license. We've
+> reached out to the author about preferred attribution/licensing (see
+> [#6](https://github.com/Mats2208/MCP-Packet-Tracer/issues/6)) and will update this
+> section accordingly.
 
 ---
 
