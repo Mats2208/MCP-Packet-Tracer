@@ -8,8 +8,11 @@ version = "0.4.0"
 description = "MCP server for Cisco Packet Tracer - topology planning, validation, auto-fix, generation, and configuration"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.0.0",
-    "pydantic>=2.0.0",
+    # mcp >=1.13 builds tool output schemas from return annotations, which requires
+    # pydantic >=2.11. Pinning pydantic too low (e.g. 2.8) makes the server crash on
+    # startup at the first @mcp.tool() with a PydanticUserError. Keep both in sync.
+    "mcp[cli]>=1.13,<2",
+    "pydantic>=2.11,<3",
 ]
 
 [project.scripts]
