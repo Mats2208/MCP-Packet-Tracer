@@ -35,10 +35,12 @@ Agregar módulos a routers ya colocados:
 - Switches 2960/3560: GigabitEthernet0/1 (uplink), FastEthernet0/1 … FastEthernet0/24
 - PCs / Laptops / Servers: FastEthernet0
 
-## addLink — firma correcta
-  addLink("dispositivo1", "puerto1", "dispositivo2", "puerto2")
-  addLink("dispositivo1", "puerto1", "dispositivo2", "puerto2", "tipoCable")
-  Tipos de cable: "straight", "crossover", "serial", "fiber" (opcional, PT auto-detecta si se omite)
+## addLink — usa pt_add_link (recomendado) o addLink directo
+  PREFERIR pt_add_link — valida dispositivos, puertos y cable antes de crear.
+  Si usas addLink directo, el 5to argumento (cable type) es OBLIGATORIO.
+  Tipos de cable válidos: "straight", "cross", "serial", "fiber", "console", "roll", "phone", "coaxial", "auto", "usb"
+  Aliases aceptados por pt_add_link: "crossover"→"cross", "rollover"→"roll"
+  NUNCA uses "crossover" — el valor correcto es "cross".
 
 ## Módulos de expansión — REGLAS CRÍTICAS
 
@@ -94,8 +96,9 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
   2960-24TT | 3560-24PS
 
 ## Importante
-- El script engine de PT acepta: addDevice, addLink, addModule, configureIosDevice, configurePcIp.
-- El MCP tiene 30 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
+- Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
+- El MCP tiene 36 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

@@ -43,7 +43,7 @@ from ...infrastructure.execution.live_bridge import PTCommandBridge
 from ...infrastructure.execution.live_executor import LiveExecutor
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
-from ...infrastructure.catalog.cables import CABLE_TYPES
+from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
@@ -648,13 +648,27 @@ def register_tools(mcp: FastMCP) -> None:
     # ------------------------------------------------------------------
 
     _BRIDGE_URL = "http://127.0.0.1:54321"
+    _BRIDGE_PORT = 54321
     _BOOTSTRAP = (
         '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync('
         '"setInterval(function(){var x=new XMLHttpRequest();'
         "x.open('GET','http://127.0.0.1:54321/next',true);"
         'x.onload=function(){if(x.status===200&&x.responseText)'
-        "{$se('runCode',x.responseText)}};x.onerror=function(){};"
+        "{try{$se('runCode',x.responseText)}catch(e){}}};x.onerror=function(){};"
         'x.send()},500)");'
+    )
+    _REPORT_RESULT_JS = (
+        "function reportResult(d){"
+        "var s=String(d)"
+        ".replace(/\\\\/g,'\\\\\\\\')"
+        ".replace(/'/g,\"\\\\'\")"
+        ".replace(/\\n/g,'\\\\n');"
+        "window.webview.evaluateJavaScriptAsync("
+        "\"var x=new XMLHttpRequest();"
+        f"x.open('POST','http://127.0.0.1:{_BRIDGE_PORT}/result',true);"
+        "x.setRequestHeader('Content-Type','text/plain');"
+        "x.send('\"+s+\"');\")"
+        "}"
     )
 
     # Runtime patches que sobrescriben las funciones nativas del PT script engine
@@ -857,12 +871,56 @@ def register_tools(mcp: FastMCP) -> None:
                 sent += 1
             time.sleep(command_delay)
 
-        return (
-            f"Topologia desplegada en Packet Tracer!\n"
-            f"  Comandos enviados: {sent}\n"
-            f"  Dispositivos: {len(plan.devices)}\n"
-            f"  Enlaces: {len(plan.links)}"
-        )
+        dev_ok = 0
+        dev_fail = []
+        for dev in plan.devices:
+            safe = _js_escape(dev.name)
+            js = (
+                "try {"
+                f"  var d = ipc.network().getDevice('{safe}');"
+                "  reportResult(d ? 'OK' : 'MISSING');"
+                "} catch(e) { reportResult('MISSING'); }"
+            )
+            r = _bridge_send_and_wait(js, timeout=5.0)
+            if r == "OK":
+                dev_ok += 1
+            else:
+                dev_fail.append(dev.name)
+
+        link_ok = 0
+        link_fail = []
+        for lnk in plan.links:
+            sd = _js_escape(lnk.device_a)
+            sp = _js_escape(lnk.port_a)
+            js = (
+                "try {"
+                f"  var d = ipc.network().getDevice('{sd}');"
+                f"  if (!d) {{ reportResult('DEV_MISSING'); throw 's'; }}"
+                f"  var p = d.getPort('{sp}');"
+                f"  if (!p) {{ reportResult('PORT_MISSING'); throw 's'; }}"
+                "  reportResult(p.getLink() != null ? 'OK' : 'NO_LINK');"
+                "} catch(e) { if (e !== 's') reportResult('ERROR'); }"
+            )
+            r = _bridge_send_and_wait(js, timeout=5.0)
+            if r == "OK":
+                link_ok += 1
+            else:
+                link_fail.append(f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b} ({r or 'timeout'})")
+
+        report = [
+            "Topologia desplegada en Packet Tracer!",
+            f"  Comandos enviados: {sent}",
+            f"  Dispositivos: {dev_ok}/{len(plan.devices)} verificados",
+        ]
+        if dev_fail:
+            report.append(f"  FAILED devices: {', '.join(dev_fail)}")
+        report.append(f"  Enlaces: {link_ok}/{len(plan.links)} verificados")
+        if link_fail:
+            report.append("  FAILED links:")
+            for f in link_fail:
+                report.append(f"    - {f}")
+
+        return "\n".join(report)
 
     @mcp.tool()
     def pt_bridge_status() -> str:
@@ -873,17 +931,17 @@ def register_tools(mcp: FastMCP) -> None:
         """
         if not _ensure_bridge():
             return (
-                "No se pudo iniciar el bridge HTTP en :54321.\n"
-                "Puerto bloqueado por otro proceso. Libera el puerto e intenta de nuevo."
+                "Could not start HTTP bridge on :54321.\n"
+                "Port blocked by another process. Free the port and try again."
             )
 
         if _bridge_pt_connected():
-            return "Bridge ACTIVO y CONECTADO. Packet Tracer esta recibiendo comandos en http://127.0.0.1:54321"
+            return "Bridge ACTIVE and CONNECTED. Packet Tracer is receiving commands at http://127.0.0.1:54321"
 
         return (
-            "Bridge activo en http://127.0.0.1:54321 pero PT NO esta conectado.\n\n"
-            "Pega esto en Builder Code Editor (Extensions > Builder Code Editor) "
-            "y haz clic en Run:\n\n"
+            "Bridge active at http://127.0.0.1:54321 but PT is NOT connected.\n\n"
+            "Paste this in Builder Code Editor (Extensions > Builder Code Editor) "
+            "and click Run:\n\n"
             + _BOOTSTRAP
         )
 
@@ -896,12 +954,9 @@ def register_tools(mcp: FastMCP) -> None:
         return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
 
     def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
-        """
-        Envia un comando JS al bridge y espera la respuesta (long-poll GET /result).
-        El comando debe llamar a reportResult(...) internamente para enviar datos back.
-        Requiere que el bridge esté activo y PT conectado.
-        """
-        status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", js_call)
+        """Send JS to bridge, injecting reportResult() into scope, and wait for response."""
+        wrapped = f"{_REPORT_RESULT_JS};{js_call}"
+        status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
         if status_post != 200:
             return None
         status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
@@ -916,96 +971,237 @@ def register_tools(mcp: FastMCP) -> None:
         aplicados (idempotente — solo envía la primera vez por conexión).
         """
         if not _ensure_bridge():
-            return "No se pudo iniciar el bridge en :54321."
+            return "Could not start bridge on :54321."
         if not _bridge_pt_connected():
             return (
-                "Bridge activo pero PT no está conectado.\n"
-                "Ejecuta el bootstrap en Builder Code Editor."
+                "Bridge active but PT is not connected.\n"
+                "Run the bootstrap in Builder Code Editor."
             )
         _ensure_pt_patches()
         return None
 
     # ------------------------------------------------------------------
-    # QUERY / INTERACT con topología existente en PT
+    # QUERY / INTERACT with existing topology in PT
     # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_query_topology() -> str:
         """
-        Consulta qué dispositivos hay actualmente en Packet Tracer.
-        Devuelve nombre, tipo y modelo de cada dispositivo en la topología activa.
-        Requiere bridge conectado (pt_bridge_status para verificar).
+        Query current devices in Packet Tracer.
+        Returns name, model, and port/IP info for each device in the active topology.
+        Requires bridge connected (use pt_bridge_status to verify).
         """
         err = _check_bridge()
         if err:
             return err
 
-        result = _bridge_send_and_wait("queryTopology()", timeout=10.0)
+        js = (
+            "try {"
+            "  var net = ipc.network();"
+            "  var n = net.getDeviceCount();"
+            "  var lc = net.getLinkCount();"
+            "  var parts = [];"
+            "  for (var i = 0; i < n; i++) {"
+            "    var d = net.getDeviceAt(i);"
+            "    var pc = d.getPortCount();"
+            "    var portNames = [];"
+            "    for (var j = 0; j < pc; j++) {"
+            "      var p = d.getPortAt(j);"
+            "      try {"
+            "        var ip = p.getIpAddress();"
+            "        if (ip && ip !== '0.0.0.0') {"
+            "          portNames.push(p.getName() + '=' + ip + '/' + p.getSubnetMask());"
+            "        } else {"
+            "          portNames.push(p.getName());"
+            "        }"
+            "      } catch(pe) { portNames.push(p.getName()); }"
+            "    }"
+            "    parts.push(d.getName() + '|' + d.getModel() + '|' + portNames.join(','));"
+            "  }"
+            "  reportResult('DEVICES:' + n + '|LINKS:' + lc + '\\n' + parts.join('\\n'));"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
+        result = _bridge_send_and_wait(js, timeout=10.0)
         if result is None:
-            return "Sin respuesta de PT (timeout). Verifica que el bootstrap esté corriendo."
-        try:
-            data = json.loads(result)
-        except Exception:
-            return f"Respuesta inesperada de PT: {result}"
+            return "No response from PT (timeout). Verify the bootstrap is running."
+        if result.startswith("ERROR:"):
+            return f"PT error: {result}"
 
-        devices = data.get("devices", [])
-        if not devices:
-            return "No hay dispositivos en la topología actual."
+        lines_raw = result.split("\n")
+        header = lines_raw[0] if lines_raw else ""
+        device_lines = lines_raw[1:] if len(lines_raw) > 1 else []
 
-        type_labels = {
-            0: "Router", 1: "Switch", 7: "AccessPoint", 8: "PC",
-            9: "Server", 16: "L3 Switch", 17: "Laptop", 18: "Tablet",
-        }
-        lines = [f"Dispositivos en Packet Tracer ({data.get('count', len(devices))}):", ""]
-        for d in devices:
-            type_name = d.get("typeName")
-            model_name = d.get("model")
-            if not type_name or type_name.lower() == "unknown":
-                catalog_model = resolve_model(model_name) if model_name else None
-                if catalog_model:
-                    type_name = catalog_model.category
+        output = [header, ""]
+        for line in device_lines:
+            if not line.strip():
+                continue
+            parts = line.split("|", 2)
+            name = parts[0] if len(parts) > 0 else "?"
+            model = parts[1] if len(parts) > 1 else "?"
+            ports = parts[2] if len(parts) > 2 else ""
+            port_info = f"  ({ports})" if ports else ""
+            output.append(f"  {name:20} [{model}]{port_info}")
+        return "\n".join(output)
+
+    @mcp.tool()
+    def pt_export_topology() -> str:
+        """
+        Export a detailed snapshot of the full topology currently in Packet Tracer.
+        Returns JSON with devices (name, model, x/y position, interfaces with IPs)
+        and links (endpoints, ports, cable type). This gives a complete picture of
+        what is deployed so the LLM can reason about the topology.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        js = (
+            "try {"
+            "  var net = ipc.network();"
+            "  var devCount = net.getDeviceCount();"
+            "  var linkCount = net.getLinkCount();"
+            "  var devices = [];"
+            "  for (var i = 0; i < devCount; i++) {"
+            "    var d = net.getDeviceAt(i);"
+            "    var ports = [];"
+            "    var pc = d.getPortCount();"
+            "    for (var j = 0; j < pc; j++) {"
+            "      var p = d.getPortAt(j);"
+            "      var pInfo = p.getName();"
+            "      try {"
+            "        var ip = p.getIpAddress();"
+            "        var mask = p.getSubnetMask();"
+            "        if (ip && ip !== '0.0.0.0') pInfo += ':' + ip + '/' + mask;"
+            "      } catch(e) {}"
+            "      var hasLink = (p.getLink() != null) ? '1' : '0';"
+            "      pInfo += ':' + hasLink;"
+            "      ports.push(pInfo);"
+            "    }"
+            "    var x = 0; var y = 0;"
+            "    try { x = d.getXCoordinate(); y = d.getYCoordinate(); } catch(e) {}"
+            "    devices.push(d.getName() + '|' + d.getModel() + '|' + x + '|' + y + '|' + ports.join(','));"
+            "  }"
+            "  var links = [];"
+            "  for (var k = 0; k < linkCount; k++) {"
+            "    var l = net.getLinkAt(k);"
+            "    var cls = l.getClassName();"
+            "    try {"
+            "      if (cls === 'Antenna') {"
+            "        var ap = l.getPort().getOwnerDevice().getName();"
+            "        var apPort = l.getPort().getName();"
+            "        links.push(ap + ':' + apPort + '|[wireless-signal]');"
+            "      } else {"
+            "        var p1 = l.getPort1();"
+            "        var p2 = l.getPort2();"
+            "        var d1 = p1.getOwnerDevice().getName();"
+            "        var d2 = p2.getOwnerDevice().getName();"
+            "        links.push(d1 + ':' + p1.getName() + '|' + d2 + ':' + p2.getName());"
+            "      }"
+            "    } catch(le) { links.push('UNKNOWN:' + cls); }"
+            "  }"
+            "  reportResult('TOPO|' + devCount + '|' + linkCount + '\\n' + devices.join('\\n') + '\\nLINKS\\n' + links.join('\\n'));"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
+        result = _bridge_send_and_wait(js, timeout=15.0)
+        if result is None:
+            return "No response from PT (timeout). Verify the bootstrap is running."
+        if result.startswith("ERROR:"):
+            return f"PT error: {result}"
+
+        lines = result.split("\n")
+        header = lines[0] if lines else ""
+        header_parts = header.split("|")
+        dev_count = header_parts[1] if len(header_parts) > 1 else "?"
+        link_count = header_parts[2] if len(header_parts) > 2 else "?"
+
+        output = [f"=== Topology Export: {dev_count} devices, {link_count} links ===", ""]
+        in_links = False
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            if line == "LINKS":
+                output.append("")
+                output.append("--- Links ---")
+                in_links = True
+                continue
+            if in_links:
+                parts = line.split("|")
+                if len(parts) == 2:
+                    if parts[1] == "[wireless-signal]":
+                        output.append(f"  {parts[0]}  )))  [wireless signal]")
+                    else:
+                        output.append(f"  {parts[0]}  <-->  {parts[1]}")
                 else:
-                    type_name = type_labels.get(d.get("type"), f"type={d.get('type')}")
-            model = f" [{model_name}]" if model_name else ""
-            pos = f"  pos=({d['x']},{d['y']})" if d.get("x") is not None else ""
-            lines.append(f"  {d['name']:15}  {type_name}{model}{pos}")
-        return "\n".join(lines)
+                    output.append(f"  {line}")
+            else:
+                parts = line.split("|")
+                name = parts[0] if len(parts) > 0 else "?"
+                model = parts[1] if len(parts) > 1 else "?"
+                x = parts[2] if len(parts) > 2 else "?"
+                y = parts[3] if len(parts) > 3 else "?"
+                ports_raw = parts[4] if len(parts) > 4 else ""
+
+                output.append(f"  {name} [{model}] @ ({x}, {y})")
+                if ports_raw:
+                    for pstr in ports_raw.split(","):
+                        pparts = pstr.split(":")
+                        pname = pparts[0]
+                        ip_info = ""
+                        linked = ""
+                        if len(pparts) >= 3:
+                            if pparts[1] and "/" in pparts[1]:
+                                ip_info = f" IP={pparts[1]}"
+                            linked = " [linked]" if pparts[-1] == "1" else ""
+                        elif len(pparts) == 2:
+                            linked = " [linked]" if pparts[1] == "1" else ""
+                        if ip_info or linked:
+                            output.append(f"    {pname}{ip_info}{linked}")
+
+        return "\n".join(output)
 
     @mcp.tool()
     def pt_delete_device(device_name: str) -> str:
         """
-        Elimina un dispositivo de la topología activa en Packet Tracer.
-        También elimina todos sus enlaces automáticamente.
+        Attempt to delete a device from the active topology in Packet Tracer.
+        NOTE: PT's IPC does not support device deletion. This tool checks if the
+        device exists and reports the limitation.
 
-        Parámetros:
-        - device_name: nombre exacto del dispositivo (ej: "R1", "PC3", "Laptop-WAN")
+        Parameters:
+        - device_name: exact device name (e.g. "R1", "PC3", "Laptop-WAN")
         """
         err = _check_bridge()
         if err:
             return err
 
         safe_name = _js_escape(device_name)
-        js = f'deleteDevice("{safe_name}")'
+        js = (
+            "try {"
+            f'  var dev = ipc.network().getDevice("{safe_name}");'
+            "  if (!dev) { reportResult('ERROR:Device not found'); }"
+            "  else {"
+            "    reportResult('EXISTS:' + dev.getName() + '|' + dev.getModel());"
+            "  }"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
-            return f"Sin respuesta de PT. El dispositivo '{device_name}' puede no existir."
-        try:
-            data = json.loads(result)
-            if data.get("success"):
-                return f"Dispositivo '{device_name}' eliminado correctamente."
-            else:
-                return f"Error al eliminar '{device_name}': {data.get('error', 'desconocido')}"
-        except Exception:
-            return f"Respuesta inesperada: {result}"
+            return f"No response from PT. Device '{device_name}' may not exist."
+        if result.startswith("ERROR:"):
+            return f"Error: {result[6:]}"
+        return (
+            f"Device '{device_name}' found but cannot be deleted via IPC — "
+            f"PT's Script Engine does not expose a device deletion API. "
+            f"Please delete it manually in Packet Tracer (right-click → Delete)."
+        )
 
     @mcp.tool()
     def pt_rename_device(old_name: str, new_name: str) -> str:
         """
-        Renombra un dispositivo en la topología activa de Packet Tracer.
+        Rename a device in the active Packet Tracer topology.
 
-        Parámetros:
-        - old_name: nombre actual del dispositivo
-        - new_name: nuevo nombre
+        Parameters:
+        - old_name: current device name
+        - new_name: new name to assign
         """
         err = _check_bridge()
         if err:
@@ -1013,55 +1209,63 @@ def register_tools(mcp: FastMCP) -> None:
 
         safe_old = _js_escape(old_name)
         safe_new = _js_escape(new_name)
-        js = f'renameDevice("{safe_old}", "{safe_new}")'
+        js = (
+            "try {"
+            f'  var dev = ipc.network().getDevice("{safe_old}");'
+            "  if (!dev) { reportResult('ERROR:Device not found'); }"
+            "  else {"
+            f'    dev.setName("{safe_new}");'
+            f'    reportResult("OK:renamed to {safe_new}");'
+            "  }"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
-            return f"Sin respuesta de PT."
-        try:
-            data = json.loads(result)
-            if data.get("success"):
-                return f"Dispositivo renombrado: '{old_name}' → '{new_name}'"
-            else:
-                return f"Error: {data.get('error', 'desconocido')}"
-        except Exception:
-            return f"Respuesta inesperada: {result}"
+            return "No response from PT."
+        if result.startswith("ERROR:"):
+            return f"Error: {result[6:]}"
+        return f"Device renamed: '{old_name}' → '{new_name}'"
 
     @mcp.tool()
     def pt_move_device(device_name: str, x: int, y: int) -> str:
         """
-        Mueve un dispositivo a nuevas coordenadas en el canvas de Packet Tracer.
+        Move a device to new coordinates on the Packet Tracer canvas.
 
-        Parámetros:
-        - device_name: nombre del dispositivo
-        - x: coordenada X (canvas logical view, ej: 100-800)
-        - y: coordenada Y (canvas logical view, ej: 100-600)
+        Parameters:
+        - device_name: device name
+        - x: X coordinate (logical view, e.g. 100-800)
+        - y: Y coordinate (logical view, e.g. 100-600)
         """
         err = _check_bridge()
         if err:
             return err
 
         safe_name = _js_escape(device_name)
-        js = f'moveDevice("{safe_name}", {int(x)}, {int(y)})'
+        js = (
+            "try {"
+            f'  var dev = ipc.network().getDevice("{safe_name}");'
+            "  if (!dev) { reportResult('ERROR:Device not found'); }"
+            "  else {"
+            f"    dev.moveToLocation({int(x)}, {int(y)});"
+            f'    reportResult("OK:moved to {int(x)},{int(y)}");'
+            "  }"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
-            return f"Sin respuesta de PT."
-        try:
-            data = json.loads(result)
-            if data.get("success"):
-                return f"Dispositivo '{device_name}' movido a ({x}, {y})."
-            else:
-                return f"Error: {data.get('error', 'desconocido')}"
-        except Exception:
-            return f"Respuesta inesperada: {result}"
+            return "No response from PT."
+        if result.startswith("ERROR:"):
+            return f"Error: {result[6:]}"
+        return f"Device '{device_name}' moved to ({x}, {y})."
 
     @mcp.tool()
     def pt_delete_link(device_name: str, interface_name: str) -> str:
         """
-        Elimina el enlace conectado a una interfaz específica de un dispositivo en PT.
+        Delete the link connected to a specific interface on a device in PT.
 
-        Parámetros:
-        - device_name: nombre del dispositivo (ej: "R1")
-        - interface_name: nombre de la interfaz (ej: "GigabitEthernet0/0", "FastEthernet0/1")
+        Parameters:
+        - device_name: device name (e.g. "R1")
+        - interface_name: interface name (e.g. "GigabitEthernet0/0", "FastEthernet0/1")
         """
         err = _check_bridge()
         if err:
@@ -1069,18 +1273,200 @@ def register_tools(mcp: FastMCP) -> None:
 
         safe_dev = _js_escape(device_name)
         safe_iface = _js_escape(interface_name)
-        js = f'deleteLink("{safe_dev}", "{safe_iface}")'
+        js = (
+            "try {"
+            f'  var dev = ipc.network().getDevice("{safe_dev}");'
+            "  if (!dev) { reportResult('ERROR:Device not found'); }"
+            "  else {"
+            f'    var port = dev.getPort("{safe_iface}");'
+            "    if (!port) { reportResult('ERROR:Interface not found'); }"
+            "    else if (port.getLink() == null) {"
+            "      reportResult('ERROR:No link on this interface');"
+            "    } else {"
+            "      port.deleteLink();"
+            f'      reportResult("OK:link removed from {safe_iface}");'
+            "    }"
+            "  }"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
-            return f"Sin respuesta de PT."
-        try:
-            data = json.loads(result)
-            if data.get("success"):
-                return f"Enlace en {device_name}/{interface_name} eliminado."
-            else:
-                return f"Error: {data.get('error', 'desconocido')}\nNota: si el método no existe en esta versión de PT, prueba con pt_delete_device y recrear los enlaces."
-        except Exception:
-            return f"Respuesta inesperada: {result}"
+            return "No response from PT."
+        if result.startswith("ERROR:"):
+            return f"Error: {result[6:]}"
+        return f"Link on {device_name}/{interface_name} deleted."
+
+    # ------------------------------------------------------------------
+    # VALIDATED BUILDERS — pt_add_device, pt_add_link (MEJORA-01)
+    # ------------------------------------------------------------------
+
+    _CABLE_ALIASES: dict[str, str] = {
+        "crossover": "cross",
+        "cross-over": "cross",
+        "copper-crossover": "cross",
+        "copper-straight": "straight",
+        "straight-through": "straight",
+        "rollover": "roll",
+        "dce": "serial",
+        "serial-dce": "serial",
+    }
+
+    @mcp.tool()
+    def pt_add_device(
+        name: str,
+        model: str,
+        x: int = 200,
+        y: int = 200,
+    ) -> str:
+        """
+        Add a single device to Packet Tracer with validation.
+        Checks: name not empty, model exists in catalog, no duplicate name.
+
+        Parameters:
+        - name: device name (e.g. "R1", "SW-Core", "PC-Admin")
+        - model: PT model type (e.g. "2911", "2960-24TT", "PC-PT", "Server-PT")
+        - x: X coordinate on canvas (default 200)
+        - y: Y coordinate on canvas (default 200)
+        """
+        if not name or not name.strip():
+            return "ERROR: Device name cannot be empty."
+
+        device_model = resolve_model(model)
+        if device_model is None:
+            return (
+                f"ERROR: Model '{model}' not found in catalog.\n"
+                f"Use pt_list_devices to see available models."
+            )
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        safe_name = _js_escape(name.strip())
+        js = (
+            "try {"
+            "  var net = ipc.network();"
+            "  var n = net.getDeviceCount();"
+            "  for (var i = 0; i < n; i++) {"
+            "    if (net.getDeviceAt(i).getName() === '" + safe_name + "') {"
+            "      reportResult('ERROR:DUPLICATE:Device \\'" + safe_name + "\\' already exists');"
+            "      throw 'dup';"
+            "    }"
+            "  }"
+            f'  addDevice("{safe_name}", "{_js_escape(device_model.pt_type)}", {int(x)}, {int(y)});'
+            "  var check = ipc.network().getDevice('" + safe_name + "');"
+            "  if (check) {"
+            "    reportResult('OK:' + check.getName() + '|' + check.getModel());"
+            "  } else {"
+            "    reportResult('ERROR:Device was not created (unknown reason)');"
+            "  }"
+            "} catch(e) { if (e !== 'dup') reportResult('ERROR:' + e); }"
+        )
+        result = _bridge_send_and_wait(js, timeout=10.0)
+        if result is None:
+            return "No response from PT (timeout). Verify bootstrap is running."
+        if result.startswith("ERROR:DUPLICATE:"):
+            return result[6:]
+        if result.startswith("ERROR:"):
+            return f"PT error: {result[6:]}"
+        return f"Device '{name}' ({device_model.pt_type}) created at ({x}, {y})."
+
+    @mcp.tool()
+    def pt_add_link(
+        device1: str,
+        port1: str,
+        device2: str,
+        port2: str,
+        cable_type: str = "",
+    ) -> str:
+        """
+        Create a link between two devices in Packet Tracer with full validation.
+        Checks: both devices exist, both ports exist, ports are free, cable type is valid.
+        If cable_type is omitted, it is inferred from the device categories.
+
+        Parameters:
+        - device1: first device name
+        - port1: port on device1 (e.g. "GigabitEthernet0/0", "FastEthernet0/1")
+        - device2: second device name
+        - port2: port on device2
+        - cable_type: cable type (straight, cross, serial, fiber, console, roll, auto, etc.)
+                      Common aliases accepted: "crossover"→"cross", "rollover"→"roll"
+        """
+        if cable_type:
+            resolved_cable = _CABLE_ALIASES.get(cable_type.lower(), cable_type.lower())
+            if resolved_cable not in CABLE_TYPES:
+                valid = ", ".join(sorted(CABLE_TYPES.keys()))
+                return (
+                    f"ERROR: Cable type '{cable_type}' is not valid.\n"
+                    f"Valid types: {valid}\n"
+                    f"Common aliases: crossover→cross, rollover→roll"
+                )
+        else:
+            resolved_cable = ""
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        sd1 = _js_escape(device1)
+        sp1 = _js_escape(port1)
+        sd2 = _js_escape(device2)
+        sp2 = _js_escape(port2)
+
+        js = (
+            "try {"
+            f"  var d1 = ipc.network().getDevice('{sd1}');"
+            f"  var d2 = ipc.network().getDevice('{sd2}');"
+            f"  if (!d1) {{ reportResult('ERROR:Device \\'{sd1}\\' not found'); throw 'stop'; }}"
+            f"  if (!d2) {{ reportResult('ERROR:Device \\'{sd2}\\' not found'); throw 'stop'; }}"
+            f"  var p1 = d1.getPort('{sp1}');"
+            f"  var p2 = d2.getPort('{sp2}');"
+            f"  if (!p1) {{ reportResult('ERROR:Port \\'{sp1}\\' not found on \\'{sd1}\\''); throw 'stop'; }}"
+            f"  if (!p2) {{ reportResult('ERROR:Port \\'{sp2}\\' not found on \\'{sd2}\\''); throw 'stop'; }}"
+            "  if (p1.getLink() != null) {"
+            f"    reportResult('ERROR:Port \\'{sp1}\\' on \\'{sd1}\\' already has a link'); throw 'stop';"
+            "  }"
+            "  if (p2.getLink() != null) {"
+            f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
+            "  }"
+            "  reportResult('PRE_OK:' + d1.getClassName() + '|' + d2.getClassName());"
+            "} catch(e) { if (e !== 'stop') reportResult('ERROR:' + e); }"
+        )
+        pre_result = _bridge_send_and_wait(js, timeout=10.0)
+        if pre_result is None:
+            return "No response from PT (timeout). Verify bootstrap is running."
+        if pre_result.startswith("ERROR:"):
+            return pre_result
+        if not pre_result.startswith("PRE_OK:"):
+            return f"Unexpected response: {pre_result}"
+
+        if not resolved_cable:
+            parts = pre_result[7:].split("|")
+            cls1 = parts[0].lower() if len(parts) > 0 else ""
+            cls2 = parts[1].lower() if len(parts) > 1 else ""
+            resolved_cable = infer_cable(cls1, cls2)
+
+        js_link = (
+            "try {"
+            f'  addLink("{sd1}", "{sp1}", "{sd2}", "{sp2}", "{resolved_cable}");'
+            f"  var pCheck = ipc.network().getDevice('{sd1}').getPort('{sp1}');"
+            "  if (pCheck && pCheck.getLink() != null) {"
+            "    reportResult('OK:link created');"
+            "  } else {"
+            f"    reportResult('ERROR:addLink returned but link not found on {sp1}');"
+            "  }"
+            "} catch(e) { reportResult('ERROR:' + e); }"
+        )
+        link_result = _bridge_send_and_wait(js_link, timeout=10.0)
+        if link_result is None:
+            return "No response after addLink (timeout)."
+        if link_result.startswith("ERROR:"):
+            return f"Link creation failed: {link_result[6:]}"
+        return f"Link created: {device1}/{port1} <--[{resolved_cable}]--> {device2}/{port2}"
+
+    # ------------------------------------------------------------------
+    # RAW JS EXECUTION
+    # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_set_port(
@@ -1186,17 +1572,18 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_send_raw(js_code: str, wait_result: bool = False) -> str:
         """
-        Envía código JavaScript arbitrario a Packet Tracer via bridge.
-        Útil para explorar la API ipc o ejecutar comandos personalizados.
+        Send arbitrary JavaScript to Packet Tracer via bridge.
+        Useful for exploring the IPC API or running custom commands.
 
-        Si wait_result=True, espera que el código llame a reportResult(...).
-        Ejemplo:
+        If wait_result=True, reportResult() is auto-injected into scope.
+        Just call reportResult(data) in your code — no need to define it.
+        Examples:
           pt_send_raw("reportResult(getDevices('router'))", wait_result=True)
           pt_send_raw("addDevice('TestR','2911',500,300)")
 
-        Parámetros:
-        - js_code: código JavaScript a ejecutar en el Script Engine de PT
-        - wait_result: si True, espera respuesta via reportResult()
+        Parameters:
+        - js_code: JavaScript to execute in PT's Script Engine
+        - wait_result: if True, waits for a response via reportResult()
         """
         err = _check_bridge()
         if err:
