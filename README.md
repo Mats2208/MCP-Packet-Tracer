@@ -102,24 +102,25 @@ See the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tracer/quick
 
 ## Live deploy
 
-Stream topologies into a **running** Packet Tracer in real time. This needs the
-third-party **[PTBuilder](https://github.com/kimmknight/PTBuilder)** extension
-installed once (it is *not* built into Packet Tracer), then a one-line bootstrap in
-the Builder Code Editor.
+Stream topologies into a **running** Packet Tracer in real time. Install this repo's
+own **MCP Control Center** extension once — the `.pts` from
+[**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) — via
+**Extensions → Scripting → Configure PT Script Modules → Add…**, then open
+**Extensions → MCP BUILDER**. It auto-connects to the bridge — no snippet to paste.
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 
 ## Credits & Acknowledgements
 
-The live-deploy bridge is built **on top of**
+Live deploy runs through **our own Packet Tracer extension** — the **MCP Control
+Center** (the `.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)).
+Its Script-Engine helper layer was **inspired by**
 **[PTBuilder](https://github.com/kimmknight/PTBuilder)** by
-**Kim Knight ([@kimmknight](https://github.com/kimmknight))** — an **independent,
-separate project** that pioneered driving Packet Tracer's Script Engine from
-JavaScript. Packet Tracer MCP derives its bridge from PTBuilder and adds the MCP
-server, planner, validators, generators and tooling on top. Huge thanks to Kim. ❤️
+**Kim Knight ([@kimmknight](https://github.com/kimmknight))**, who pioneered driving
+Packet Tracer's Script Engine from JavaScript — thanks for the groundwork. 🙏
 
-> PTBuilder and Packet Tracer MCP are **separate projects**; PTBuilder is not
-> affiliated with or endorsed by this project. See the full
+> PTBuilder and Packet Tracer MCP are **separate, independent projects**. You install
+> *our* extension, not PTBuilder. Full
 > **[Credits & Attribution](https://mats2208.github.io/MCP-Packet-Tracer/credits/)**.
 
 ## License
@@ -128,7 +129,7 @@ Released under the **[MIT License](LICENSE)** — © 2026 Mateo ([@Mats2208](htt
 
 <div align="center">
 
-**Built with [MCP](https://modelcontextprotocol.io) · Powered by [Pydantic](https://docs.pydantic.dev) · Deploys to [Cisco Packet Tracer](https://www.netacad.com/) · Bridge based on [PTBuilder](https://github.com/kimmknight/PTBuilder)**
+**Built with [MCP](https://modelcontextprotocol.io) · Powered by [Pydantic](https://docs.pydantic.dev) · Deploys to [Cisco Packet Tracer](https://www.netacad.com/) · Script-engine logic inspired by [PTBuilder](https://github.com/kimmknight/PTBuilder)**
 
 If this project is useful to you, star it ⭐ and share it with the community.
 

@@ -8,7 +8,7 @@
 | `mcp[cli]` | ≥ 1.13, < 2 | Installed automatically |
 | `pydantic` | ≥ 2.11, < 3 | Installed automatically |
 | Cisco Packet Tracer | 8.2+ | Only for **live deploy** |
-| [PTBuilder](https://github.com/kimmknight/PTBuilder) | latest | Third-party PT extension, only for live deploy — see [Live Deploy Setup](live-deploy.md) |
+| MCP Control Center extension | latest | This project's **own** PT extension (`.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)), only for live deploy — see [Live Deploy Setup](live-deploy.md) |
 
 !!! warning "pydantic ≥ 2.11 is required"
     Modern `mcp` builds tool output schemas from return annotations and needs

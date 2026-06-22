@@ -60,7 +60,7 @@ Natural language prompt
         │  MCP tools
    Packet Tracer MCP Server   (:39000)
         │  HTTP bridge
-   PTBuilder webview in PT    (:54321)
+   MCP Control Center ext.    (:54321)
         │  Script Engine
    Cisco Packet Tracer
    ── devices created
@@ -73,7 +73,9 @@ Natural language prompt
     example, then enable **[Live Deploy](live-deploy.md)** to see topologies appear in
     Packet Tracer as your AI builds them.
 
-!!! info "Built on PTBuilder"
-    The live-deploy bridge is built **on top of**
-    [PTBuilder](https://github.com/kimmknight/PTBuilder) by Kim Knight — an
-    independent project. See **[Credits & Attribution](credits.md)**.
+!!! info "Live deploy uses our own extension"
+    Live deploy uses this project's **own** Packet Tracer extension — the
+    **MCP Control Center** ([Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)).
+    Its Script-Engine layer was originally inspired by
+    [PTBuilder](https://github.com/kimmknight/PTBuilder); the two are separate
+    projects — see **[Credits & Attribution](credits.md)**.

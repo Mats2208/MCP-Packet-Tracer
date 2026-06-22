@@ -1,33 +1,30 @@
 # Credits & Attribution
 
-## PTBuilder (the foundation of the live-deploy bridge)
+## This project ships its own extension
 
-The live-deploy feature of Packet Tracer MCP is built **on top of**
-**[PTBuilder](https://github.com/kimmknight/PTBuilder)** by
-**Kim Knight ([@kimmknight](https://github.com/kimmknight))**.
+Live deploy uses the **MCP Control Center** — this project's **own** Packet Tracer
+extension, distributed as a `.pts` script module in
+[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest). It's an
+original build: a webview dashboard (Editor, Terminal, Status, Quick Build) with the
+bridge polling loop built in. **You install this extension, not any third-party one.**
 
-PTBuilder is the project that figured out how to drive Packet Tracer's Script
-Engine from JavaScript (`addDevice`, `addLink`, `addModule`, `configureIosDevice`,
-…) through a webview. Packet Tracer MCP's bridge — the JavaScript that talks to
-PT (`devices.js`, `links.js`, `modules.js`, `runcode.js`, `userfunctions.js`,
-`window.js`, `main.js`) — is **derived from PTBuilder** and extended for the MCP
-use case. Without PTBuilder, live deploy would not exist. Thank you, Kim.
+## Inspired by PTBuilder
 
-!!! info "These are two separate, independent projects"
-    - **PTBuilder** is its own project, maintained by Kim Knight. It is **not**
-      affiliated with, endorsed by, or part of Packet Tracer MCP.
-    - **Packet Tracer MCP** uses PTBuilder's approach as the **base** for its
-      bridge and adds the MCP server, planner, validators, generators, catalog and
-      the incremental/NAT/ACL tooling on top.
-    - If you just want to drive Packet Tracer from JavaScript (no AI/MCP), use
+The idea of driving Packet Tracer's **Script Engine from JavaScript** was pioneered
+by **[PTBuilder](https://github.com/kimmknight/PTBuilder)**, by
+**Kim Knight ([@kimmknight](https://github.com/kimmknight))**. PTBuilder was used as
+the **starting point / reference** for this project's Script-Engine helper layer
+(the `addDevice`/`addLink`/`configureIosDevice`-style functions). Credit and thanks
+to Kim for that groundwork. 🙏
+
+!!! info "Two separate, independent projects"
+    - **PTBuilder** is its own project by Kim Knight. It is **not** affiliated with,
+      endorsed by, or required by Packet Tracer MCP.
+    - **Packet Tracer MCP** ships its **own** extension (the MCP Control Center) and
+      adds the MCP server, planner, validators, generators, catalog and the
+      incremental / NAT / ACL tooling. The two extensions are different builds.
+    - If you just want to drive Packet Tracer from JavaScript (no AI/MCP), check out
       **[PTBuilder](https://github.com/kimmknight/PTBuilder)** directly.
-
-!!! note "Licensing"
-    PTBuilder does not currently ship an explicit license file. We're coordinating
-    with the author on preferred attribution/licensing
-    ([#6](https://github.com/Mats2208/MCP-Packet-Tracer/issues/6)) and will update
-    this page accordingly. If you reuse the bridge code, please credit
-    kimmknight/PTBuilder as the upstream source.
 
 ## Built with
 

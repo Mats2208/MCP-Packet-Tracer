@@ -35,7 +35,7 @@ infrastructure/generator/*          ← PTBuilder JS + IOS CLI
    │
 infrastructure/execution/live_bridge ← HTTP bridge (:54321)
    │
-PTBuilder webview → PT Script Engine → Cisco Packet Tracer
+MCP Control Center extension → PT Script Engine → Cisco Packet Tracer
 ```
 
 ## The live bridge
@@ -47,10 +47,10 @@ PTBuilder webview → PT Script Engine → Cisco Packet Tracer
 - `POST /result` / `GET /result` — round-trips results back from PT (used by
   `reportResult()`, which is injected inline so it doesn't depend on the extension).
 
-!!! info "Derived from PTBuilder"
-    The JavaScript that runs inside Packet Tracer is derived from
-    [PTBuilder](https://github.com/kimmknight/PTBuilder) — see
-    [Credits & Attribution](credits.md).
+!!! info "Inspired by PTBuilder"
+    The Script-Engine helper layer that runs inside Packet Tracer was inspired by
+    [PTBuilder](https://github.com/kimmknight/PTBuilder); the extension itself (the
+    MCP Control Center) is this project's own — see [Credits & Attribution](credits.md).
 
 !!! warning "Security note"
     The bridge binds to `127.0.0.1` only. It does expose a `/queue` endpoint and
