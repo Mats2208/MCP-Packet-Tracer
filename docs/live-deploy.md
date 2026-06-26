@@ -20,7 +20,7 @@ You do **not** need any third-party extension.
 
 1. Download the latest extension from
    **[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**
-   (the `.pts` file, e.g. `V4.pts`).
+   (the `.pts` file — currently **`V4.0.pts`**).
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules**
 3. Click **Add…**, select the downloaded `.pts`, and confirm.
 

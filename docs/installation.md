@@ -31,11 +31,26 @@ to `cd` into the repo or keep a server running.
 
 === "Claude Code"
 
+    **Linux · macOS · Git Bash · Windows `cmd.exe`:**
+
     ```bash
     claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
     ```
 
-    Verify:
+    **Windows PowerShell** — quote the `--` separator:
+
+    ```powershell
+    claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
+    ```
+
+    !!! warning "PowerShell eats a bare `--`"
+        In Windows PowerShell the bare `--` separator is consumed before it reaches the
+        `claude` CLI, so Claude treats the following `-m` as one of its own options and
+        aborts with `error: unknown option '-m'`. Quoting it (`"--"`) passes it through
+        literally. Alternatively use the `cmd.exe`/Git Bash form above, or wrap the whole
+        command in `cmd /c "…"`.
+
+    Verify (any shell):
 
     ```bash
     claude mcp list
@@ -74,6 +89,19 @@ to `cd` into the repo or keep a server running.
       }
     }
     ```
+
+## Live deploy extension (optional)
+
+To stream topologies into a **running** Packet Tracer, also install this project's own
+**MCP Control Center** extension:
+
+1. Download **`V4.0.pts`** from
+   **[Releases (latest)](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**.
+2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules → Add…**,
+   select `V4.0.pts`, and confirm.
+3. Open **Extensions → MCP BUILDER** — it auto-connects to the bridge.
+
+Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 
 ## Transport modes
 

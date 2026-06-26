@@ -77,17 +77,33 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 
 ## Installation
 
+**1. Install the server**
+
 ```bash
 git clone https://github.com/Mats2208/MCP-Packet-Tracer
 cd MCP-Packet-Tracer
 pip install -e .
 ```
 
-Connect your MCP client (Claude Code shown):
+**2. Connect your MCP client** (Claude Code shown)
+
+_Linux · macOS · Git Bash · Windows `cmd.exe`:_
 
 ```bash
 claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
 ```
+
+_Windows PowerShell_ — quote the `--` separator, or PowerShell swallows it and Claude aborts with `error: unknown option '-m'`:
+
+```powershell
+claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
+```
+
+Verify with `claude mcp list` (look for `packet-tracer … ✓ Connected`).
+
+**3. Install the live-deploy extension** — _only if you want real-time deploy into a running Packet Tracer_
+
+Download **`V4.0.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
 
 > Requires **Python 3.11+** (deps `mcp[cli]>=1.13`, `pydantic>=2.11` install automatically).
 > Full setup for every client → **[Installation docs](https://mats2208.github.io/MCP-Packet-Tracer/installation/)**.
