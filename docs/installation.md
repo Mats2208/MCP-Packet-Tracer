@@ -103,6 +103,29 @@ To stream topologies into a **running** Packet Tracer, also install this project
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 
+## Claude Code Skill (recommended)
+
+The repo ships a companion **Agent Skill** (`skill/SKILL.md`) that teaches the model the exact tool
+catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API — so the AI
+drives the MCP from verified facts instead of guessing. Install it **globally** from the repo root:
+
+=== "Linux / macOS / Git Bash"
+
+    ```bash
+    mkdir -p ~/.claude/skills/packet-tracer
+    cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+    ```
+
+=== "Windows PowerShell"
+
+    ```powershell
+    New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
+    Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+    ```
+
+Then run `/reload-skills` (or restart Claude Code) and confirm with `/skills`. Full details, including
+what it covers and a project-local alternative → **[Claude Code Skill](skill.md)**.
+
 ## Transport modes
 
 - **stdio** (recommended for desktop clients): the client spawns the server as a

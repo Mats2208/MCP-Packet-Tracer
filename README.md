@@ -105,6 +105,27 @@ Verify with `claude mcp list` (look for `packet-tracer … ✓ Connected`).
 
 Download **`V4.0.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
 
+**4. Install the Claude Code Skill** — _recommended; makes the AI use the MCP correctly instead of guessing_
+
+The repo ships a companion **[Agent Skill](skill/SKILL.md)** that teaches the model the exact tool
+catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API (so it never
+invents method/model/port names). Install it **globally** from the repo root:
+
+_Linux · macOS · Git Bash:_
+
+```bash
+mkdir -p ~/.claude/skills/packet-tracer && cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+```
+
+_Windows PowerShell:_
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null; Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+```
+
+Then run `/reload-skills` in Claude Code (or restart it) and confirm with `/skills`. Details →
+**[Skill docs](https://mats2208.github.io/MCP-Packet-Tracer/skill/)**.
+
 > Requires **Python 3.11+** (deps `mcp[cli]>=1.13`, `pydantic>=2.11` install automatically).
 > Full setup for every client → **[Installation docs](https://mats2208.github.io/MCP-Packet-Tracer/installation/)**.
 

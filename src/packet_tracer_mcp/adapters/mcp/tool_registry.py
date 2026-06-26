@@ -761,6 +761,17 @@ def register_tools(mcp: FastMCP) -> None:
         except Exception:
             return None, None
 
+    def _js_guard(js: str) -> str:
+        """Envuelve un comando JS en un try/catch a nivel Script Engine (fire-and-forget).
+
+        Sin esto, un error NO capturado dentro de runCode dispara un QMessageBox modal
+        en PT que congela el webview y mata el polling del bridge — hay que cerrar el
+        modal a mano para reconectar. El catch es silencioso porque este path no espera
+        respuesta; el path que sí espera (_bridge_send_and_wait) usa su propio catch que
+        reporta el error vía reportResult() para no colgarse hasta el timeout.
+        """
+        return "try{" + js + "}catch(__pterr){}"
+
     def _bridge_is_up() -> bool:
         status, _ = _http_get(f"{_BRIDGE_URL}/ping", timeout=1.0)
         return status == 200
@@ -867,7 +878,7 @@ def register_tools(mcp: FastMCP) -> None:
 
         sent = 0
         for cmd in commands:
-            status, _ = _http_post(f"{_BRIDGE_URL}/queue", cmd)
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(cmd))
             if status == 200:
                 sent += 1
             time.sleep(command_delay)
@@ -955,8 +966,16 @@ def register_tools(mcp: FastMCP) -> None:
         return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
 
     def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
-        """Send JS to bridge, injecting reportResult() into scope, and wait for response."""
-        wrapped = f"{_REPORT_RESULT_JS};{js_call}"
+        """Send JS to bridge, injecting reportResult() into scope, and wait for response.
+
+        El js_call se envuelve en un try/catch a nivel Script Engine: si lanza una
+        excepción no capturada (p.ej. una API inexistente), se reporta como
+        'PT_ERROR: ...' vía reportResult en vez de abrir un modal que mate el bridge.
+        """
+        wrapped = (
+            _REPORT_RESULT_JS
+            + ";try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+        )
         status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
         if status_post != 200:
             return None
@@ -1598,7 +1617,7 @@ def register_tools(mcp: FastMCP) -> None:
                 return "Sin respuesta (timeout). Asegúrate de que el código llame a reportResult(...)."
             return result
         else:
-            status, _ = _http_post(f"{_BRIDGE_URL}/queue", js_code)
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(js_code))
             if status == 200:
                 return "Comando enviado a PT."
             return "Error al enviar comando al bridge."
@@ -1955,8 +1974,8 @@ def register_tools(mcp: FastMCP) -> None:
             return []
 
     def _bridge_send_payload(js_call: str) -> bool:
-        """Helper: envía un JS payload al bridge (fire-and-forget)."""
-        status, _ = _http_post(f"{_BRIDGE_URL}/queue", js_call)
+        """Helper: envía un JS payload al bridge (fire-and-forget), con guard try/catch."""
+        status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(js_call))
         return status == 200
 
     @mcp.tool()

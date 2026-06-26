@@ -73,6 +73,7 @@ nav:
       - Installation: installation.md
       - Quick Start: quickstart.md
       - Live Deploy Setup: live-deploy.md
+      - Claude Code Skill: skill.md
   - Reference:
       - MCP Tools: tools.md
       - MCP Resources: resources.md
