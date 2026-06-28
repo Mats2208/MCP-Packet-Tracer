@@ -19,6 +19,10 @@ class PlanTopologyDTO(BaseModel):
     switch_model: str | None = None
     lan_base: str | None = None
     link_base: str | None = None
+    vlans: int = 0
+    dual_stack: bool = False
+    ipv6_base: str | None = None
+    wireless_laptops: bool = False
 
 
 class FixPlanDTO(BaseModel):

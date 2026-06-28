@@ -51,7 +51,8 @@ PT compara el slot con `===` contra su mapa interno. Pasar `0` (int) NO coincide
 | Tipo de slot               | Formato del slot           | Ejemplo                              |
 |----------------------------|----------------------------|--------------------------------------|
 | HWIC en 1941/2901/2911     | "0/0", "0/1", "0/2", "0/3" | pt_add_module("R1","0/0","HWIC-2T")  |
-| NIM en ISR4321/ISR4331     | "0", "1"                   | pt_add_module("R1","0","NIM-2T")     |
+| NIM en ISR4321/ISR4331     | "0/1", "0/2"               | pt_add_module("R1","0/1","NIM-2T")   |
+| NM en 2811/2620XM/Router-PT| "1"                        | pt_add_module("R1","1","NM-4A/S")    |
 | Cloud-PT / hosts           | "0", "1", … "7"            | pt_add_module("Cloud","0","PT-CLOUD-NM-1S") |
 
 ### Compatibilidad de módulos por router
@@ -65,6 +66,7 @@ Los puertos se nombran `<tipo><chassis>/<subslot>/<port>`:
 - HWIC-2T en slot `"0/0"` → Serial0/0/0, Serial0/0/1
 - HWIC-2T en slot `"0/1"` → Serial0/1/0, Serial0/1/1
 - HWIC-2T en slot `"0/2"` → Serial0/2/0, Serial0/2/1
+- NIM-2T  en slot `"0/1"` → Serial0/1/0, Serial0/1/1 (ISR4321/4331)
 
 ### Para instalar varios módulos a la vez
 USA `pt_install_modules_batch` en lugar de N llamadas a `pt_add_module`. El batch hace
@@ -95,10 +97,21 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 ## Modelos de switch válidos
   2960-24TT | 3560-24PS
 
+## Features avanzadas (config-driven, todas con dry_run)
+- VLAN / inter-VLAN: `pt_apply_vlan` o `pt_full_build(template="router_on_a_stick", vlans=N)`.
+- STP: `pt_apply_stp`. Port-security: `pt_apply_port_security`.
+- Hardening (hostname/banner/enable-secret/usuarios/SSH): `pt_apply_hardening`.
+- Clock-rate serial + knobs OSPF/EIGRP por interfaz: `pt_apply_interface_tuning`.
+- IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers por CLI, hosts por SLAAC).
+- Laptops por WiFi: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (NIC inalámbrica
+  + AP auto-asociado por SSID default). NOTA: el SSID/WPA2 custom del AP NO es configurable por
+  la API de PT (solo GUI) — se usa el SSID default.
+- Verificación: `pt_diff` (plan vs PT vivo) y `pt_health_check` (links caídos, IPs duplicadas).
+
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 36 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 43 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

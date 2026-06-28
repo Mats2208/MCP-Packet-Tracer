@@ -8,6 +8,9 @@ pegar en la terminal de cada router/switch.
 from __future__ import annotations
 from ...domain.models.plans import TopologyPlan, DevicePlan
 from ...shared.utils import prefix_to_mask
+from .vlan_cli_generator import (
+    generate_switch_vlan_cli, generate_router_subinterface_cli, switch_supports_encap,
+)
 
 def generate_all_configs(plan: TopologyPlan) -> dict[str, str]:
     """
@@ -35,16 +38,32 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
     lines.append("configure terminal")
     lines.append(f"hostname {router.name}")
     lines.append("no ip domain-lookup")
+    if router.interfaces_v6:
+        lines.append("ipv6 unicast-routing")
     lines.append("")
 
-    # --- Interfaces ---
+    # --- Interfaces físicas (las subinterfaces "Gig0/0.10" se emiten aparte con
+    #     su `encapsulation dot1Q`, así que las saltamos aquí) ---
     for iface, ip_cidr in router.interfaces.items():
+        if "." in iface:
+            continue
         ip, prefix = ip_cidr.split("/")
         mask = prefix_to_mask(int(prefix))
         lines.append(f"interface {iface}")
         lines.append(f" ip address {ip} {mask}")
+        # IPv6 en la misma interfaz física (dual-stack), si aplica
+        v6 = router.interfaces_v6.get(iface)
+        if v6:
+            lines.append(f" ipv6 address {v6}")
+            lines.append(" ipv6 enable")
         lines.append(" no shutdown")
         lines.append(" exit")
+        lines.append("")
+
+    # --- Subinterfaces .1q (inter-VLAN routing / router-on-a-stick) ---
+    subifs = [s for s in plan.subinterfaces if s.router == router.name]
+    if subifs:
+        lines.extend(generate_router_subinterface_cli(subifs))
         lines.append("")
 
     # --- DHCP ---
@@ -112,11 +131,23 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
 
 
 def _switch_config(switch: DevicePlan, plan: TopologyPlan) -> str:
-    """Genera config básica de un switch."""
+    """Genera config de un switch: hostname + (si hay) VLANs/access/trunks."""
     lines: list[str] = []
     lines.append("enable")
     lines.append("configure terminal")
     lines.append(f"hostname {switch.name}")
+
+    # VLAN / access / trunk para este switch
+    access = [a for a in plan.access_ports if a.switch == switch.name]
+    trunks = [t for t in plan.trunks if t.switch == switch.name]
+    # Las VLANs declaradas que tienen al menos un puerto en este switch (o todas,
+    # si el plan las define globalmente). Mantenemos todas las del plan para simplicidad.
+    if access or trunks or plan.vlans:
+        vlan_lines = generate_switch_vlan_cli(
+            plan.vlans, access, trunks, supports_encap=switch_supports_encap(switch.model)
+        )
+        lines.extend(vlan_lines)
+
     lines.append("end")
     lines.append("write memory")
     return "\n".join(lines)

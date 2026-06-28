@@ -15,7 +15,8 @@ optionally filtered by `router_model` or `category` — then `pt_add_module` (on
 | Slot type | Format | Example |
 |-----------|--------|---------|
 | HWIC on 1941 / 2901 / 2911 | `"0/0"`, `"0/1"`, `"0/2"`, `"0/3"` | `pt_add_module("R1", "0/0", "HWIC-2T")` |
-| NIM on ISR4321 / ISR4331 | `"0"`, `"1"` | `pt_add_module("R1", "0", "NIM-2T")` |
+| NIM on ISR4321 / ISR4331 | `"0/1"`, `"0/2"` (chassis/subslot — **not** `"0"`/`"1"`) | `pt_add_module("R1", "0/1", "NIM-2T")` |
+| NM on 2811 / 2620XM / Router-PT | `"1"` | `pt_add_module("R1", "1", "NM-4A/S")` |
 | Cloud / hosts | `"0"`, `"1"`, … `"7"` | `pt_add_module("Cloud", "0", "PT-CLOUD-NM-1S")` |
 
 ## Compatibility

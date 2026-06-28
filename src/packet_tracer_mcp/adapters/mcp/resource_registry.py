@@ -57,6 +57,29 @@ def register_resources(mcp: FastMCP) -> None:
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     @mcp.resource("pt://capabilities")
-    def resource_capabilities() -> str:
-        """Capacidades y versión del servidor MCP."""
-        return json.dumps(CAPABILITIES, indent=2, ensure_ascii=False)
+    async def resource_capabilities() -> str:
+        """Capacidades y versión del servidor MCP.
+
+        Se DERIVA del registro de tools en vivo: en vez de mantener a mano una lista
+        que puede desfasarse (antes decía nat="unsupported" mientras pt_apply_nat
+        existía), introspecciona los tools realmente registrados y reporta el soporte
+        de cada feature en función de si su tool existe. Si la introspección falla por
+        cualquier razón, cae a los valores estáticos de CAPABILITIES.
+        """
+        caps = dict(CAPABILITIES)
+        try:
+            tools = await mcp.list_tools()
+            names = sorted(t.name for t in tools)
+            caps["tools_count"] = len(names)
+            caps["tools"] = names
+            # Feature → soporte derivado de la presencia real del tool (sin drift posible)
+            caps["supported_live"] = {
+                "nat": any(n.startswith("pt_apply_nat") for n in names),
+                "acl": any(n.startswith("pt_apply_acl") for n in names),
+                "modules": any("module" in n for n in names),
+                "live_deploy": "pt_live_deploy" in names,
+                "raw_js": "pt_send_raw" in names,
+            }
+        except Exception:
+            pass
+        return json.dumps(caps, indent=2, ensure_ascii=False)

@@ -85,10 +85,10 @@ TEMPLATES: dict[TopologyTemplate, TemplateSpec] = {
     TopologyTemplate.ROUTER_ON_A_STICK: TemplateSpec(
         name="Router on a Stick",
         key=TopologyTemplate.ROUTER_ON_A_STICK,
-        description="1 router + 1 switch con inter-VLAN routing (futuro).",
+        description="1 router + 1 switch con inter-VLAN routing (subinterfaces .1q).",
         min_routers=1, max_routers=1, default_routers=1,
         default_switches_per_router=1, default_pcs_per_lan=6,
-        tags=("avanzado", "vlan", "futuro"),
+        tags=("avanzado", "vlan", "inter-vlan"),
     ),
     TopologyTemplate.CUSTOM: TemplateSpec(
         name="Custom",

@@ -13,6 +13,7 @@ from ..models.plans import (
     TopologyPlan, DevicePlan, DHCPPool, StaticRoute, OSPFConfig,
     RIPConfig, EIGRPConfig,
 )
+from ..models.vlans import SubinterfaceConfig
 from ...shared.enums import RoutingProtocol
 from ...shared.utils import wildcard_mask, first_ip
 from ...shared.constants import DEFAULT_DNS
@@ -43,17 +44,28 @@ class IPPlanner:
         floating_routes: bool = False,
         ospf_process_id: int = 1,
         eigrp_as: int = 100,
+        dual_stack: bool = False,
+        ipv6_base: str = "2001:db8::/32",
     ) -> TopologyPlan:
         """Asigna IPs, genera DHCP pools y rutas."""
         routers = plan.devices_by_category("router")
         router_lans: dict[str, list[ipaddress.IPv4Network]] = {}
         link_subnets: dict[tuple[str, str], ipaddress.IPv4Network] = {}
 
+        # Modo VLAN (router-on-a-stick): el link router↔switch es un trunk, no se le
+        # asigna una /24 única — se reparte una /24 por VLAN vía subinterfaces.
+        vlan_mode = bool(plan.vlans)
+        if vlan_mode:
+            self._plan_vlan_addressing(plan, dhcp)
+
         for link in plan.links:
             dev_a = plan.device_by_name(link.device_a)
             dev_b = plan.device_by_name(link.device_b)
             if not dev_a or not dev_b:
                 continue
+
+            if vlan_mode and _is_router_switch(dev_a, dev_b):
+                continue  # trunk — direccionado por VLAN
 
             if _is_router_switch(dev_a, dev_b):
                 router = dev_a if dev_a.category == "router" else dev_b
@@ -109,7 +121,51 @@ class IPPlanner:
         elif routing == RoutingProtocol.RIP:
             self._plan_rip(plan, routers)
 
+        # IPv6 dual-stack (routers con ipv6 address por CLI; hosts SLAAC)
+        if dual_stack:
+            plan.dual_stack = True
+            self._plan_ipv6_addressing(plan, ipv6_base)
+
         return plan
+
+    def _plan_ipv6_addressing(self, plan: TopologyPlan, ipv6_base: str):
+        """Asigna /64 IPv6 a las interfaces de router (LAN, inter-router, subinterfaces).
+
+        Los hosts NO reciben dirección estática: usan SLAAC (configurePcIpv6 en el deploy),
+        que es la forma soportada por la API de PT (addIpv6Address falla en HostPort).
+        """
+        pool = ipaddress.IPv6Network(ipv6_base).subnets(new_prefix=64)
+
+        # Router-on-a-stick: una /64 por subinterfaz
+        if plan.vlans:
+            routers = plan.devices_by_category("router")
+            if routers:
+                router = routers[0]
+                for sub in plan.subinterfaces:
+                    net = next(pool)
+                    key = f"{sub.parent_port}.{sub.vlan_id}"
+                    router.interfaces_v6[key] = f"{net.network_address + 1}/64"
+            return
+
+        for link in plan.links:
+            dev_a = plan.device_by_name(link.device_a)
+            dev_b = plan.device_by_name(link.device_b)
+            if not dev_a or not dev_b:
+                continue
+            if _is_router_switch(dev_a, dev_b):
+                router = dev_a if dev_a.category == "router" else dev_b
+                r_port = link.port_a if dev_a.category == "router" else link.port_b
+                net = next(pool)
+                router.interfaces_v6[r_port] = f"{net.network_address + 1}/64"
+            elif dev_a.category == "router" and dev_b.category == "router":
+                net = next(pool)
+                dev_a.interfaces_v6[link.port_a] = f"{net.network_address + 1}/64"
+                dev_b.interfaces_v6[link.port_b] = f"{net.network_address + 2}/64"
+            elif _is_router_cloud(dev_a, dev_b):
+                router = dev_a if dev_a.category == "router" else dev_b
+                r_port = link.port_a if dev_a.category == "router" else link.port_b
+                net = next(pool)
+                router.interfaces_v6[r_port] = f"{net.network_address + 1}/64"
 
     def _assign_host_ips(
         self, plan: TopologyPlan, switch_name: str,
@@ -136,6 +192,79 @@ class IPPlanner:
                 end_dev.interfaces[end_port] = f"{str(hosts[host_idx])}/{subnet.prefixlen}"
                 end_dev.gateway = gateway_ip
                 host_idx += 1
+
+    def _plan_vlan_addressing(self, plan: TopologyPlan, dhcp: bool):
+        """Asigna una /24 por VLAN y crea las subinterfaces .1q del router.
+
+        Escribe la IP de cada subinterfaz también en router.interfaces["Gig0/0.N"] para
+        que OSPF/RIP/EIGRP (que iteran router.interfaces) anuncien las VLANs sin cambios.
+        """
+        routers = plan.devices_by_category("router")
+        switches = plan.devices_by_category("switch")
+        if not routers or not switches:
+            return
+        router, switch = routers[0], switches[0]
+
+        # Puerto físico del router hacia el switch (parent de las subinterfaces)
+        parent_port = None
+        for link in plan.links:
+            if link.device_a == router.name and link.device_b == switch.name:
+                parent_port = link.port_a
+                break
+            if link.device_b == router.name and link.device_a == switch.name:
+                parent_port = link.port_b
+                break
+        if not parent_port:
+            return
+
+        pcs = plan.devices_by_category("pc")
+
+        def _pc_port(pc_name: str) -> str | None:
+            for link in plan.links:
+                if link.device_a == switch.name and link.device_b == pc_name:
+                    return link.port_b
+                if link.device_b == switch.name and link.device_a == pc_name:
+                    return link.port_a
+            return None
+
+        for vlan in plan.vlans:
+            subnet = self.next_lan_subnet()
+            hosts = list(subnet.hosts())
+            gateway = str(hosts[0])
+            prefix = subnet.prefixlen
+            vlan.subnet = f"{subnet.network_address}/{prefix}"
+
+            # Subinterfaz del router (gateway de la VLAN)
+            sub_key = f"{parent_port}.{vlan.vlan_id}"
+            router.interfaces[sub_key] = f"{gateway}/{prefix}"
+            plan.subinterfaces.append(SubinterfaceConfig(
+                router=router.name, parent_port=parent_port,
+                vlan_id=vlan.vlan_id, ip_cidr=f"{gateway}/{prefix}",
+            ))
+
+            # IPs de los hosts de esta VLAN
+            host_idx = 1
+            for pc in pcs:
+                if pc.vlan != vlan.vlan_id:
+                    continue
+                if host_idx >= len(hosts):
+                    break
+                pc_port = _pc_port(pc.name)
+                if pc_port:
+                    pc.interfaces[pc_port] = f"{hosts[host_idx]}/{prefix}"
+                    pc.gateway = gateway
+                    host_idx += 1
+
+            # Pool DHCP por VLAN
+            if dhcp:
+                plan.dhcp_pools.append(DHCPPool(
+                    router=router.name,
+                    pool_name=f"VLAN_{vlan.vlan_id}",
+                    network=str(subnet.network_address),
+                    mask=str(subnet.netmask),
+                    gateway=gateway, dns=DEFAULT_DNS,
+                    excluded_start=gateway, excluded_end=gateway,
+                ))
 
     def _plan_static_routes(
         self, plan: TopologyPlan, routers: list[DevicePlan],

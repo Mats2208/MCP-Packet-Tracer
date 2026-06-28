@@ -124,3 +124,40 @@ def test_generate_pc_config_marks_dhcp_hosts_as_dhcp():
 
     cfg = generate_pc_config(host, use_dhcp=True)
     assert "Configurar como DHCP" in cfg
+
+
+def test_query_pt_devices_no_longer_calls_undefined_querytopology():
+    """F: `queryTopology()` nunca se inyectaba → _query_pt_devices siempre devolvía [].
+
+    Las pre-validaciones de compatibilidad de módulos y de ACL/NAT dependían de ese
+    helper, así que quedaban silenciosamente deshabilitadas. Ahora se usa _live_devices()
+    con JS inline real (JSON.stringify). Este guard evita reintroducir el bug.
+    """
+    src = (
+        Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py")
+        .read_text(encoding="utf-8")
+    )
+    assert '"queryTopology()"' not in src, "la llamada muerta a queryTopology() volvió"
+    assert "_LIVE_DEVICES_JS" in src
+    assert "def _live_devices(" in src
+
+
+def test_runtime_patches_js_is_balanced():
+    """_RUNTIME_PATCHES_JS es UN string single-line; un desbalance rompería TODOS los
+    helpers inyectados (addModule, configurePcIp, configurePcIpv6, swapLaptopToWireless…)."""
+    import ast
+
+    src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    js = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "_RUNTIME_PATCHES_JS":
+                    js = ast.literal_eval(node.value)
+    assert js, "no se encontró _RUNTIME_PATCHES_JS"
+    assert js.count("{") == js.count("}"), "llaves desbalanceadas en runtime patches"
+    assert js.count("(") == js.count(")"), "paréntesis desbalanceados en runtime patches"
+    for fn in ("addModule", "lwAddDevice", "lwAddLink", "configurePcIp",
+               "configureIosDevice", "configurePcIpv6", "swapLaptopToWireless"):
+        assert fn in js, f"falta el helper {fn} en runtime patches"

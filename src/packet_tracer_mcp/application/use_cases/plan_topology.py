@@ -20,9 +20,14 @@ def plan_topology(dto: PlanTopologyDTO) -> tuple[TopologyPlan, ValidationResult]
         has_wan=dto.has_wan,
         dhcp=dto.dhcp,
         routing=RoutingProtocol(dto.routing),
+        vlans=dto.vlans,
+        dual_stack=dto.dual_stack,
+        wireless_laptops=dto.wireless_laptops,
     )
     if dto.template:
         kwargs["template"] = TopologyTemplate(dto.template)
+    if dto.ipv6_base:
+        kwargs["ipv6_base"] = dto.ipv6_base
     if dto.router_model:
         kwargs["router_model"] = dto.router_model
     if dto.switch_model:

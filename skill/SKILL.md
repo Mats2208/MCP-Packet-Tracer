@@ -53,20 +53,36 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (36)
+## Tool catalog (43)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
 `pt_query_topology`*, `pt_export_topology`* (*need bridge).
 **Pure planning/generation:** `pt_plan_topology`, `pt_estimate_plan`, `pt_validate_plan`, `pt_fix_plan`,
 `pt_explain_plan`, `pt_generate_script(include_configs)`, `pt_generate_configs`, `pt_full_build(deploy=…)`.
+`pt_plan_topology`/`pt_full_build` accept `vlans`, `dual_stack`, `ipv6_base`, `wireless_laptops`.
 **Disk / clipboard:** `pt_export`, `pt_deploy`.
-**Live deploy & edit:** `pt_live_deploy`, `pt_add_device`, `pt_add_link`, `pt_delete_link`,
-`pt_delete_device`, `pt_rename_device`, `pt_move_device`, `pt_set_port`, `pt_send_raw`, `pt_add_module`,
-`pt_install_modules_batch`.
+**Live deploy & edit:** `pt_live_deploy` (auto-reconciles dropped devices), `pt_add_device`, `pt_add_link`,
+`pt_delete_link`, `pt_delete_device`, `pt_rename_device`, `pt_move_device`, `pt_set_port`, `pt_send_raw`,
+`pt_add_module`, `pt_install_modules_batch`.
 **ACL / NAT (live):** `pt_apply_acl`, `pt_apply_acl_object`, `pt_remove_acl`, `pt_remove_acl_object`,
 `pt_apply_nat`, `pt_remove_nat` — all accept `dry_run=True` to preview CLI without touching PT.
+**Config-driven (live, dry_run):** `pt_apply_vlan` (VLAN/trunk/inter-VLAN subinterfaces),
+`pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
+`pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs).
+**Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
+
+## Advanced builds (verified live 2026-06-27)
+- **Inter-VLAN / router-on-a-stick:** `pt_full_build(template="router_on_a_stick", vlans=3)` → N VLANs,
+  trunk uplink, router `.1q` subinterfaces, one `/24` + DHCP pool per VLAN. 2960 omits trunk
+  `encapsulation` (dot1q-only); 3560 emits it.
+- **IPv6 dual-stack:** `pt_plan_topology(dual_stack=True)` → routers get `ipv6 address` via CLI +
+  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). Static host
+  IPv6 is NOT settable via the PT API (`addIpv6Address` fails on HostPort) — SLAAC is the path.
+- **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
+  → `Wireless0`, adds one `AccessPoint-PT` wired to the switch; laptops auto-associate on the default
+  SSID (no SSID API). Logical-view RF range is global, so one AP serves all wireless laptops.
 
 ## ⚠️ Verified PT Script-Engine API (for `pt_send_raw` / raw JS)
 
@@ -138,8 +154,9 @@ free insurance and keeps results clean.)
 
 ## Module install by router family
 
-`slot` is a **STRING**. Pick a module whose `compatible_with` includes the model — **the MCP does NOT
-enforce compatibility**, so an incompatible choice silently no-ops. Always confirm with
+`slot` is a **STRING**. Pick a module whose `compatible_with` includes the model — the MCP **rejects an
+incompatible module up front** when the module declares `compatible_with` (HWIC/NIM/built-ins); generic
+`PT-*` modules have no declared constraint, so choose sensibly there. Always confirm with
 `pt_query_topology` after install; a single `pt_add_module` may report a **timeout yet still succeed**.
 
 | Router family | Module type | Slot (string) | Ports added | Status |
@@ -159,10 +176,13 @@ power-cycle the device and can exceed the wait window (and often report a timeou
 
 ## Known rough edges (v0.4.0 — verified by benchmark)
 
-- **Module compatibility is not enforced** (`pt_add_module` accepts incompatible modules) — you must choose correctly.
+- **Module compatibility is enforced for modules that declare `compatible_with`** (HWIC/NIM/built-ins
+  reject a wrong model); generic `PT-*` modules carry no constraint, so still pick sensibly.
 - **`pt_add_module` (single) can report a timeout but still succeed** — verify ports, don't blindly retry.
-- **`three_router_triangle` builds a chain, not a triangle** (no R3↔R1 link → no redundancy).
-- **`pt://capabilities` wrongly lists `nat` as unsupported** — NAT tools exist and work; trust the tools.
+- **`three_router_triangle` now closes the ring (R3↔R1)** and `hub_spoke` wires R1→every spoke — the
+  orchestrator honors the template shape (was a flat chain before).
+- **`pt://capabilities` is derived from the live tool registry** (`supported_live.nat/acl/modules/…`) — it
+  can no longer drift; trust it *and* the tools.
 - **`pt_live_deploy` "N/N verified" checks device/link existence only** — host IPs may lag a few seconds.
 - **Invalid `routing=` raises a raw exception**; invalid `router_model` returns a degenerate plan with an
   embedded `errors[]` — always check `plan.errors` before deploying.

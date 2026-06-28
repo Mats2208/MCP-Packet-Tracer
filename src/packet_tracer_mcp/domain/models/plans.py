@@ -4,6 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 from ...shared.enums import DeviceRole
+from .vlans import VLANConfig, AccessPortConfig, TrunkConfig, SubinterfaceConfig
 
 
 class DevicePlan(BaseModel):
@@ -16,6 +17,13 @@ class DevicePlan(BaseModel):
     y: int = 0
     interfaces: dict[str, str] = Field(default_factory=dict)
     gateway: str = ""
+    # IPv6 dual-stack: interfaces_v6 keyed igual que interfaces; gateway_v6 para hosts.
+    interfaces_v6: dict[str, str] = Field(default_factory=dict)
+    gateway_v6: str = ""
+    # VLAN de acceso del host (0 = ninguna / untagged). Solo aplica a hosts.
+    vlan: int = 0
+    # Laptop conectada por WiFi (NIC inalámbrica + auto-asociación a un AP).
+    wireless: bool = False
 
 
 class LinkPlan(BaseModel):
@@ -116,7 +124,14 @@ class TopologyPlan(BaseModel):
     ospf_configs: list[OSPFConfig] = Field(default_factory=list)
     rip_configs: list[RIPConfig] = Field(default_factory=list)
     eigrp_configs: list[EIGRPConfig] = Field(default_factory=list)
+    # VLAN / trunk / inter-VLAN (router-on-a-stick)
+    vlans: list[VLANConfig] = Field(default_factory=list)
+    access_ports: list[AccessPortConfig] = Field(default_factory=list)
+    trunks: list[TrunkConfig] = Field(default_factory=list)
+    subinterfaces: list[SubinterfaceConfig] = Field(default_factory=list)
     validations: list[ValidationCheck] = Field(default_factory=list)
+    # IPv6 dual-stack activo (hosts usan SLAAC, routers llevan ipv6 address por CLI)
+    dual_stack: bool = False
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

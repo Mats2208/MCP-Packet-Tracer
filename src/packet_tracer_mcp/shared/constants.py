@@ -20,14 +20,26 @@ DEFAULT_LAN_PREFIX = 24
 DEFAULT_LINK_PREFIX = 30
 DEFAULT_DNS = "8.8.8.8"
 
-# Capacidades del sistema (para que el LLM sepa qué soportamos)
+# Capacidades del sistema (para que el LLM sepa qué soportamos).
+#
+# NOTA: la fuente de verdad de qué *tools* existen es el registro MCP en vivo —
+# `pt://capabilities` introspecciona los tools reales y deriva `nat`/`acl`/`modules`/…
+# de ahí (ver resource_registry.py), así que esta lista NO puede volver a mentir como
+# antes (decía nat="unsupported" mientras pt_apply_nat existía). Lo de abajo son los
+# valores base que el recurso enriquece dinámicamente.
 CAPABILITIES = {
     "version": "0.4.0",
     "routing": ["static", "static_floating", "ospf", "eigrp", "rip", "none"],
     "features": ["dhcp", "wan", "switching", "auto_fix", "explain", "dry_run",
                  "floating_routes", "ospf_multi_process", "eigrp_as_config",
-                 "acl_standard", "acl_extended", "acl_apply_via_bridge"],
-    "unsupported": ["nat", "vlan", "stp"],
+                 "acl_standard", "acl_extended", "acl_apply_via_bridge",
+                 "nat_static", "nat_dynamic", "nat_pat",
+                 "modules", "module_compat_check", "live_deploy", "raw_js"],
+    # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool
+    # dedicada de alto nivel todavía — candidatos a futura expansión, NO "imposibles".
+    "supported_via_cli": ["vlan", "trunk", "stp", "port_security", "qos", "ipv6"],
+    # Genuinamente no implementado en ninguna forma.
+    "unsupported": [],
     "max_routers": 20,
     "max_pcs_per_lan": 24,
     "max_switches_per_router": 4,

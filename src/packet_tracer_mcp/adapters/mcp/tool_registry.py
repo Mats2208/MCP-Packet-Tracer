@@ -28,6 +28,19 @@ from ...application.use_cases.apply_nat import (
     apply_nat_uc,
     remove_nat_uc,
 )
+from ...application.use_cases.apply_vlan import build_vlan_plan, apply_vlan_uc
+from ...application.use_cases.apply_switch_security import (
+    apply_stp_uc,
+    apply_port_security_uc,
+)
+from ...domain.models.switch_security import STPConfig, PortSecurityConfig
+from ...application.use_cases.apply_hardening import (
+    build_hardening_config,
+    apply_hardening_uc,
+)
+from ...application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
+from ...domain.models.interface_tuning import InterfaceTuning
+from ...domain.services.topology_diff import diff as topology_diff, health_check
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -49,7 +62,7 @@ from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
-from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE, CAPABILITIES
+from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -181,6 +194,10 @@ def register_tools(mcp: FastMCP) -> None:
         floating_routes: bool = False,
         ospf_process_id: int = 1,
         eigrp_as: int = 100,
+        vlans: int = 0,
+        dual_stack: bool = False,
+        ipv6_base: str = "2001:db8::/32",
+        wireless_laptops: bool = False,
     ) -> str:
         """
         Genera un plan completo de topología de red para Packet Tracer.
@@ -203,6 +220,11 @@ def register_tools(mcp: FastMCP) -> None:
           por caminos alternativos (requiere topología con múltiples caminos)
         - ospf_process_id: ID de proceso OSPF (1-65535, default 1)
         - eigrp_as: Número de AS para EIGRP (1-65535, default 100)
+        - vlans: Solo template router_on_a_stick. Nº de VLANs a repartir entre los PCs (0 = default 2).
+        - dual_stack: Si True, agrega direccionamiento IPv6 (routers por CLI, hosts por SLAAC).
+        - ipv6_base: Prefijo IPv6 base para dual-stack (default "2001:db8::/32").
+        - wireless_laptops: Si True, las laptops se conectan por WiFi (NIC inalámbrica + AP
+          auto-asociado por LAN) en vez de cable.
 
         Devuelve el plan JSON completo.
         """
@@ -222,6 +244,10 @@ def register_tools(mcp: FastMCP) -> None:
             floating_routes=floating_routes,
             ospf_process_id=ospf_process_id,
             eigrp_as=eigrp_as,
+            vlans=vlans,
+            dual_stack=dual_stack,
+            ipv6_base=ipv6_base,
+            wireless_laptops=wireless_laptops,
         )
         plan, validation = plan_from_request(request)
         return plan.model_dump_json(indent=2)
@@ -375,6 +401,10 @@ def register_tools(mcp: FastMCP) -> None:
         floating_routes: bool = False,
         ospf_process_id: int = 1,
         eigrp_as: int = 100,
+        vlans: int = 0,
+        dual_stack: bool = False,
+        ipv6_base: str = "2001:db8::/32",
+        wireless_laptops: bool = False,
     ) -> str:
         """
         Pipeline completo: planifica, valida, genera, explica, estima y despliega.
@@ -400,6 +430,10 @@ def register_tools(mcp: FastMCP) -> None:
         - floating_routes: Si True con routing=static, agrega rutas de respaldo con AD=254
         - ospf_process_id: ID de proceso OSPF (1-65535, default 1)
         - eigrp_as: Número de AS para EIGRP (1-65535, default 100)
+        - vlans: Solo router_on_a_stick. Nº de VLANs a repartir entre los PCs (0 = default 2).
+        - dual_stack: Si True, agrega IPv6 (routers por CLI, hosts por SLAAC).
+        - ipv6_base: Prefijo IPv6 base para dual-stack (default "2001:db8::/32").
+        - wireless_laptops: Si True, las laptops se conectan por WiFi (NIC inalámbrica + AP).
         """
         request = TopologyRequest(
             template=TopologyTemplate(template),
@@ -417,6 +451,10 @@ def register_tools(mcp: FastMCP) -> None:
             floating_routes=floating_routes,
             ospf_process_id=ospf_process_id,
             eigrp_as=eigrp_as,
+            vlans=vlans,
+            dual_stack=dual_stack,
+            ipv6_base=ipv6_base,
+            wireless_laptops=wireless_laptops,
         )
         plan, validation = plan_from_request(request)
         explanation = explain_plan(plan)
@@ -699,6 +737,10 @@ def register_tools(mcp: FastMCP) -> None:
         'if (autoName && autoName !== name) { '
         'var d = ipc.network().getDevice(autoName); '
         'if (d && typeof d.setName === "function") { d.setName(name); } } '
+        # Fallback (fix F16): lw.addDevice falla silenciosamente para algunos modelos
+        # (Laptop-PT/type 17 devuelve "" y no crea nada). Si el device no quedó findable,
+        # usamos el addDevice global que resuelve por NOMBRE de modelo (confiable).
+        'if (!ipc.network().getDevice(name)) { try { addDevice(name, model, x, y); } catch (e) {} } '
         'return name; }; '
         # lwAddLink — crea link en Logical view. Acepta cable como string o enum int.
         'this.lwAddLink = function(d1, p1, d2, p2, cable) { '
@@ -736,6 +778,34 @@ def register_tools(mcp: FastMCP) -> None:
         'device.enterCommand("!", "global"); '
         'for (var i = 0; i < commandsArray.length; i++) { device.enterCommand(commandsArray[i], ""); } '
         'device.enterCommand("write memory", "enable"); return true; };'
+        # configurePcIpv6 — habilita IPv6 + SLAAC en el primer puerto ethernet/Wireless0
+        # del host. addIpv6Address falla en HostPort, así que usamos auto-config (RA del
+        # router), que es la forma soportada. Itera getPorts() igual que configurePcIp.
+        ' this.configurePcIpv6 = function(deviceName) { '
+        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
+        'if (typeof device.getPorts !== "function") { return false; } '
+        'var ports = device.getPorts(); '
+        'for (var i = 0; i < ports.length; i++) { '
+        'var pn = ports[i]; if (typeof pn !== "string") continue; '
+        'if (pn.indexOf("Ethernet") >= 0 || pn === "Wireless0") { '
+        'var p = device.getPort(pn); '
+        'if (p) { '
+        'if (typeof p.setIpv6Enabled === "function") { p.setIpv6Enabled(true); } '
+        'if (typeof p.setIpv6AddressAutoConfig === "function") { p.setIpv6AddressAutoConfig(true); } '
+        'return true; } } } '
+        'return false; };'
+        # swapLaptopToWireless — cambia el NIC ethernet de una laptop por uno inalámbrico
+        # (slot "0" → PT-LAPTOP-NM-1W) para que tenga Wireless0 y auto-asocie a un AP por
+        # SSID default. Verificado en vivo. Power-cycle manejado internamente.
+        ' this.swapLaptopToWireless = function(deviceName) { '
+        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
+        'var hasPower = typeof device.getPower === "function" && typeof device.setPower === "function"; '
+        'if (hasPower) { device.setPower(false); } '
+        'try { device.removeModule("0"); } catch (e) {} '
+        'var result = device.addModule("0", allModuleTypes["PT-LAPTOP-NM-1W"], "PT-LAPTOP-NM-1W"); '
+        'if (hasPower) { device.setPower(true); '
+        'if (typeof device.skipBoot === "function") { device.skipBoot(); } } '
+        'return result == true; };'
     )
 
     # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
@@ -899,9 +969,7 @@ def register_tools(mcp: FastMCP) -> None:
             else:
                 dev_fail.append(dev.name)
 
-        link_ok = 0
-        link_fail = []
-        for lnk in plan.links:
+        def _verify_link(lnk) -> str | None:
             sd = _js_escape(lnk.device_a)
             sp = _js_escape(lnk.port_a)
             js = (
@@ -913,17 +981,74 @@ def register_tools(mcp: FastMCP) -> None:
                 "  reportResult(p.getLink() != null ? 'OK' : 'NO_LINK');"
                 "} catch(e) { if (e !== 's') reportResult('ERROR'); }"
             )
-            r = _bridge_send_and_wait(js, timeout=5.0)
+            return _bridge_send_and_wait(js, timeout=5.0)
+
+        link_ok = 0
+        link_fail = []
+        link_fail_objs = []
+        for lnk in plan.links:
+            r = _verify_link(lnk)
             if r == "OK":
                 link_ok += 1
             else:
                 link_fail.append(f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b} ({r or 'timeout'})")
+                link_fail_objs.append(lnk)
+
+        # --- Reconcile (fix F16): re-encola los comandos de los items faltantes y re-verifica.
+        # pt_live_deploy a veces dropea silenciosamente algunos dispositivos (típicamente
+        # Laptop-PT). Reusamos los `commands` ya generados, filtrando los que referencian a
+        # los dispositivos/enlaces fallidos (su nombre aparece entre comillas en lwAddDevice,
+        # lwAddLink y configurePcIp/configureIosDevice).
+        reconciled = {"devices": [], "links": []}
+        if dev_fail or link_fail_objs:
+            names = set(dev_fail)
+            for lnk in link_fail_objs:
+                names.add(lnk.device_a)
+                names.add(lnk.device_b)
+            retry_cmds = [c for c in commands if any(f'"{n}"' in c for n in names)]
+            for cmd in retry_cmds:
+                _http_post(f"{_BRIDGE_URL}/queue", _js_guard(cmd))
+                time.sleep(command_delay)
+
+            # Re-verificar dispositivos fallidos
+            still_missing_dev = []
+            for name in dev_fail:
+                safe = _js_escape(name)
+                js = (
+                    "try {"
+                    f"  var d = ipc.network().getDevice('{safe}');"
+                    "  reportResult(d ? 'OK' : 'MISSING');"
+                    "} catch(e) { reportResult('MISSING'); }"
+                )
+                if _bridge_send_and_wait(js, timeout=5.0) == "OK":
+                    dev_ok += 1
+                    reconciled["devices"].append(name)
+                else:
+                    still_missing_dev.append(name)
+            dev_fail = still_missing_dev
+
+            # Re-verificar links fallidos
+            still_failed_links = []
+            for lnk in link_fail_objs:
+                if _verify_link(lnk) == "OK":
+                    link_ok += 1
+                    reconciled["links"].append(f"{lnk.device_a}:{lnk.port_a}")
+                else:
+                    still_failed_links.append(
+                        f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b}"
+                    )
+            link_fail = still_failed_links
 
         report = [
             "Topologia desplegada en Packet Tracer!",
             f"  Comandos enviados: {sent}",
             f"  Dispositivos: {dev_ok}/{len(plan.devices)} verificados",
         ]
+        if reconciled["devices"] or reconciled["links"]:
+            report.append(
+                f"  ♻ Reconciliados: {len(reconciled['devices'])} dispositivo(s), "
+                f"{len(reconciled['links'])} enlace(s) re-agregados tras drop."
+            )
         if dev_fail:
             report.append(f"  FAILED devices: {', '.join(dev_fail)}")
         report.append(f"  Enlaces: {link_ok}/{len(plan.links)} verificados")
@@ -1692,8 +1817,8 @@ def register_tools(mcp: FastMCP) -> None:
           tipo de slot del dispositivo:
             * HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
               (chassis-slot/hwic-subslot)
-            * NM en 2911            → "1" o "2"
-            * NIM en ISR4321/4331   → "0" o "1"
+            * NM en 2811/2620XM/Router-PT → "1"
+            * NIM en ISR4321/4331   → "0/1", "0/2"  (chassis/subslot — NO "0"/"1")
             * Cloud-PT/Server-PT/PCs → "0", "1", ... según el slot disponible
           Si pasas un entero también se acepta y se convierte a string.
         - module_name: nombre exacto del módulo, ej: "HWIC-2T", "NM-4A/S",
@@ -1797,7 +1922,7 @@ def register_tools(mcp: FastMCP) -> None:
             f"Causas habituales:\n"
             f"  - Slot ocupado por otro módulo\n"
             f"  - Módulo incompatible con el modelo del dispositivo\n"
-            f"  - Slot fuera de rango o formato incorrecto (HWIC: '0/0', NM: '1', NIM: '0')"
+            f"  - Slot fuera de rango o formato incorrecto (HWIC: '0/0', NM: '1', NIM: '0/1')"
         )
 
     @mcp.tool()
@@ -1825,7 +1950,8 @@ def register_tools(mcp: FastMCP) -> None:
 
         Reglas del slot (string):
           HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
-          NIM en ISR4321/4331    → "0", "1"
+          NIM en ISR4321/4331    → "0/1", "0/2"   (chassis/subslot — NO "0"/"1")
+          NM en 2811/Router-PT    → "1"
           Cloud-PT / hosts        → "0".."7"
 
         Retorna JSON con summary, status por módulo y js_payload.
@@ -1962,16 +2088,49 @@ def register_tools(mcp: FastMCP) -> None:
     # ACL — aplicar y eliminar Access Control Lists vía bridge
     # ------------------------------------------------------------------
 
-    def _query_pt_devices() -> list[dict]:
-        """Helper: consulta topología activa de PT y devuelve lista de devices."""
-        result = _bridge_send_and_wait("queryTopology()", timeout=10.0)
-        if result is None:
+    # JS que lee la topología activa y la devuelve como JSON estructurado.
+    # Reemplaza al antiguo `queryTopology()` que NUNCA se definía/inyectaba (la llamada
+    # siempre devolvía PT_ERROR → lista vacía → las pre-validaciones de compatibilidad de
+    # módulos y de ACL/NAT contra PT quedaban silenciosamente deshabilitadas). JSON.stringify
+    # está disponible en el Script Engine de PT (verificado en vivo). isPortUp()/getLink()
+    # alimentan el health-check y el diff. Cada puerto se guarda con su nombre tal cual
+    # (incluye subinterfaces "Gig0/0.10" si existen).
+    _LIVE_DEVICES_JS = (
+        "var net=ipc.network();var n=net.getDeviceCount();var arr=[];"
+        "for(var i=0;i<n;i++){"
+        "var d=net.getDeviceAt(i);var pc=d.getPortCount();var ports=[];"
+        "for(var j=0;j<pc;j++){"
+        "var p=d.getPortAt(j);var ip='';var mask='';var up=false;var linked=false;"
+        "try{ip=p.getIpAddress()||'';}catch(pe){}"
+        "try{mask=p.getSubnetMask()||'';}catch(pe){}"
+        "try{up=(typeof p.isPortUp==='function')?p.isPortUp():false;}catch(pe){}"
+        "try{linked=(p.getLink()!=null);}catch(pe){}"
+        "ports.push({name:p.getName(),ip:ip,mask:mask,up:up,linked:linked});"
+        "}"
+        "arr.push({name:d.getName(),model:d.getModel(),ports:ports});"
+        "}"
+        "reportResult(JSON.stringify({devices:arr,links:net.getLinkCount()}));"
+    )
+
+    def _live_devices() -> list[dict]:
+        """Lee la topología activa de PT como lista estructurada de dispositivos.
+
+        Cada elemento: {name, model, ports:[{name, ip, mask, up, linked}]}.
+        Fuente única de verdad para las pre-checks (compat módulos, ACL/NAT),
+        pt_diff y pt_health_check. Devuelve [] si el bridge no responde o PT falla.
+        """
+        result = _bridge_send_and_wait(_LIVE_DEVICES_JS, timeout=10.0)
+        if not result or result.startswith("PT_ERROR") or result.startswith("ERROR"):
             return []
         try:
             data = json.loads(result)
             return data.get("devices", []) or []
         except Exception:
             return []
+
+    def _query_pt_devices() -> list[dict]:
+        """Alias compat de _live_devices (nombre usado por las pre-checks de módulos/ACL/NAT)."""
+        return _live_devices()
 
     def _bridge_send_payload(js_call: str) -> bool:
         """Helper: envía un JS payload al bridge (fire-and-forget), con guard try/catch."""
@@ -2589,3 +2748,333 @@ def register_tools(mcp: FastMCP) -> None:
             "sent": result["sent"],
             "dry_run": result["dry_run"],
         }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_apply_vlan(
+        switch: str = "",
+        router: str = "",
+        vlans: list[dict] | None = None,
+        access_ports: list[dict] | None = None,
+        trunks: list[dict] | None = None,
+        subinterfaces: list[dict] | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Aplica VLANs / trunks / inter-VLAN routing a una topología activa de PT.
+
+        Configura el switch (definición de VLANs, puertos access, trunks) y opcionalmente
+        el router (subinterfaces .1q para inter-VLAN routing / router-on-a-stick).
+        Todo vía CLI IOS (configureIosDevice). Usa pt_query_topology para nombres/puertos reales.
+
+        Parámetros:
+        - switch: nombre del switch en PT (ej "SW1").
+        - router: nombre del router (solo si haces inter-VLAN routing con subinterfaces).
+        - vlans: lista de {vlan_id:int, name:str?}. Ej [{"vlan_id":10,"name":"VENTAS"}].
+        - access_ports: lista de {switch, port, vlan_id}. Ej
+            [{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10}].
+        - trunks: lista de {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.
+            En 2960 (dot1q-only) NO se emite `switchport trunk encapsulation`; en 3560 sí.
+        - subinterfaces: lista de {router, parent_port, vlan_id, ip_cidr}. Ej
+            [{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"}].
+        - dry_run: si True, solo valida y devuelve el CLI/payload sin enviar.
+
+        Ejemplo router-on-a-stick (2 VLANs):
+          pt_apply_vlan(
+            switch="SW1", router="R1",
+            vlans=[{"vlan_id":10,"name":"V10"},{"vlan_id":20,"name":"V20"}],
+            access_ports=[{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10},
+                          {"switch":"SW1","port":"FastEthernet0/2","vlan_id":20}],
+            trunks=[{"switch":"SW1","port":"GigabitEthernet0/1"}],
+            subinterfaces=[{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"},
+                           {"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":20,"ip_cidr":"192.168.20.1/24"}],
+            dry_run=True)
+        """
+        plan = build_vlan_plan(
+            switch=switch, router=router, vlans=vlans,
+            access_ports=access_ports, trunks=trunks, subinterfaces=subinterfaces,
+        )
+
+        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        if bridge_ok:
+            _ensure_pt_patches()
+        query_fn = _query_pt_devices if bridge_ok else None
+        send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
+
+        result = apply_vlan_uc(
+            plan=plan,
+            query_pt_topology=query_fn,
+            bridge_send=send_fn,
+            dry_run=dry_run,
+        )
+
+        summary = []
+        if result["valid"]:
+            summary.append(f"✅ VLAN config válida ({len(plan.vlans)} VLAN(s)).")
+        else:
+            summary.append(f"❌ VLAN: {len(result['errors'])} error(es).")
+        if dry_run:
+            summary.append("Modo dry_run — NO se envió al bridge.")
+        elif result["sent"]:
+            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+        elif result["valid"] and not bridge_ok:
+            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+
+        return json.dumps({
+            "summary": "\n".join(summary),
+            "valid": result["valid"],
+            "errors": result["errors"],
+            "warnings": result["warnings"],
+            "cli_lines": result["cli_lines"],
+            "js_payload": result["js_payload"],
+            "sent": result["sent"],
+            "dry_run": result["dry_run"],
+        }, indent=2, ensure_ascii=False)
+
+    def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
+        summary = []
+        summary.append(f"✅ {label} válida." if result["valid"]
+                       else f"❌ {label}: {len(result['errors'])} error(es).")
+        if dry_run:
+            summary.append("Modo dry_run — NO se envió al bridge.")
+        elif result["sent"]:
+            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+        elif result["valid"] and not bridge_ok:
+            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+        return json.dumps({
+            "summary": "\n".join(summary),
+            "valid": result["valid"],
+            "errors": result["errors"],
+            "warnings": result["warnings"],
+            "cli_lines": result["cli_lines"],
+            "js_payload": result["js_payload"],
+            "sent": result["sent"],
+            "dry_run": result["dry_run"],
+        }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_apply_stp(
+        switch: str,
+        mode: str = "rapid-pvst",
+        root_primary_vlans: list[int] | None = None,
+        priority: dict | None = None,
+        portfast_ports: list[str] | None = None,
+        bpduguard_ports: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Configura Spanning-Tree en un switch de la topología activa.
+
+        Parámetros:
+        - switch: nombre del switch en PT (ej "SW1").
+        - mode: "rapid-pvst" (default) o "pvst".
+        - root_primary_vlans: lista de VLANs donde este switch es root primary (genera
+          `spanning-tree vlan N root primary`).
+        - priority: dict {vlan_id: prioridad}. La prioridad debe ser 0-61440 y múltiplo de 4096.
+        - portfast_ports: puertos access con `spanning-tree portfast`.
+        - bpduguard_ports: puertos con `spanning-tree bpduguard enable`.
+        - dry_run: si True, solo valida y devuelve el CLI/payload.
+
+        Ejemplo: SW1 root de VLAN 10 + portfast en Fa0/1:
+          pt_apply_stp(switch="SW1", root_primary_vlans=[10],
+                       portfast_ports=["FastEthernet0/1"], dry_run=True)
+        """
+        cfg = STPConfig(
+            switch=switch, mode=mode,
+            root_primary_vlans=root_primary_vlans or [],
+            priority={int(k): int(v) for k, v in (priority or {}).items()},
+            portfast_ports=portfast_ports or [],
+            bpduguard_ports=bpduguard_ports or [],
+        )
+        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        if bridge_ok:
+            _ensure_pt_patches()
+        result = apply_stp_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return _switch_security_response(result, "STP", bridge_ok, dry_run)
+
+    @mcp.tool()
+    def pt_apply_port_security(
+        switch: str,
+        port: str,
+        max_mac: int = 1,
+        violation: str = "shutdown",
+        sticky: bool = True,
+        static_macs: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Configura port-security en un puerto access de un switch.
+
+        Parámetros:
+        - switch: nombre del switch en PT.
+        - port: puerto access (ej "FastEthernet0/1").
+        - max_mac: máximo de MACs permitidas (default 1).
+        - violation: "shutdown" (default) | "restrict" | "protect".
+        - sticky: si True, aprende MACs sticky (`mac-address sticky`).
+        - static_macs: MACs estáticas en formato IOS aaaa.bbbb.cccc.
+        - dry_run: si True, solo valida y devuelve el CLI/payload.
+
+        Ejemplo: max 2 MACs sticky en Fa0/1 de SW1:
+          pt_apply_port_security(switch="SW1", port="FastEthernet0/1", max_mac=2, dry_run=True)
+        """
+        cfg = PortSecurityConfig(
+            switch=switch, port=port, max_mac=max_mac,
+            violation=violation, sticky=sticky, static_macs=static_macs or [],
+        )
+        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        if bridge_ok:
+            _ensure_pt_patches()
+        result = apply_port_security_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return _switch_security_response(result, "Port-security", bridge_ok, dry_run)
+
+    @mcp.tool()
+    def pt_apply_hardening(
+        device: str,
+        hostname: str = "",
+        banner_motd: str = "",
+        enable_secret: str = "",
+        users: list[dict] | None = None,
+        ssh: dict | None = None,
+        service_password_encryption: bool = True,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Endurece (hardening) un router/switch de la topología activa.
+
+        Aplica vía CLI: hostname, banner MOTD, enable secret, usuarios locales, SSH
+        (domain-name + claves RSA + `ip ssh version`), service password-encryption, y
+        restringe las líneas vty a SSH con login local.
+
+        Parámetros:
+        - device: nombre del dispositivo en PT.
+        - hostname: nuevo hostname (opcional).
+        - banner_motd: texto del banner MOTD (sin el carácter '#').
+        - enable_secret: contraseña de enable (se cifra).
+        - users: lista de {username, secret, privilege?}. Necesarios para SSH/login local.
+        - ssh: dict {domain?, modulus?, version?, enable?} para habilitar SSH. Requiere
+          al menos un usuario. modulus<768 genera warning.
+        - service_password_encryption: aplica `service password-encryption` (default True).
+        - dry_run: si True, solo valida y devuelve el CLI/payload.
+
+        Ejemplo: hardening completo de R1 con SSH:
+          pt_apply_hardening(device="R1", hostname="R1", enable_secret="cisco123",
+            users=[{"username":"admin","secret":"adminpass","privilege":15}],
+            ssh={"domain":"lab.local","modulus":1024}, dry_run=True)
+        """
+        cfg = build_hardening_config(
+            device=device, hostname=hostname, banner_motd=banner_motd,
+            enable_secret=enable_secret, users=users, ssh=ssh,
+            service_password_encryption=service_password_encryption,
+        )
+        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        if bridge_ok:
+            _ensure_pt_patches()
+        result = apply_hardening_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return _switch_security_response(result, "Hardening", bridge_ok, dry_run)
+
+    @mcp.tool()
+    def pt_apply_interface_tuning(
+        router: str,
+        interface: str,
+        clock_rate: int | None = None,
+        bandwidth: int | None = None,
+        ospf_cost: int | None = None,
+        ospf_priority: int | None = None,
+        ospf_hello_interval: int | None = None,
+        delay: int | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Ajusta parámetros de una interfaz de router en la topología activa.
+
+        Parámetros (todos opcionales salvo router/interface):
+        - router: nombre del router en PT.
+        - interface: interfaz a ajustar (ej "Serial0/0/0", "GigabitEthernet0/0").
+        - clock_rate: SOLO en interfaces Serial (extremo DCE). Ej 64000, 2000000.
+          Aplicar clock_rate a una interfaz no-serial es un error de validación.
+        - bandwidth: ancho de banda en kbps (`bandwidth N`).
+        - ospf_cost / ospf_priority / ospf_hello_interval: knobs OSPF por interfaz.
+        - delay: delay de la interfaz (afecta métrica EIGRP), en decenas de microsegundos.
+        - dry_run: si True, solo valida y devuelve el CLI/payload.
+
+        Ejemplo: clock rate DCE en el serial de R1:
+          pt_apply_interface_tuning(router="R1", interface="Serial0/0/0",
+                                    clock_rate=64000, dry_run=True)
+        """
+        cfg = InterfaceTuning(
+            router=router, interface=interface, clock_rate=clock_rate,
+            bandwidth=bandwidth, ospf_cost=ospf_cost, ospf_priority=ospf_priority,
+            ospf_hello_interval=ospf_hello_interval, delay=delay,
+        )
+        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        if bridge_ok:
+            _ensure_pt_patches()
+        result = apply_interface_tuning_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return _switch_security_response(result, "Interface tuning", bridge_ok, dry_run)
+
+    @mcp.tool()
+    def pt_diff(plan_json: str) -> str:
+        """
+        Compara un plan (JSON de pt_plan_topology) contra la topología VIVA de PT.
+
+        Reporta: dispositivos del plan que faltan en PT, dispositivos extra en PT,
+        y discrepancias de IP por interfaz. Útil para reconciliar tras un deploy.
+        Requiere bridge conectado.
+        """
+        try:
+            plan = TopologyPlan.model_validate_json(plan_json)
+        except Exception as exc:
+            return json.dumps({"error": f"plan_json inválido: {exc}"}, ensure_ascii=False)
+        err = _check_bridge()
+        if err:
+            return err
+        live = _live_devices()
+        result = topology_diff(plan, live)
+        result["summary"] = (
+            "✅ Plan y PT en sincronía."
+            if result["in_sync"]
+            else f"⚠ {len(result['missing_devices'])} faltante(s), "
+                 f"{len(result['extra_devices'])} extra(s), "
+                 f"{len(result['ip_mismatches'])} IP mismatch(es)."
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_health_check() -> str:
+        """
+        Barrido de salud de la topología VIVA de PT.
+
+        Reporta: enlaces caídos (cableados pero no up), puertos cableados sin IP
+        (posible DHCP no completado), e IPs duplicadas. Requiere bridge conectado.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+        live = _live_devices()
+        result = health_check(live)
+        result["summary"] = (
+            "✅ Topología saludable."
+            if result["healthy"]
+            else f"⚠ {len(result['down_links'])} link(s) caído(s), "
+                 f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)

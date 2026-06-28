@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **36 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **43 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -74,6 +74,30 @@ a running Packet Tracer require the [live bridge](live-deploy.md) to be connecte
 | `pt_apply_acl_object` | Same, via PT's ACL object API (faster, fewer modal popups). |
 | `pt_remove_acl` | Remove an ACL (and unbind it) via CLI. |
 | `pt_remove_acl_object` | Remove an ACL via the object API. |
+
+## Switching, security & tuning
+
+| Tool | What it does |
+|------|--------------|
+| `pt_apply_vlan` | VLANs, access ports, trunks + router `.1q` subinterfaces (inter-VLAN routing). |
+| `pt_apply_stp` | Spanning-tree mode, root primary, per-VLAN priority, portfast, BPDU guard. |
+| `pt_apply_port_security` | Port-security: max MACs, sticky/static MACs, violation action. |
+| `pt_apply_hardening` | hostname, banner, enable secret, local users, SSH (RSA keys + vty), password-encryption. |
+| `pt_apply_interface_tuning` | Serial clock-rate (DCE), bandwidth, per-interface OSPF/EIGRP knobs. |
+
+All accept `dry_run=True` to preview the generated CLI without touching PT.
+
+## Verification
+
+| Tool | What it does |
+|------|--------------|
+| `pt_diff` | Compare a plan vs the live topology (missing/extra devices, IP mismatches). |
+| `pt_health_check` | Sweep the live topology: down links, cabled-without-IP, duplicate IPs. |
+
+!!! tip "Build flags"
+    `pt_plan_topology` / `pt_full_build` accept `vlans` (router-on-a-stick VLAN count),
+    `dual_stack` (IPv6: routers via CLI + hosts via SLAAC), `ipv6_base`, and
+    `wireless_laptops` (Laptop-PT → wireless NIC + auto-associated Access Point).
 
 !!! note "Cable types for `pt_add_link`"
     Valid: `straight`, `cross`, `serial`, `fiber`, `console`, `roll`, `phone`,
