@@ -28,7 +28,7 @@ DEFAULT_DNS = "8.8.8.8"
 # antes (decía nat="unsupported" mientras pt_apply_nat existía). Lo de abajo son los
 # valores base que el recurso enriquece dinámicamente.
 CAPABILITIES = {
-    "version": "0.4.0",
+    "version": "0.5.0",
     "routing": ["static", "static_floating", "ospf", "eigrp", "rip", "none"],
     "features": ["dhcp", "wan", "switching", "auto_fix", "explain", "dry_run",
                  "floating_routes", "ospf_multi_process", "eigrp_as_config",

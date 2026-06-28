@@ -4,7 +4,7 @@
 
 **Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Pydantic v2](https://img.shields.io/badge/pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 [![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>36 MCP Tools</strong></td>
+<td align="center"><strong>43 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -68,9 +68,13 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
 | **IP / DHCP** | Auto /24 LANs + /30 links, DHCP pools | Sequential, gateway at `.1` |
 | **Routing** | Static · OSPF · EIGRP · RIP | Full IOS generation |
+| **Switching** | VLANs, trunks, **inter-VLAN routing** (router-on-a-stick), STP, port-security | `.1q` subinterfaces + per-VLAN DHCP |
+| **Security** | Device hardening (SSH, local users, enable-secret, banner), ACL/NAT | On live devices via the bridge |
+| **IPv6** | Dual-stack addressing | Routers via CLI, hosts via SLAAC |
+| **Wireless** | WiFi laptops + auto-associated Access Points | NIC swap → `Wireless0`, default-SSID assoc |
 | **Validation** | Typed errors + auto-fixer | Wrong cables, missing ports, model upgrades |
-| **ACL / NAT** | Standard/extended/named ACLs, static/dynamic/PAT | On live routers via the bridge |
-| **Deploy** | Real-time HTTP bridge to PT | No copy-paste — commands stream directly |
+| **Verification** | Plan-vs-live diff + health check | Drift, down links, duplicate IPs |
+| **Deploy** | Real-time HTTP bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
 | **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
 
 👉 Full tool reference, device catalog, networking guides and architecture live in the **[documentation site](https://mats2208.github.io/MCP-Packet-Tracer/)**.

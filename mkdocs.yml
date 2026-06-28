@@ -83,6 +83,7 @@ nav:
   - Networking:
       - IP Addressing: ip-addressing.md
       - Routing Protocols: routing.md
+      - Switching, IPv6 & Wireless: advanced-features.md
       - Topology Templates: templates.md
   - Internals:
       - Architecture: architecture.md
