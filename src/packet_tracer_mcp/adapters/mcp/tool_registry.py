@@ -699,11 +699,9 @@ def register_tools(mcp: FastMCP) -> None:
     # con topologías grandes, y para que el progreso sea visible en PT.
     _DEPLOY_BATCH = 50
 
-    # El bootstrap y reportResult() viven en live_bridge.py, no acá. Antes había
-    # tres copias (esta, la de live_bridge y la de la extensión) y ya habían
-    # divergido: la de acá no definía reportResult, así que quien pegaba ESTE
-    # snippet se quedaba con un bridge donde send_and_wait nunca recibía nada.
-    # Se generan bajo demanda porque llevan el token adentro.
+    # report_result_js() vive en live_bridge.py (un solo lugar) y se genera bajo
+    # demanda porque lleva el token adentro. La rama HTTP de _bridge_send_and_wait
+    # lo antepone al comando; por el canal de archivo lo inyecta el Script Engine.
 
     # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
     _bridge_instance: PTCommandBridge | None = None
@@ -787,7 +785,7 @@ def register_tools(mcp: FastMCP) -> None:
         """
         nonlocal _bridge_instance
         if _bridge_is_up():
-            return True  # ya hay uno activo (interno o external start_bridge.ps1)
+            return True  # ya hay uno activo en el puerto
         if _bridge_instance is None:
             try:
                 b = PTCommandBridge()
@@ -837,9 +835,9 @@ def register_tools(mcp: FastMCP) -> None:
         """
         Envia comandos directamente a Packet Tracer en tiempo real.
 
-        El bridge HTTP se inicia automaticamente dentro del servidor MCP —
-        no necesitas correr start_bridge.ps1 ni ningun proceso externo.
-        Solo asegurate de tener el bootstrap corriendo en Builder Code Editor.
+        Requiere PT abierto con la extension MCP Control Center instalada. Con la
+        ventana abierta se usa HTTP; si la cerras, el canal por archivo (Script
+        Engine) toma el relevo. El bridge se inicia solo dentro del servidor MCP.
 
         Parámetros:
         - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
@@ -1241,6 +1239,12 @@ def register_tools(mcp: FastMCP) -> None:
     # Helpers para tools bidireccionales (send command → wait for result)
     # ------------------------------------------------------------------
 
+    # Mensaje único de timeout, para no repetir cuatro variantes casi iguales.
+    _TIMEOUT_MSG = (
+        "No response from PT (timeout). Check pt_bridge_status — PT must be open "
+        "with the MCP Control Center extension."
+    )
+
     # Definido en shared/utils.py: al vivir dentro de esta closure no habia
     # forma de testearlo, y es justo la clase de funcion que hay que testear.
     _js_escape = js_escape
@@ -1335,7 +1339,7 @@ def register_tools(mcp: FastMCP) -> None:
         )
         result = _bridge_send_and_wait(js, timeout=10.0)
         if result is None:
-            return "No response from PT (timeout). Verify the bootstrap is running."
+            return _TIMEOUT_MSG
         if result.startswith("ERROR:"):
             return f"PT error: {result}"
 
@@ -1416,7 +1420,7 @@ def register_tools(mcp: FastMCP) -> None:
         )
         result = _bridge_send_and_wait(js, timeout=15.0)
         if result is None:
-            return "No response from PT (timeout). Verify the bootstrap is running."
+            return _TIMEOUT_MSG
         if result.startswith("ERROR:"):
             return f"PT error: {result}"
 
@@ -1678,7 +1682,7 @@ def register_tools(mcp: FastMCP) -> None:
         )
         result = _bridge_send_and_wait(js, timeout=10.0)
         if result is None:
-            return "No response from PT (timeout). Verify bootstrap is running."
+            return _TIMEOUT_MSG
         if result.startswith("ERROR:DUPLICATE:"):
             return result[6:]
         if result.startswith("ERROR:"):
@@ -1748,7 +1752,7 @@ def register_tools(mcp: FastMCP) -> None:
         )
         pre_result = _bridge_send_and_wait(js, timeout=10.0)
         if pre_result is None:
-            return "No response from PT (timeout). Verify bootstrap is running."
+            return _TIMEOUT_MSG
         if pre_result.startswith("ERROR:"):
             return pre_result
         if not pre_result.startswith("PRE_OK:"):

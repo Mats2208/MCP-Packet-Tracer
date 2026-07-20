@@ -37,9 +37,10 @@ var S = {
 var BRIDGE_BASE = "http://127.0.0.1:54321";
 
 // Token compartido con el servidor MCP. Este webview corre bajo el esquema
-// this-sm: y no tiene acceso al sistema de archivos, así que no puede leer el
-// token del disco: lo pide una vez por POST /pair y lo guarda con $putData,
-// que sobrevive a reinicios de Packet Tracer.
+// this-sm: y no tiene acceso al sistema de archivos, así que no puede leerlo del
+// disco: se lo pide al Script Engine con $se("getMcpToken"), que sí puede leer
+// archivos. Sin emparejamiento ni acción del usuario. No se cachea a propósito
+// (si el servidor rota el token, la copia quedaría obsoleta en silencio).
 var S_TOKEN = "";
 
 function bridgeUrl(path) {
