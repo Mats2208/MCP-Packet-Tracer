@@ -405,16 +405,18 @@ function updateFileBridgeBadge() {
     var el = document.getElementById("fbBadge");
     if (!el) return;
     var fb = S.fileBridge;
+    var label = "file-bridge";
     if (fb && fb.active) {
-        el.className = "fb-badge active";
-        el.textContent = "file-bridge" + (fb.count > 0 ? " · " + fb.count : "");
+        el.className = "chip fb-badge ready";
+        if (fb.count > 0) label += " · " + fb.count;
         el.title = "File-bridge active — PT keeps executing with this window closed"
                  + (fb.count > 0 ? " (" + fb.count + " commands run via file)" : "");
     } else {
-        el.className = "fb-badge";
-        el.textContent = "file-bridge";
+        el.className = "chip fb-badge";
         el.title = "File-bridge inactive";
     }
+    // preserve the leading dot span, replace only the label text
+    el.innerHTML = '<span class="conn-dot"></span>' + label;
 }
 
 /* Un 401 significa que el bridge está pero nuestro token no sirve — típicamente
@@ -476,12 +478,18 @@ function updateConnectionUI() {
     var label = document.getElementById("connLabel");
     var sbDot = document.getElementById("sb-bridge-dot");
     var sbLbl = document.getElementById("sb-bridge-label");
+    var httpChip  = document.getElementById("httpChip");
+    var tokenChip = document.getElementById("tokenChip");
 
     var timelineFill = document.getElementById("timelineFill");
 
+    // Token chip: if we ever polled successfully, the token is working.
+    if (tokenChip) tokenChip.className = S.bridgeUp ? "chip on" : "chip";
+
     if (S.ptConnected) {
+        if (httpChip) httpChip.className = "chip on";
         if (dot)   { dot.className = "conn-dot connected"; }
-        if (label) { label.textContent = "PT connected (" + Math.round(S.lastPollAgo) + "s ago)"; }
+        if (label) { label.textContent = "HTTP"; }
         if (sbDot) sbDot.className = "status-bar-dot ok";
         if (sbLbl) sbLbl.textContent = "Bridge: connected";
         if (timelineFill) timelineFill.style.width = "100%";
@@ -496,8 +504,9 @@ function updateConnectionUI() {
         setElText("st-poll-sub", "polling every 500ms");
 
     } else if (S.bridgeUp) {
+        if (httpChip) httpChip.className = "chip warn";
         if (dot)   { dot.className = "conn-dot bridge-only"; }
-        if (label) { label.textContent = "Bridge up / PT: waiting"; }
+        if (label) { label.textContent = "waiting"; }
         if (sbDot) sbDot.className = "status-bar-dot warn";
         if (sbLbl) sbLbl.textContent = "Bridge: up, PT offline";
         if (timelineFill) timelineFill.style.width = "50%";
@@ -512,8 +521,9 @@ function updateConnectionUI() {
         setElText("st-poll-sub", "PT not polling");
 
     } else {
+        if (httpChip) httpChip.className = "chip";
         if (dot)   { dot.className = "conn-dot"; }
-        if (label) { label.textContent = "Bridge: offline"; }
+        if (label) { label.textContent = "offline"; }
         if (sbDot) sbDot.className = "status-bar-dot err";
         if (sbLbl) sbLbl.textContent = "Bridge: offline";
         if (timelineFill) timelineFill.style.width = "0%";

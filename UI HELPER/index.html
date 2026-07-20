@@ -13,29 +13,30 @@
            DESIGN TOKENS
         ================================================================ */
         :root {
-            --bg-base:        #0d0f1a;
-            --bg-panel:       #131622;
-            --bg-surface:     #1a1d2e;
-            --bg-surface2:    #1f2235;
-            --bg-input:       #10121f;
-            --bg-hover:       #252840;
+            /* v5 palette — signal teal accent (network/links), cool neutrals */
+            --bg-base:        #0a0d16;
+            --bg-panel:       #10141f;
+            --bg-surface:     #171c2b;
+            --bg-surface2:    #1d2334;
+            --bg-input:       #0c0f19;
+            --bg-hover:       #232a3d;
 
-            --text-primary:   #e8eaf0;
-            --text-secondary: #8b90a7;
-            --text-muted:     #545873;
+            --text-primary:   #e7eaf3;
+            --text-secondary: #9096ad;
+            --text-muted:     #565c78;
             --text-dim:       #3a3e54;
 
-            --accent:         #4f8ef7;
-            --accent-glow:    rgba(79,142,247,0.2);
-            --accent-dim:     #3a6bc4;
+            --accent:         #2dd4bf;
+            --accent-glow:    rgba(45,212,191,0.16);
+            --accent-dim:     #1b9e8d;
             --green:          #3ecf8e;
-            --green-glow:     rgba(62,207,142,0.2);
-            --yellow:         #f5a623;
-            --yellow-glow:    rgba(245,166,35,0.15);
-            --red:            #f06292;
-            --red-glow:       rgba(240,98,146,0.2);
+            --green-glow:     rgba(62,207,142,0.18);
+            --yellow:         #f5b544;
+            --yellow-glow:    rgba(245,181,68,0.15);
+            --red:            #f0688f;
+            --red-glow:       rgba(240,104,143,0.18);
             --purple:         #b39ddb;
-            --cyan:           #4dd0e1;
+            --cyan:           #22d3ee;
 
             --border:         rgba(255,255,255,0.06);
             --border-strong:  rgba(255,255,255,0.1);
@@ -142,60 +143,42 @@
             padding: 1px 5px;
             letter-spacing: 0.5px;
         }
-        .fb-badge {
-            font-size: 9px;
-            font-weight: 600;
-            color: var(--text-muted);
-            background: transparent;
-            border: 1px solid var(--border-strong);
-            border-radius: 3px;
-            padding: 1px 6px;
-            letter-spacing: 0.3px;
-            transition: all var(--transition);
-            opacity: 0.5;
+        /* file-bridge chip: teal when active (idle-ready), dim when not */
+        .chip.fb-badge { opacity: 0.55; }
+        .chip.fb-badge.ready {
+            opacity: 1; color: var(--accent);
+            border-color: rgba(45,212,191,0.35); background: var(--accent-glow);
         }
-        .fb-badge.active {
-            color: var(--green);
-            background: var(--green-glow);
-            border-color: rgba(62,207,142,0.3);
-            opacity: 1;
-        }
+        .chip.fb-badge.ready .conn-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 
         /* Connection status */
+        /* Channel cluster — HTTP + file-bridge + token, as chips */
         .conn-status {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 7px;
         }
-
-        .conn-dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
-            background: var(--red);
-            box-shadow: 0 0 0 2px var(--red-glow);
-            flex-shrink: 0;
-            transition: background var(--transition), box-shadow var(--transition);
+        .chip {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 10.5px; font-weight: 600;
+            padding: 3px 9px 3px 8px; border-radius: 20px;
+            border: 1px solid var(--border-strong); color: var(--text-muted);
+            background: var(--bg-input); transition: all var(--transition);
+            font-variant-numeric: tabular-nums; white-space: nowrap;
         }
-        .conn-dot.connected {
-            background: var(--green);
-            box-shadow: 0 0 0 2px var(--green-glow);
-            animation: pulse-green 2s ease-in-out infinite;
+        .chip .conn-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--text-muted); flex-shrink: 0;
+            transition: all var(--transition);
         }
-        .conn-dot.bridge-only {
-            background: var(--yellow);
-            box-shadow: 0 0 0 2px var(--yellow-glow);
-        }
-
-        @keyframes pulse-green {
-            0%, 100% { box-shadow: 0 0 0 2px var(--green-glow); }
-            50% { box-shadow: 0 0 0 5px var(--green-glow); }
-        }
-
-        .conn-label {
-            font-size: 11px;
-            color: var(--text-secondary);
-            font-weight: 500;
-        }
+        .chip.on { color: var(--green); border-color: rgba(62,207,142,0.35); background: var(--green-glow); }
+        .chip.on .conn-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+        .chip.warn { color: var(--yellow); border-color: rgba(245,181,68,0.35); background: var(--yellow-glow); }
+        .chip.warn .conn-dot { background: var(--yellow); box-shadow: 0 0 7px var(--yellow); }
+        /* keep old class names alive so interface.js still drives the dot */
+        .conn-dot.connected { }
+        .conn-dot.bridge-only { }
+        .conn-label { font-size: 10.5px; font-weight: 600; }
 
         /* ================================================================
            TABS (nav)
@@ -938,9 +921,16 @@
             <span class="version-badge">v5</span>
         </div>
         <div class="conn-status">
-            <span class="fb-badge" id="fbBadge" title="File-bridge: PT keeps executing even with this window closed">file-bridge</span>
-            <div class="conn-dot" id="connDot"></div>
-            <span class="conn-label" id="connLabel">Bridge: offline</span>
+            <span class="chip" id="httpChip" title="HTTP channel — used while this window is open">
+                <span class="conn-dot" id="connDot"></span>
+                <span class="conn-label" id="connLabel">offline</span>
+            </span>
+            <span class="chip fb-badge" id="fbBadge" title="File-bridge — PT keeps executing even with this window closed">
+                <span class="conn-dot"></span>file-bridge
+            </span>
+            <span class="chip" id="tokenChip" title="Per-machine token, read from disk by the Script Engine">
+                <span class="conn-dot"></span>token
+            </span>
         </div>
     </div>
 
