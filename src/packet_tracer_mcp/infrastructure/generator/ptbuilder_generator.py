@@ -25,26 +25,33 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     """
     lines: list[str] = []
 
+    # json.dumps en cada campo de texto: un nombre con comillas o saltos de línea
+    # rompía el literal JS y el resto se ejecutaba como código en el Script Engine.
+    # Es el mismo patrón que ya usa generate_executable_script() más abajo.
     for dev in plan.devices:
         device_type = PT_DEVICE_TYPE.get(dev.category, PT_DEVICE_TYPE_DEFAULT)
         lines.append(
-            f'lwAddDevice("{dev.name}", {device_type}, "{dev.model}", {dev.x}, {dev.y});'
+            f'lwAddDevice({json.dumps(dev.name)}, {device_type}, '
+            f'{json.dumps(dev.model)}, {int(dev.x)}, {int(dev.y)});'
         )
 
     # Laptops WiFi: cambiar el NIC ethernet por uno inalámbrico (→ Wireless0). Debe ir
     # antes de los links/config; la auto-asociación al AP es por RF (SSID default).
     for dev in plan.devices:
         if dev.category == "laptop" and getattr(dev, "wireless", False):
-            lines.append(f'swapLaptopToWireless("{dev.name}");')
+            lines.append(f'swapLaptopToWireless({json.dumps(dev.name)});')
 
     for mod in plan.modules:
-        lines.append(f'addModule("{mod.device}", "{mod.slot}", "{mod.module}");')
+        lines.append(
+            f'addModule({json.dumps(mod.device)}, {json.dumps(mod.slot)}, '
+            f'{json.dumps(mod.module)});'
+        )
 
     for link in plan.links:
         connect_type = PT_CONNECT_TYPE.get(link.cable, PT_CONNECT_TYPE_DEFAULT)
         lines.append(
-            f'lwAddLink("{link.device_a}", "{link.port_a}", '
-            f'"{link.device_b}", "{link.port_b}", {connect_type});'
+            f'lwAddLink({json.dumps(link.device_a)}, {json.dumps(link.port_a)}, '
+            f'{json.dumps(link.device_b)}, {json.dumps(link.port_b)}, {connect_type});'
         )
 
     return "\n".join(lines)
