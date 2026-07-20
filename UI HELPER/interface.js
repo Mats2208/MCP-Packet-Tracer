@@ -1,5 +1,5 @@
 // ============================================================================
-// PT-MCP Builder Interface v4
+// PT-MCP Builder Interface v5
 // Premium Control Center — Editor, Terminal, Status Dashboard, Quick Build
 // ============================================================================
 
@@ -367,6 +367,15 @@ function pollBridgeStatus() {
                     if (wasPT && !S.ptConnected) log("PT disconnected — polling stopped", "warn");
 
                     updateConnectionUI();
+                    // Estado del canal de archivo (corre en el Script Engine, con
+                    // o sin ventana). Le dice al usuario que puede cerrar la
+                    // ventana y PT va a seguir ejecutando comandos.
+                    try {
+                        $se("fileBridgeStatus").then(function(s) {
+                            try { S.fileBridge = JSON.parse(s); } catch(e) {}
+                            updateFileBridgeBadge();
+                        }).catch(function() {});
+                    } catch(e) {}
                 } catch(e) {
                     setBridgeDown();
                 }
@@ -388,6 +397,24 @@ function setBridgeDown() {
     S.bridgeUp = false;
     S.ptConnected = false;
     updateConnectionUI();
+}
+
+/* Enciende el badge del file-bridge cuando el loop del Script Engine está vivo.
+   Verde = PT seguirá ejecutando aunque cierres esta ventana. */
+function updateFileBridgeBadge() {
+    var el = document.getElementById("fbBadge");
+    if (!el) return;
+    var fb = S.fileBridge;
+    if (fb && fb.active) {
+        el.className = "fb-badge active";
+        el.textContent = "file-bridge" + (fb.count > 0 ? " · " + fb.count : "");
+        el.title = "File-bridge active — PT keeps executing with this window closed"
+                 + (fb.count > 0 ? " (" + fb.count + " commands run via file)" : "");
+    } else {
+        el.className = "fb-badge";
+        el.textContent = "file-bridge";
+        el.title = "File-bridge inactive";
+    }
 }
 
 /* Un 401 significa que el bridge está pero nuestro token no sirve — típicamente

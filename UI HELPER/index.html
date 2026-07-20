@@ -142,6 +142,24 @@
             padding: 1px 5px;
             letter-spacing: 0.5px;
         }
+        .fb-badge {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            border-radius: 3px;
+            padding: 1px 6px;
+            letter-spacing: 0.3px;
+            transition: all var(--transition);
+            opacity: 0.5;
+        }
+        .fb-badge.active {
+            color: var(--green);
+            background: var(--green-glow);
+            border-color: rgba(62,207,142,0.3);
+            opacity: 1;
+        }
 
         /* Connection status */
         .conn-status {
@@ -917,9 +935,10 @@
                 <div class="logo-icon">PT</div>
                 <span class="app-title">MCP Control Center</span>
             </div>
-            <span class="version-badge">v4</span>
+            <span class="version-badge">v5</span>
         </div>
         <div class="conn-status">
+            <span class="fb-badge" id="fbBadge" title="File-bridge: PT keeps executing even with this window closed">file-bridge</span>
             <div class="conn-dot" id="connDot"></div>
             <span class="conn-label" id="connLabel">Bridge: offline</span>
         </div>

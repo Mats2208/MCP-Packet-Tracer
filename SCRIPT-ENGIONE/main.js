@@ -105,6 +105,18 @@ var FILE_BRIDGE_TICK_IDLE_MS = 1500;  // buzon vacio hace rato
 var FILE_BRIDGE_ORPHAN_S = 60;        // req/res mas viejos que esto se purgan
 var _fileBridgeTimer = null;
 var _fileBridgeDir = "";
+var _fileBridgeCount = 0;   // comandos ejecutados por el canal de archivo
+
+/* Estado del canal de archivo, para que el webview lo muestre. El file-bridge
+   corre con la ventana abierta o cerrada; esto le dice al usuario que puede
+   cerrar la ventana y PT va a seguir ejecutando. */
+function fileBridgeStatus() {
+    return JSON.stringify({
+        active: _fileBridgeTimer !== null,
+        count: _fileBridgeCount,
+        dir: _fileBridgeDir || mcpBridgeDir()
+    });
+}
 
 function mcpBridgeDir() {
     // El buzon vive junto al token: <dir del token>/bridge.
@@ -173,6 +185,7 @@ function fileBridgeTick() {
         var result = runFileBridgeCommand(js);
         try { fm.writePlainTextToFile(dir + "/res_" + name + ".txt", result); } catch (e) {}
         try { fm.removeFile(dir + "/" + f); } catch (e) {}
+        _fileBridgeCount++;
         worked = true;
     }
 
