@@ -933,7 +933,7 @@ def register_tools(mcp: FastMCP) -> None:
                 names.add(lnk.device_b)
             retry_cmds = [c for c in commands if any(f'"{n}"' in c for n in names)]
             for cmd in retry_cmds:
-                _http_post(f"{_BRIDGE_URL}/queue", _js_guard(cmd))
+                _channel_send(_js_guard(cmd))
                 time.sleep(command_delay)
 
             # Re-verificar dispositivos fallidos
@@ -1909,8 +1909,7 @@ def register_tools(mcp: FastMCP) -> None:
                 return "Sin respuesta (timeout). Asegúrate de que el código llame a reportResult(...)."
             return result
         else:
-            status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(js_code))
-            if status == 200:
+            if _channel_send(_js_guard(js_code)):
                 return "Comando enviado a PT."
             return "Error al enviar comando al bridge."
 
@@ -2300,9 +2299,8 @@ def register_tools(mcp: FastMCP) -> None:
         return _live_devices()
 
     def _bridge_send_payload(js_call: str) -> bool:
-        """Helper: envía un JS payload al bridge (fire-and-forget), con guard try/catch."""
-        status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(js_call))
-        return status == 200
+        """Envía un JS payload fire-and-forget por el canal disponible (HTTP o archivo)."""
+        return _channel_send(_js_guard(js_call))
 
     @mcp.tool()
     def pt_apply_acl(
@@ -2376,7 +2374,7 @@ def register_tools(mcp: FastMCP) -> None:
             )
 
         # Solo consulta PT si el bridge está conectado (validación dinámica)
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -2452,7 +2450,7 @@ def register_tools(mcp: FastMCP) -> None:
                 direction=binding_direction,
             )
 
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
 
         # Validación estática + topológica
         query_fn = _query_pt_devices if bridge_ok else None
@@ -2585,7 +2583,7 @@ def register_tools(mcp: FastMCP) -> None:
         - binding_direction: "in" o "out" (solo si binding_interface)
         - dry_run: si True, devuelve payload sin enviarlo
         """
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
 
         name_js = json.dumps(str(name_or_number))
         router_js = json.dumps(router)
@@ -2679,7 +2677,7 @@ def register_tools(mcp: FastMCP) -> None:
         - binding_direction: "in" o "out" (solo si binding_interface)
         - dry_run: si True, devuelve payload sin enviarlo
         """
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
         result = remove_acl_uc(
@@ -2803,7 +2801,7 @@ def register_tools(mcp: FastMCP) -> None:
             use_interface_overload=use_interface_overload,
         )
 
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -2870,7 +2868,7 @@ def register_tools(mcp: FastMCP) -> None:
             para generar los comandos "no ip nat inside source static ..."
         - dry_run: si True, devuelve payload sin enviarlo
         """
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
         result = remove_nat_uc(
@@ -2949,7 +2947,7 @@ def register_tools(mcp: FastMCP) -> None:
             access_ports=access_ports, trunks=trunks, subinterfaces=subinterfaces,
         )
 
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -3038,7 +3036,7 @@ def register_tools(mcp: FastMCP) -> None:
             portfast_ports=portfast_ports or [],
             bpduguard_ports=bpduguard_ports or [],
         )
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         result = apply_stp_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3076,7 +3074,7 @@ def register_tools(mcp: FastMCP) -> None:
             switch=switch, port=port, max_mac=max_mac,
             violation=violation, sticky=sticky, static_macs=static_macs or [],
         )
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         result = apply_port_security_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3124,7 +3122,7 @@ def register_tools(mcp: FastMCP) -> None:
             enable_secret=enable_secret, users=users, ssh=ssh,
             service_password_encryption=service_password_encryption,
         )
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         result = apply_hardening_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3167,7 +3165,7 @@ def register_tools(mcp: FastMCP) -> None:
             bandwidth=bandwidth, ospf_cost=ospf_cost, ospf_priority=ospf_priority,
             ospf_hello_interval=ospf_hello_interval, delay=delay,
         )
-        bridge_ok = _ensure_bridge() and _bridge_pt_connected()
+        bridge_ok = _pick_channel() != ""
         result = apply_interface_tuning_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
