@@ -20,16 +20,11 @@ build/
 venv/
 env/
 
-# UI helper working copies — the .pts script-engine dev copies (dash names).
-# NOTE: the committed "UI HELPER/" folder (with a space) is the real webview UI source and stays tracked.
-UI-HELPER/
-UI-HELPER-TOOLS/
-
-# SCRIPT-ENGIONE: only main.js is our own code (bridge, token, installMcpHelpers).
-# The rest are reference copies of PTBuilder's script engine
+# EXTENSION/script-engine: only main.js is our own code (bridge, token,
+# installMcpHelpers). The rest are reference copies of PTBuilder's script engine
 # (kimmknight/PTBuilder, credited in the README) — not redistributed here.
-SCRIPT-ENGIONE/*.js
-!SCRIPT-ENGIONE/main.js
+EXTENSION/script-engine/*.js
+!EXTENSION/script-engine/main.js
 
 # macOS
 .DS_Store

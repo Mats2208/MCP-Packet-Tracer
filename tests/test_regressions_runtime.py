@@ -144,9 +144,9 @@ def test_query_pt_devices_no_longer_calls_undefined_querytopology():
 
 def test_script_engine_defines_all_helpers():
     """Los helpers que el deploy necesita los define la extensión (installMcpHelpers en
-    SCRIPT-ENGIONE/main.js), no ya el servidor por HTTP. Si falta uno, el deploy por el
+    EXTENSION/script-engine/main.js), no ya el servidor por HTTP. Si falta uno, el deploy por el
     canal de archivo (ventana cerrada) rompería."""
-    js = Path("SCRIPT-ENGIONE/main.js").read_text(encoding="utf-8")
+    js = Path("EXTENSION/script-engine/main.js").read_text(encoding="utf-8")
     assert "function installMcpHelpers()" in js
     for fn in ("addModule", "lwAddDevice", "lwAddLink", "configurePcIp",
                "configurePcIpv6", "swapLaptopToWireless"):

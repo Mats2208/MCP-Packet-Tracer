@@ -54,7 +54,7 @@ class TestReconcileWiring:
         crea nada. lwAddDevice cae al addDevice global (resuelve por nombre de modelo),
         confiable. Verificado en vivo. Este guard evita perder el fallback. El helper vive
         ahora en la extensión (installMcpHelpers), no en un patch inyectado."""
-        js = Path("SCRIPT-ENGIONE/main.js").read_text(encoding="utf-8")
+        js = Path("EXTENSION/script-engine/main.js").read_text(encoding="utf-8")
         assert "GLOBAL.lwAddDevice = function" in js
         assert "if (!ipc.network().getDevice(name))" in js
         assert "addDevice(name, model, x, y)" in js
