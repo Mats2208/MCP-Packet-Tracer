@@ -1,6 +1,10 @@
 # tests/
 
-Suite de pruebas con pytest. 38 tests cubriendo todas las capas del dominio.
+Suite de pruebas con pytest. Corre offline: ningun test necesita Packet Tracer.
+
+Para el conteo actual y el desglose por archivo: `python -m pytest --collect-only -q`.
+(Este README listaba 38 tests cuando ya habia 127; se quita el numero en vez de
+volver a fijar uno que caduque.)
 
 ## Ejecución
 

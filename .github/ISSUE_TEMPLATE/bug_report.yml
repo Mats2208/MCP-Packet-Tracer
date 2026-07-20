@@ -1,0 +1,53 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Found a security issue?** Don't file it here — see
+        [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/SECURITY.md).
+
+        Never paste the bootstrap snippet or the contents of `bridge_token`
+        into an issue: they contain a secret unique to your machine.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The tool call or topology that triggers it. A minimal plan JSON helps a lot.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`pip show packet-tracer-mcp`, and the extension version if relevant"
+      placeholder: "0.6.0, extension V5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python and Packet Tracer version
+      placeholder: "Windows 11, Python 3.12, PT 8.2.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: bridge
+    attributes:
+      label: Bridge status (if the issue involves live deploy)
+      description: Output of `pt_bridge_status`. Redact anything that looks like a token.
+      render: text

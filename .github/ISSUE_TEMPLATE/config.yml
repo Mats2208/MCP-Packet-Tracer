@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new
+    about: Report privately through GitHub Security Advisories — never as a public issue.
+  - name: Documentation
+    url: https://mats2208.github.io/MCP-Packet-Tracer/
+    about: Setup, tool reference and live deploy guide.

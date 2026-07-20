@@ -168,6 +168,23 @@ Packet Tracer's Script Engine from JavaScript — thanks for the groundwork. �
 > *our* extension, not PTBuilder. Full
 > **[Credits & Attribution](https://mats2208.github.io/MCP-Packet-Tracer/credits/)**.
 
+## Security
+
+The live-deploy bridge requires a per-machine token as of **v0.6.0**. Earlier
+versions had an unauthenticated bridge — any web page open while Packet Tracer
+was running could execute code inside it. **Upgrade.**
+
+Found a vulnerability? Report it privately via
+[GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
+not a public issue. [SECURITY.md](SECURITY.md) also documents the threat model —
+worth reading before reporting, since some behaviour (like `pt_send_raw`
+executing arbitrary JavaScript) is deliberate.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Tests run offline with
+`python -m pytest`; no Packet Tracer needed.
+
 ## License
 
 Released under the **[MIT License](LICENSE)** — © 2026 Mateo ([@Mats2208](https://github.com/Mats2208)).
