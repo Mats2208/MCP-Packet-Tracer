@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ...domain.models.plans import TopologyPlan
 from ...domain.models.requests import TopologyRequest
-from ...domain.models.acls import ACLPlan, ACLBinding, ACLEntry
+from ...domain.models.acls import ACLBinding
 from ...domain.services.orchestrator import plan_from_request
 from ...domain.services.validator import validate_plan
 from ...domain.services.auto_fixer import fix_plan
@@ -61,7 +61,6 @@ from ...infrastructure.execution.bridge_token import (
     get_bridge_token, token_fingerprint, token_was_rotated, token_is_ephemeral,
 )
 from ...infrastructure.execution.file_bridge import FileBridge
-from ...infrastructure.execution.live_executor import LiveExecutor
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
@@ -69,7 +68,6 @@ from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
-from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE
 from ...shared.utils import js_escape, safe_name_component, interpret_ping as _interpret_ping
 
 
