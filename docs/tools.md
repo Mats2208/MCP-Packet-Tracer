@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **43 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **46 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -42,12 +42,19 @@ a running Packet Tracer require the [live bridge](live-deploy.md) to be connecte
 
 ## Live bridge
 
+The bridge has **two channels** and picks one per command automatically: **HTTP**
+while the MCP Control Center window is open, and a **file-bridge** (the Script
+Engine reads a mailbox under `%LOCALAPPDATA%`) when the window is closed but PT is
+still open. Every tool below works over either. See [Live deploy](live-deploy.md).
+
 | Tool | What it does |
 |------|--------------|
-| `pt_bridge_status` | Check the HTTP bridge + whether PT is connected. |
+| `pt_bridge_status` | Which channel is connected (HTTP, file-bridge, or both). |
 | `pt_live_deploy` | Stream a plan into a running PT (devices, links, configs). |
 | `pt_query_topology` | List devices currently in PT with ports and per-port IPs. |
 | `pt_export_topology` | Full snapshot: positions, per-interface IPs, links, cable info. |
+| `pt_save_project` | Save the running topology as a real `.pkt` file. |
+| `pt_open_project` | Open a `.pkt` in PT (replaces the current topology). |
 | `pt_send_raw` | Run arbitrary JS in PT's Script Engine (`wait_result` injects `reportResult`). |
 
 ## Live editing
@@ -93,6 +100,7 @@ All accept `dry_run=True` to preview the generated CLI without touching PT.
 |------|--------------|
 | `pt_diff` | Compare a plan vs the live topology (missing/extra devices, IP mismatches). |
 | `pt_health_check` | Sweep the live topology: down links, cabled-without-IP, duplicate IPs. |
+| `pt_verify_connectivity` | Run a **real ping** from a device's console and parse the result (reachable or not). |
 
 !!! tip "Build flags"
     `pt_plan_topology` / `pt_full_build` accept `vlans` (router-on-a-stick VLAN count),

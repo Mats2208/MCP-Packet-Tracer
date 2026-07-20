@@ -8,8 +8,8 @@ body:
         **Found a security issue?** Don't file it here — see
         [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/SECURITY.md).
 
-        Never paste the bootstrap snippet or the contents of `bridge_token`
-        into an issue: they contain a secret unique to your machine.
+        Never paste the contents of `bridge_token` into an issue — it's a secret
+        unique to your machine.
 
   - type: textarea
     id: what

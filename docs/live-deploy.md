@@ -3,14 +3,29 @@
 Live deploy streams commands directly into a **running** Packet Tracer instance,
 so devices, cables and configs appear in real time as your AI builds them.
 
+There are **two channels**, and the server picks one per command automatically:
+
 ```text
-LLM ──▶ MCP Server (:39000) ──▶ HTTP bridge (:54321) ──▶ MCP Control Center extension ──▶ PT Script Engine
+                                   ┌─ HTTP bridge (:54321) ──▶ extension webview ─┐
+LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)                             ├─▶ PT Script Engine
+                                   └─ file mailbox (%LOCALAPPDATA%) ──▶ Script ──┘
+                                       (window CLOSED)               Engine loop
 ```
+
+- **HTTP** is used while the **MCP Control Center window is open** — the webview
+  polls `:54321` and runs each command.
+- The **file-bridge** takes over when the **window is closed** but Packet Tracer
+  is still open: the Script Engine (which has no `XMLHttpRequest` but *can* read
+  files) polls a mailbox under `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`
+  (`req_*.js` → execute → `res_*.txt`). So PT keeps executing with the window
+  minimized or closed.
+
+`_pick_channel()` chooses exactly one per command, so nothing runs twice.
 
 | Port | Service | Purpose |
 |------|---------|---------|
 | **39000** | MCP server (streamable-http) | Receives tool calls from the LLM/editor |
-| **54321** | HTTP bridge | Queues JS commands for the extension to run |
+| **54321** | HTTP bridge | Queues JS commands while the extension window is open |
 
 ## Install the extension (one-time)
 
@@ -20,7 +35,7 @@ You do **not** need any third-party extension.
 
 1. Download the latest extension from
    **[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**
-   (the `.pts` file — currently **`V4.0.pts`**).
+   (the `.pts` file — currently **`V5.pts`**).
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules**
 3. Click **Add…**, select the downloaded `.pts`, and confirm.
 

@@ -7,10 +7,20 @@ Estrategias de despliegue de topologías. Implementan diferentes formas de lleva
 ```
 ExecutorBase (ABC)
 ├── ManualExecutor    → Exporta archivos a disco
-├── DeployExecutor    → Exporta + copia al portapapeles + instrucciones  
-└── LiveExecutor      → Envía comandos en tiempo real vía HTTP bridge
-     └── PTCommandBridge → Servidor HTTP local (puerto 54321)
+└── DeployExecutor    → Exporta + copia al portapapeles + instrucciones
+
+Canales hacia Packet Tracer (el servidor elige UNO por comando):
+├── PTCommandBridge (live_bridge.py)  → Bridge HTTP local (puerto 54321)
+│                                        cuando la ventana de la extensión está abierta
+└── FileBridge (file_bridge.py)       → Buzón de archivos en disco
+                                         cuando la ventana está cerrada
+
+bridge_token.py → token local auto-generado que autentica el bridge HTTP
 ```
+
+**Enrutado de canal:** el servidor decide por comando (ver `_pick_channel` en
+`adapters/mcp/tool_registry.py`) si el comando viaja por HTTP o por el buzón de archivos.
+Nunca usa ambos a la vez. El envío del plan al desplegar se hace por lotes.
 
 ## Archivos
 
@@ -102,20 +112,32 @@ Python (PTCommandBridge)         PT Builder (QWebEngine)
                                POST /result ──→ callback
 ```
 
-**Bootstrap:** One-liner JS que se pega en PT Builder Code Editor:
-```javascript
-window.webview.evaluateJavaScriptAsync("setInterval(function(){...},500)");
-```
+**Autenticación:** el bridge HTTP requiere un token local auto-generado (ver
+`bridge_token.py`). No hay bootstrap pegado a mano ni "pairing" por HTTP — la extensión
+lee el token desde disco.
 
 ---
 
-### `live_executor.py` — Ejecución en tiempo real
+### `file_bridge.py` — Buzón de archivos (canal offline)
 
-Usa el bridge para enviar comandos del plan directamente a un PT en ejecución.
+Canal alternativo al HTTP para cuando la ventana de la extensión está cerrada. En lugar de
+un servidor HTTP, usa un buzón de archivos bajo `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`:
+el servidor escribe un `req_*.js`, el Script Engine de PT lo lee, lo ejecuta y deja la
+respuesta en un `res_*.txt`.
 
 ```python
-class LiveExecutor:
-    def execute(plan, delay=500) → dict
+class FileBridge:
+    def send(js_code) → bool
+    def send_and_wait(js_code, timeout) → str | None
 ```
 
-Convierte `TopologyPlan` → secuencia de comandos JS → envía via `PTCommandBridge` con delay configurable entre cada comando.
+Coexiste con el bridge HTTP; el servidor elige un canal por comando (`_pick_channel`),
+nunca ambos.
+
+---
+
+### `bridge_token.py` — Token local del bridge HTTP
+
+Genera y persiste un token local (bajo `%LOCALAPPDATA%`) que autentica las peticiones al
+bridge HTTP. Se auto-genera; no requiere pegar un bootstrap ni parear manualmente. Tanto el
+servidor como la extensión lo leen desde disco.

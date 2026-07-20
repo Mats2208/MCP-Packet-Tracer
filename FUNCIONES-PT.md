@@ -54,6 +54,13 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
   (con validación de compatibilidad por modelo). El slot es STRING — ver SKILL para el
   formato exacto por familia (HWIC `"0/0"`, NM `"1"`, NIM `"0/1"`).
 
+## Transporte y autenticación (desde v0.6.0)
+- El bridge exige un **token** local auto-generado (`%LOCALAPPDATA%\packet-tracer-mcp\bridge_token`).
+  La extensión V5 lo lee sola del disco vía el Script Engine — sin pegar nada ni emparejar.
+- **Dos canales:** HTTP (`:54321`) con la ventana de la extensión abierta; **file-bridge**
+  (buzón de archivos leído por el Script Engine) con la ventana cerrada. El servidor elige
+  uno por comando. Los helpers (`lwAddDevice`, etc.) los define la extensión (`installMcpHelpers`).
+
 ## Tools dedicadas (ya no es solo CLI cruda)
 - **VLAN/inter-VLAN:** `pt_apply_vlan` + `pt_full_build(template="router_on_a_stick", vlans=N)`.
 - **STP / port-security:** `pt_apply_stp`, `pt_apply_port_security`.
@@ -63,7 +70,8 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
   (`configurePcIpv6`). Static host IPv6 NO es posible por la API de PT (`addIpv6Address` falla en HostPort).
 - **Laptops WiFi:** `wireless_laptops=True` — swap de NIC a `PT-LAPTOP-NM-1W` (slot "0") → `Wireless0`
   + AP auto-asociado por SSID default.
-- **Verificación:** `pt_diff`, `pt_health_check`.
+- **Proyecto `.pkt`:** `pt_save_project` / `pt_open_project` — guardan/abren el archivo real de PT.
+- **Verificación:** `pt_diff`, `pt_health_check`, y `pt_verify_connectivity` (ping REAL parseado).
 
 ## Limitaciones que siguen abiertas
 - No se resuelven dinámicamente los puertos de módulos agregados (hay que conocer el naming).

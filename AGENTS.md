@@ -14,7 +14,7 @@ a local HTTP bridge.
 
 ```bash
 pip install -e ".[test]"
-python -m pytest          # from the repo root, ~170 tests, no PT required
+python -m pytest          # from the repo root, 187 tests, no PT required
 ```
 
 There is no linter or formatter configured. Match the surrounding style: type
@@ -27,9 +27,9 @@ comments in Spanish or English following whatever the file already uses.
 | --- | --- |
 | `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
 | `src/packet_tracer_mcp/application/` | Use cases: rules + generators, dependencies injected |
-| `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP bridge, device catalog |
-| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the ~50 MCP tools |
-| `SCRIPT-ENGIONE/` | Reference copy of PTBuilder's own script-engine JS (not shipped) |
+| `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP + file bridges, device catalog |
+| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 46 MCP tools |
+| `SCRIPT-ENGIONE/` | Script-engine side of the extension. `main.js` is ours (tracked); the rest are PTBuilder reference copies (gitignored) |
 | `UI HELPER/` | The MCP Control Center webview (`index.html` + `interface.js`) |
 
 `tool_registry.py` is ~3000 lines and every tool is a closure inside
@@ -44,8 +44,9 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
 2. **Never build a path by concatenation.** Use `safe_name_component()` then
    `resolve_within()` from `shared/utils.py`.
 3. **Never add an unauthenticated bridge endpoint.** Everything except `/ping`
-   and `/pair` requires the token; see `bridge_token.py` for why loopback alone
-   is not a control.
+   requires the token; see `bridge_token.py` for why loopback alone is not a
+   control. (The file-bridge channel needs no token — the mailbox lives under a
+   user-ACL'd `%LOCALAPPDATA%` dir a browser page can't reach.)
 4. **Don't validate in the models.** Validation belongs in `domain/rules/` and
    returns `ValidationResult`, so the use case decides whether to proceed.
 5. **A bug fix needs a test that fails without it.** Write the failing test
@@ -66,8 +67,10 @@ offline half was.
 
 ## Gotchas
 
-- PT's `executeCode()` **strips newlines** from source before running it, so the
-  bootstrap JS must work as a single line and cannot use `//` comments.
+- PT's `executeCode()` **strips newlines** from source that is *pasted* into the
+  Builder Code Editor, so any such snippet must be a single line without `//`
+  comments. (The compiled `.pts` files — `main.js` etc. — are not pasted and can
+  be normal multi-line JS.)
 - An uncaught error inside `runCode` opens a modal that freezes the webview and
   kills the polling loop. That is why fire-and-forget commands are wrapped in
   `try{...}catch{}`.

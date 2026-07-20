@@ -71,7 +71,7 @@ What actually protects it is a shared secret:
   POSIX). It is random, not derived: this repository is public and an attacker
   runs on the same host, so anything computed from the clock or other public
   inputs would be equally computable by them.
-- Every endpoint except `/ping` and `/pair` requires it.
+- Every endpoint except `/ping` requires it.
 - `/ping` is unauthenticated on purpose, so port conflicts can be diagnosed
   before you know who owns the port. It returns only a one-way fingerprint of
   the token, never the token.

@@ -7,7 +7,7 @@
 | Python | 3.11+ | |
 | `mcp[cli]` | ≥ 1.13, < 2 | Installed automatically |
 | `pydantic` | ≥ 2.11, < 3 | Installed automatically |
-| Cisco Packet Tracer | 8.2+ | Only for **live deploy** |
+| Cisco Packet Tracer | 8.2+ (tested on 9.0) | Only for **live deploy** |
 | MCP Control Center extension | latest | This project's **own** PT extension (`.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)), only for live deploy — see [Live Deploy Setup](live-deploy.md) |
 
 !!! warning "pydantic ≥ 2.11 is required"
@@ -95,10 +95,10 @@ to `cd` into the repo or keep a server running.
 To stream topologies into a **running** Packet Tracer, also install this project's own
 **MCP Control Center** extension:
 
-1. Download **`V4.0.pts`** from
+1. Download **`V5.pts`** from
    **[Releases (latest)](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**.
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules → Add…**,
-   select `V4.0.pts`, and confirm.
+   select `V5.pts`, and confirm.
 3. Open **Extensions → MCP BUILDER** — it auto-connects to the bridge.
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.

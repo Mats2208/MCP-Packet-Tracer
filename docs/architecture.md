@@ -16,7 +16,7 @@ domain/           pure business logic (no I/O)
 infrastructure/   adapters to the outside world
   catalog/       devices, cables, modules, aliases, templates
   generator/     ptbuilder_generator, cli_config_generator, acl/nat generators
-  execution/     live_bridge, live_executor, deploy_executor, manual_executor
+  execution/     live_bridge, file_bridge, bridge_token, deploy_executor, manual_executor
   persistence/   project_repository (save/load projects)
 ```
 
@@ -33,26 +33,39 @@ domain/services/*  +  domain/rules/* ← planning, validation, IP assignment
    │
 infrastructure/generator/*          ← PTBuilder JS + IOS CLI
    │
-infrastructure/execution/live_bridge ← HTTP bridge (:54321)
+infrastructure/execution/{live_bridge,file_bridge} ← HTTP (:54321) or file mailbox
    │
 MCP Control Center extension → PT Script Engine → Cisco Packet Tracer
 ```
 
 ## The live bridge
 
-`PTCommandBridge` runs a small HTTP server on `127.0.0.1:54321`:
+Two channels reach the extension; `_pick_channel()` chooses one per command.
 
-- `GET /next` — the PT webview polls this for the next queued command.
-- `POST /queue` — the MCP server enqueues a JS command.
-- `POST /result` / `GET /result` — round-trips results back from PT (used by
-  `reportResult()`, which is injected inline so it doesn't depend on the extension).
+**HTTP** — `PTCommandBridge` (`live_bridge.py`) runs a small HTTP server on
+`127.0.0.1:54321`, used while the extension window is open:
+
+- `GET /next` — the PT webview polls this for queued commands (token required).
+- `POST /queue` — the MCP server enqueues a JS command (token required).
+- `POST /result` / `GET /result` — round-trips results back via `reportResult()`.
+- `GET /ping` — unauthenticated identity check (fingerprint of the token only).
+
+**File-bridge** — `FileBridge` (`file_bridge.py`), used when the window is closed.
+The Script Engine polls a mailbox under `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`
+(`req_*.js` → execute → `res_*.txt`, plus an `alive.txt` heartbeat). It needs no
+token: a browser page can't write a user-ACL'd local file.
+
+**Auth** — the HTTP bridge requires a per-machine token (`bridge_token.py`,
+auto-generated under `%LOCALAPPDATA%`). The extension reads it from disk through
+the Script Engine — no pairing, no pasting. See [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/SECURITY.md).
 
 !!! info "Inspired by PTBuilder"
     The Script-Engine helper layer that runs inside Packet Tracer was inspired by
     [PTBuilder](https://github.com/kimmknight/PTBuilder); the extension itself (the
     MCP Control Center) is this project's own — see [Credits & Attribution](credits.md).
 
-!!! warning "Security note"
-    The bridge binds to `127.0.0.1` only. It does expose a `/queue` endpoint and
-    `pt_send_raw` that execute arbitrary JavaScript in PT's Script Engine by design,
-    and sets `Access-Control-Allow-Origin: *`. Treat it as a local-only dev tool.
+!!! warning "Trust model"
+    `/queue` and `pt_send_raw` execute arbitrary JavaScript in PT's Script Engine
+    **by design**. The token stops a browser page from reaching `:54321`, and the
+    file channel is confined to a user-owned directory. This is a single-user
+    local desktop tool — run it on a machine and with topologies you trust.

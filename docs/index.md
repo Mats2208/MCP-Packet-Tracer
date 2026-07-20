@@ -13,7 +13,7 @@ fully cabled, configured and running topology.
 
 - :material-rocket-launch: **[Get started](installation.md)** — install the server and connect your MCP client in one command.
 - :material-lightning-bolt: **[Live deploy](live-deploy.md)** — stream commands straight into a running Packet Tracer.
-- :material-tools: **[Tool reference](tools.md)** — all 43 MCP tools, grouped and documented.
+- :material-tools: **[Tool reference](tools.md)** — all 46 MCP tools, grouped and documented.
 - :material-sitemap: **[Architecture](architecture.md)** — how the planner, generators and HTTP bridge fit together.
 
 </div>
@@ -64,8 +64,8 @@ Natural language prompt
    LLM (Claude / Copilot / Codex)
         │  MCP tools
    Packet Tracer MCP Server   (:39000)
-        │  HTTP bridge
-   MCP Control Center ext.    (:54321)
+        │  HTTP bridge (:54321, window open)  ·  file-bridge (window closed)
+   MCP Control Center ext.
         │  Script Engine
    Cisco Packet Tracer
    ── devices created

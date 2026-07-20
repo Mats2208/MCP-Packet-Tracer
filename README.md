@@ -4,7 +4,7 @@
 
 **Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Pydantic v2](https://img.shields.io/badge/pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 [![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>43 MCP Tools</strong></td>
+<td align="center"><strong>46 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -73,8 +73,10 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | **IPv6** | Dual-stack addressing | Routers via CLI, hosts via SLAAC |
 | **Wireless** | WiFi laptops + auto-associated Access Points | NIC swap → `Wireless0`, default-SSID assoc |
 | **Validation** | Typed errors + auto-fixer | Wrong cables, missing ports, model upgrades |
-| **Verification** | Plan-vs-live diff + health check | Drift, down links, duplicate IPs |
-| **Deploy** | Real-time HTTP bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
+| **Verification** | Plan-vs-live diff, health check, **real ping** (`pt_verify_connectivity`) | Drift, down links, duplicate IPs — and actual reachability |
+| **Deploy** | Real-time bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
+| **Two channels** | HTTP when the extension window is open, **file-bridge when it's closed** | PT keeps executing with the window minimized/closed |
+| **Projects** | Save / open the real `.pkt` (`pt_save_project` / `pt_open_project`) | Persist the running topology, not just the plan JSON |
 | **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
 
 👉 Full tool reference, device catalog, networking guides and architecture live in the **[documentation site](https://mats2208.github.io/MCP-Packet-Tracer/)**.
@@ -107,7 +109,9 @@ Verify with `claude mcp list` (look for `packet-tracer … ✓ Connected`).
 
 **3. Install the live-deploy extension** — _only if you want real-time deploy into a running Packet Tracer_
 
-Download **`V4.0.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
+Download **`V5.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
+
+> **v0.6.0+ requires V5.** The bridge now authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
 
 **4. Install the Claude Code Skill** — _recommended; makes the AI use the MCP correctly instead of guessing_
 
@@ -151,7 +155,7 @@ own **MCP Control Center** extension once — the `.pts` from
 **Extensions → MCP BUILDER**. It auto-connects to the bridge — no snippet to paste.
 
 <p align="center"><img src="demo/install-demo.gif" alt="Installing the MCP Control Center extension in Packet Tracer" width="760"/></p>
-<p align="center"><sub>Installing the MCP Control Center extension (V4) in Packet Tracer</sub></p>
+<p align="center"><sub>Installing the MCP Control Center extension (V5) in Packet Tracer</sub></p>
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 

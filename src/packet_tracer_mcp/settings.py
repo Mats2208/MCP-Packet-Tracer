@@ -2,7 +2,7 @@
 Configuración global del servidor.
 """
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
@@ -74,15 +74,22 @@ power-off de todos → addModule de todos → power-on de todos en UN SOLO runCo
 Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 5s.
 
 ## Live Deploy (PT en tiempo real)
-1. Verificar bridge: `pt_bridge_status`
-2. Si bridge up + PT conectado: `pt_live_deploy` con el plan JSON
-3. Si bridge offline: el usuario debe pegar el bootstrap en PT > Extensions > Builder Code Editor
+1. Verificar canal: `pt_bridge_status`
+2. Si hay canal (HTTP o file): `pt_live_deploy` con el plan JSON
+3. Si no hay canal: el usuario debe abrir PT con la extension MCP Control Center
+   instalada (Extensions > MCP BUILDER). Dos canales, elegidos automaticamente:
+   HTTP con la ventana abierta, archivo (Script Engine) con la ventana cerrada.
+   No hay que pegar nada ni emparejar; el token se lee solo.
+
+### Guardar / abrir el proyecto de PT
+- `pt_save_project(filename)` guarda el .pkt REAL de Packet Tracer (distinto de
+  `pt_export`, que escribe el plan/scripts a disco).
+- `pt_open_project(path)` abre un .pkt (reemplaza la topologia actual).
 
 ### Bridge JS — gotchas (si usas pt_send_raw)
-- Manda el `js_code` como **una sola línea** (sin `\\n`). PTBuilder strippea newlines pero
-  cualquier error reportará "line 2" si hay saltos en el body, dificultando debug.
-- Errores en el script engine producen popups que **matan el polling del bootstrap**.
-  Después de un popup hay que pegar el bootstrap de nuevo.
+- Manda el `js_code` como **una sola línea** (sin `\\n`): un error reportaría "line 2"
+  si hay saltos en el body, dificultando debug.
+- Errores en el script engine producen popups que **matan el polling del bridge**.
 - `device.getPorts()` devuelve **Array de strings con nombres de puertos**, NO un Vector.
   Usa `.length` y `.join(",")`. NO uses `.size()`, `.at(i)` ni `.getName()` — fallan con TypeError.
 - `device.getPort("Serial0/0/0")` retorna el objeto Port o `null`.
@@ -106,12 +113,14 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 - Laptops por WiFi: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (NIC inalámbrica
   + AP auto-asociado por SSID default). NOTA: el SSID/WPA2 custom del AP NO es configurable por
   la API de PT (solo GUI) — se usa el SSID default.
-- Verificación: `pt_diff` (plan vs PT vivo) y `pt_health_check` (links caídos, IPs duplicadas).
+- Verificación: `pt_diff` (plan vs PT vivo), `pt_health_check` (links caídos, IPs
+  duplicadas) y `pt_verify_connectivity(from_device, to_ip)` — ping REAL desde la
+  consola del dispositivo, con el resultado parseado (llegó/no llegó).
 
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 43 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 46 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

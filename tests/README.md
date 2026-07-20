@@ -1,16 +1,20 @@
 # tests/
 
-Suite de pruebas con pytest. Corre offline: ningun test necesita Packet Tracer.
+Suite de pruebas con pytest. Corre **offline**: ningún test necesita Packet Tracer
+(los casos de bridge levantan un `PTCommandBridge` en un puerto efímero o simulan el
+Script Engine en un hilo).
 
-Para el conteo actual y el desglose por archivo: `python -m pytest --collect-only -q`.
-(Este README listaba 38 tests cuando ya habia 127; se quita el numero en vez de
-volver a fijar uno que caduque.)
+Para el conteo actual y el desglose por archivo:
+
+```bash
+python -m pytest --collect-only -q     # no se fija un número que caduque
+```
 
 ## Ejecución
 
 ```bash
-# Todos los tests
-python -m pytest tests/ -v
+# Todos los tests (desde la raíz del repo)
+python -m pytest
 
 # Un archivo específico
 python -m pytest tests/test_full_build.py -v
@@ -19,17 +23,12 @@ python -m pytest tests/test_full_build.py -v
 python -m pytest tests/test_full_build.py::TestFullBuild::test_basic_2_routers -v
 ```
 
-## Archivos
+## Qué se cubre
 
-| Archivo | Tests | Cobertura |
-|---------|-------|-----------|
-| `test_full_build.py` | 7 | **Integración**: 2 routers, 3 routers+WAN, OSPF, single router, sin DHCP, con servers, estimation fields |
-| `test_validator.py` | 4 | Validación: plan válido, nombre duplicado, modelo inválido, interfaz inválida |
-| `test_generators.py` | 4 | PTBuilder: `addDevice` format, `addLink` format. CLI: hostname config, DHCP pool |
-| `test_auto_fixer.py` | 2 | Auto-corrección: fix cable type (router-router→cross), no-fix-needed |
-| `test_explainer.py` | 3 | Explicaciones: básica incluye routers, DHCP explained, WAN explained |
-| `test_ip_planner.py` | 6 | IP: subredes LAN /24, secuenciales, inter-router /30, hosts /30, gateway .1 |
-| `test_estimator.py` | 4 | Estimación: básica, WAN añade cloud, complejidad simple, complejidad escala |
-| `test_regressions_runtime.py` | 8 | Regresiones: templates, ManualExecutor metadata, rutas multi-hop, first IP .2, fix_plan, estimator con laptops/AP, PC config estática/DHCP |
-
-## Total: 38 tests, ~400 líneas de código
+- **Dominio**: validación (IP, VLAN, ACL, hardening, cables, dispositivos), planning,
+  asignación de IPs, auto-fixer, estimación.
+- **Generadores**: PTBuilder JS e IOS CLI, incluyendo tests **adversariales** de inyección
+  (comillas, saltos de línea, `..`) en `test_injection_regressions.py`.
+- **Seguridad del bridge**: token, límites de cuerpo, DNS rebinding, long-poll y lote
+  (`test_bridge_security.py`); protocolo del file-bridge (`test_file_bridge.py`).
+- **Integración**: `pt_full_build` end-to-end, diff/health-check, reconcile.

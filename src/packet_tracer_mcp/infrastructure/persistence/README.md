@@ -46,3 +46,14 @@ projects/
 ```
 
 **Nota:** El directorio base por defecto es `projects/` relativo al CWD del servidor. Los MCP tools `pt_list_projects` y `pt_load_project` usan este repositorio directamente.
+
+**Importante — esto NO es lo mismo que guardar el archivo de Packet Tracer.**
+`ProjectRepository` persiste el **PLAN** (el `TopologyPlan` como `plan.json`), que es la
+descripción de la topología del lado del servidor. Es distinto de los MCP tools
+`pt_save_project` / `pt_open_project`, que guardan/abren el archivo **`.pkt` REAL de Packet
+Tracer** vía el bridge (no el plan JSON). En resumen:
+
+| | Qué guarda/abre | Cómo |
+|--|-----------------|------|
+| `ProjectRepository` (`pt_list_projects` / `pt_load_project`) | El PLAN (`plan.json` + metadata) | Disco, este repositorio |
+| `pt_save_project` / `pt_open_project` | El archivo `.pkt` REAL de PT | Bridge hacia Packet Tracer |

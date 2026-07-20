@@ -8,7 +8,7 @@ Preocupaciones externas — catálogo de dispositivos, generación de código, e
 infrastructure/
 ├── catalog/       → Catálogo de dispositivos, cables, aliases, templates
 ├── generator/     → Generadores de scripts PTBuilder y configs CLI
-├── execution/     → Estrategias de despliegue (manual, clipboard, live bridge)
+├── execution/     → Despliegue (manual, clipboard) + canales hacia PT (HTTP bridge / file bridge)
 └── persistence/   → Guardar/cargar proyectos a disco
 ```
 
@@ -99,7 +99,7 @@ Soporta: hostname, interfaces, DHCP pools (con excluded-address), static routes 
 
 ## execution/
 
-4 estrategias de ejecución/despliegue:
+Executors de despliegue + dos canales de comunicación con Packet Tracer.
 
 ### `executor_base.py` — Interfaz base
 Clase abstracta: `ExecutorBase`
@@ -117,11 +117,13 @@ Genera archivos bajo `projects/{safe_name}/`:
 ### `deploy_executor.py` — Despliegue con clipboard
 Extiende ManualExecutor + copia `topology.js` al clipboard (Windows vía `clip.exe`) + genera instrucciones paso a paso.
 
-### `live_executor.py` — Despliegue en tiempo real
-Envía comandos JS al bridge HTTP uno por uno con delays.
-Clase: `LiveExecutor` — `execute(plan) → dict`
+### Canales hacia PT — el servidor elige UNO por comando
 
-### `live_bridge.py` — HTTP Bridge
+El despliegue en vivo envía los comandos del plan por lotes. Según si la ventana de la
+extensión está abierta o cerrada, el servidor enruta cada comando por HTTP o por el buzón
+de archivos (ver `_pick_channel` en `adapters/mcp/tool_registry.py`), nunca por ambos.
+
+### `live_bridge.py` — HTTP Bridge (ventana abierta)
 Servidor HTTP en `127.0.0.1:54321` para comunicación bidireccional con PT:
 
 | Endpoint | Método | Propósito |
@@ -133,6 +135,16 @@ Servidor HTTP en `127.0.0.1:54321` para comunicación bidireccional con PT:
 | `/status` | GET | Estado de conectividad PT |
 
 Clase: `PTCommandBridge` — Singleton con `ThreadingHTTPServer`, thread-safe Queue, CORS.
+Autenticado con un token local auto-generado (ver `bridge_token.py`).
+
+### `file_bridge.py` — File Bridge (ventana cerrada)
+Buzón de archivos bajo `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`: el servidor escribe
+`req_*.js`, el Script Engine lo lee, lo ejecuta y devuelve `res_*.txt`.
+Clase: `FileBridge` — `send(js)`, `send_and_wait(js, timeout)`.
+
+### `bridge_token.py` — Token del bridge HTTP
+Token local auto-generado (bajo `%LOCALAPPDATA%`) que autentica el bridge HTTP. Sin
+bootstrap manual ni pairing; servidor y extensión lo leen desde disco.
 
 ---
 

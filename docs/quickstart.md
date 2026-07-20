@@ -45,6 +45,14 @@ pt_bridge_status → pt_query_topology → pt_add_device / pt_add_link /
                                         pt_delete_link / pt_delete_device
 ```
 
+To **check that it actually works** after deploying:
+
+```text
+pt_verify_connectivity(from_device, to_ip)   # real ping, parsed result
+pt_health_check                              # down links, duplicate IPs
+pt_save_project(filename)                    # persist the running .pkt
+```
+
 !!! tip "Always discover before you build"
     The server instructs the LLM to call `pt_list_devices` (and `pt_list_modules`
     for expansion cards) first, so it uses **real** model names, ports and cables
