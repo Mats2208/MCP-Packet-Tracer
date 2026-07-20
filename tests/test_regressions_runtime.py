@@ -142,22 +142,12 @@ def test_query_pt_devices_no_longer_calls_undefined_querytopology():
     assert "def _live_devices(" in src
 
 
-def test_runtime_patches_js_is_balanced():
-    """_RUNTIME_PATCHES_JS es UN string single-line; un desbalance rompería TODOS los
-    helpers inyectados (addModule, configurePcIp, configurePcIpv6, swapLaptopToWireless…)."""
-    import ast
-
-    src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    js = None
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "_RUNTIME_PATCHES_JS":
-                    js = ast.literal_eval(node.value)
-    assert js, "no se encontró _RUNTIME_PATCHES_JS"
-    assert js.count("{") == js.count("}"), "llaves desbalanceadas en runtime patches"
-    assert js.count("(") == js.count(")"), "paréntesis desbalanceados en runtime patches"
+def test_script_engine_defines_all_helpers():
+    """Los helpers que el deploy necesita los define la extensión (installMcpHelpers en
+    SCRIPT-ENGIONE/main.js), no ya el servidor por HTTP. Si falta uno, el deploy por el
+    canal de archivo (ventana cerrada) rompería."""
+    js = Path("SCRIPT-ENGIONE/main.js").read_text(encoding="utf-8")
+    assert "function installMcpHelpers()" in js
     for fn in ("addModule", "lwAddDevice", "lwAddLink", "configurePcIp",
-               "configureIosDevice", "configurePcIpv6", "swapLaptopToWireless"):
-        assert fn in js, f"falta el helper {fn} en runtime patches"
+               "configurePcIpv6", "swapLaptopToWireless"):
+        assert f"GLOBAL.{fn} = function" in js, f"falta el helper {fn} en installMcpHelpers"

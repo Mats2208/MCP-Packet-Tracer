@@ -51,7 +51,10 @@ class TestReconcileWiring:
 
     def test_lwadddevice_has_global_fallback(self):
         """F16 root cause: lw.addDevice falla para Laptop-PT (type 17) → devuelve "" y no
-        crea nada. lwAddDevice ahora cae al addDevice global (resuelve por nombre de modelo),
-        confiable. Verificado en vivo. Este guard evita perder el fallback."""
-        src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
-        assert "if (!ipc.network().getDevice(name)) { try { addDevice(name, model, x, y); }" in src
+        crea nada. lwAddDevice cae al addDevice global (resuelve por nombre de modelo),
+        confiable. Verificado en vivo. Este guard evita perder el fallback. El helper vive
+        ahora en la extensión (installMcpHelpers), no en un patch inyectado."""
+        js = Path("SCRIPT-ENGIONE/main.js").read_text(encoding="utf-8")
+        assert "GLOBAL.lwAddDevice = function" in js
+        assert "if (!ipc.network().getDevice(name))" in js
+        assert "addDevice(name, model, x, y)" in js

@@ -705,109 +705,8 @@ def register_tools(mcp: FastMCP) -> None:
     # snippet se quedaba con un bridge donde send_and_wait nunca recibía nada.
     # Se generan bajo demanda porque llevan el token adentro.
 
-    # Runtime patches que sobrescriben las funciones nativas del PT script engine
-    # con versiones que tienen guards defensivos. Sin estos, llamar configureIosDevice
-    # o addModule en hosts (PC/Server/Laptop) tira TypeError → popup → mata el bootstrap.
-    # Se inyectan automáticamente al detectar PT recién conectado (idempotente).
-    # Importante: usar this.xxx (no asignación libre) porque las funciones son nativas
-    # y solo se sobrescriben vía binding global. Todo en una sola línea — el script
-    # engine de PT strippea los \n del código fuente JS.
-    _RUNTIME_PATCHES_JS = (
-        'this.addModule = function(deviceName, slot, model) { '
-        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
-        'var hasPower = typeof device.getPower === "function" && typeof device.setPower === "function"; '
-        'var powerState = false; '
-        'if (hasPower) { powerState = device.getPower(); device.setPower(false); } '
-        'var moduleType = allModuleTypes[model]; '
-        'var result = device.addModule(slot, moduleType, model); '
-        'if (hasPower && powerState) { device.setPower(true); '
-        'if (typeof device.skipBoot === "function") { device.skipBoot(); } } '
-        'if (result != true) { return false; } return true; }; '
-        # lwAddDevice — crea device en Logical view (canvas item visible sin save+reload).
-        # El addDevice global solo escribe al modelo + canvas físico; PT genera auto-nombre
-        # (Router0, Switch1) que renombramos al solicitado vía device.setName().
-        'this.lwAddDevice = function(name, deviceType, model, x, y) { '
-        'var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace(); '
-        'var autoName = lw.addDevice(deviceType, model, x, y); '
-        'if (autoName && autoName !== name) { '
-        'var d = ipc.network().getDevice(autoName); '
-        'if (d && typeof d.setName === "function") { d.setName(name); } } '
-        # Fallback (fix F16): lw.addDevice falla silenciosamente para algunos modelos
-        # (Laptop-PT/type 17 devuelve "" y no crea nada). Si el device no quedó findable,
-        # usamos el addDevice global que resuelve por NOMBRE de modelo (confiable).
-        'if (!ipc.network().getDevice(name)) { try { addDevice(name, model, x, y); } catch (e) {} } '
-        'return name; }; '
-        # lwAddLink — crea link en Logical view. Acepta cable como string o enum int.
-        'this.lwAddLink = function(d1, p1, d2, p2, cable) { '
-        'var CT = {straight:8100,cross:8101,crossover:8101,roll:8102,fiber:8103,'
-        'phone:8104,cable:8105,serial:8106,auto:8107,console:8108,wireless:8109,'
-        'coaxial:8110,octal:8111,cellular:8112,usb:8113,custom_io:8114}; '
-        'var t = (typeof cable === "number") ? cable : (CT[(cable || "auto").toLowerCase()] || 8107); '
-        'var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace(); '
-        'return lw.createLink(d1, p1, d2, p2, t); }; '
-        # configurePcIp — fix: ya no hardcodea FastEthernet0. Busca primer port ethernet
-        # del device iterando getPorts(). Funciona con PC-PT, Server-PT, Laptop-PT, etc.
-        'this.configurePcIp = function(deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer) { '
-        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
-        'var port = null; '
-        'if (typeof device.getPorts === "function") { '
-        'var ports = device.getPorts(); '
-        'for (var i = 0; i < ports.length; i++) { '
-        'var pn = ports[i]; if (typeof pn !== "string") continue; '
-        'if (pn.indexOf("Ethernet") >= 0 || pn === "Wireless0") { '
-        'var p = device.getPort(pn); if (p) { port = p; break; } } } } '
-        'if (!port) { port = device.getPort("FastEthernet0"); } '
-        'if (!port) { return false; } '
-        'if (dhcpEnabled === true || dhcpEnabled === false) { '
-        'if (typeof device.setDhcpFlag === "function") { device.setDhcpFlag(dhcpEnabled); } } '
-        'if (ipaddress && subnetMask) port.setIpSubnetMask(ipaddress, subnetMask); '
-        'if (defaultGateway) { '
-        'if (typeof device.setDefaultGateway === "function") { device.setDefaultGateway(defaultGateway); } '
-        'else if (typeof port.setDefaultGateway === "function") { port.setDefaultGateway(defaultGateway); } } '
-        'if (dnsServer && typeof port.setDnsServerIp === "function") { port.setDnsServerIp(dnsServer); } '
-        'return true; }; '
-        'this.configureIosDevice = function(deviceName, commands) { '
-        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
-        'if (typeof device.skipBoot !== "function" || typeof device.enterCommand !== "function") { return false; } '
-        'device.skipBoot(); var commandsArray = commands.split("\\n"); '
-        'device.enterCommand("!", "global"); '
-        'for (var i = 0; i < commandsArray.length; i++) { device.enterCommand(commandsArray[i], ""); } '
-        'device.enterCommand("write memory", "enable"); return true; };'
-        # configurePcIpv6 — habilita IPv6 + SLAAC en el primer puerto ethernet/Wireless0
-        # del host. addIpv6Address falla en HostPort, así que usamos auto-config (RA del
-        # router), que es la forma soportada. Itera getPorts() igual que configurePcIp.
-        ' this.configurePcIpv6 = function(deviceName) { '
-        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
-        'if (typeof device.getPorts !== "function") { return false; } '
-        'var ports = device.getPorts(); '
-        'for (var i = 0; i < ports.length; i++) { '
-        'var pn = ports[i]; if (typeof pn !== "string") continue; '
-        'if (pn.indexOf("Ethernet") >= 0 || pn === "Wireless0") { '
-        'var p = device.getPort(pn); '
-        'if (p) { '
-        'if (typeof p.setIpv6Enabled === "function") { p.setIpv6Enabled(true); } '
-        'if (typeof p.setIpv6AddressAutoConfig === "function") { p.setIpv6AddressAutoConfig(true); } '
-        'return true; } } } '
-        'return false; };'
-        # swapLaptopToWireless — cambia el NIC ethernet de una laptop por uno inalámbrico
-        # (slot "0" → PT-LAPTOP-NM-1W) para que tenga Wireless0 y auto-asocie a un AP por
-        # SSID default. Verificado en vivo. Power-cycle manejado internamente.
-        ' this.swapLaptopToWireless = function(deviceName) { '
-        'var device = ipc.network().getDevice(deviceName); if (!device) { return false; } '
-        'var hasPower = typeof device.getPower === "function" && typeof device.setPower === "function"; '
-        'if (hasPower) { device.setPower(false); } '
-        'try { device.removeModule("0"); } catch (e) {} '
-        'var result = device.addModule("0", allModuleTypes["PT-LAPTOP-NM-1W"], "PT-LAPTOP-NM-1W"); '
-        'if (hasPower) { device.setPower(true); '
-        'if (typeof device.skipBoot === "function") { device.skipBoot(); } } '
-        'return result == true; };'
-    )
-
     # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
     _bridge_instance: PTCommandBridge | None = None
-    # Flag idempotente — true si los runtime patches ya se enviaron a esta sesión PT.
-    # Se resetea cuando PT se desconecta para reaplicar al reconectar.
-    _patches_applied: list[bool] = [False]  # list para mutación en closures
 
     def _signed(url: str) -> str:
         """Añade el token del bridge a la URL.
@@ -874,29 +773,10 @@ def register_tools(mcp: FastMCP) -> None:
         status, body = _http_get(f"{_BRIDGE_URL}/status", timeout=1.0)
         if status == 200 and body:
             try:
-                connected = json.loads(body).get("connected", False)
-                if not connected:
-                    # PT se desconectó — resetear flag para reaplicar patches al reconectar
-                    _patches_applied[0] = False
-                return connected
+                return json.loads(body).get("connected", False)
             except Exception:
                 pass
         return False
-
-    def _ensure_pt_patches() -> None:
-        """Inyecta los runtime patches en PT si aún no se aplicaron en esta conexión.
-
-        Idempotente — el flag _patches_applied evita reenvíos en cada operación.
-        Se resetea automáticamente cuando _bridge_pt_connected detecta desconexión.
-        """
-        if _patches_applied[0]:
-            return
-        if not _bridge_is_up():
-            return
-        # Encolar los patches en el bridge. PT los ejecuta en su próximo poll.
-        status, _ = _http_post(f"{_BRIDGE_URL}/queue", _RUNTIME_PATCHES_JS)
-        if status == 200:
-            _patches_applied[0] = True
 
     def _ensure_bridge() -> bool:
         """
@@ -1395,15 +1275,11 @@ def register_tools(mcp: FastMCP) -> None:
     def _check_bridge() -> str | None:
         """Verifica que haya un canal a PT (HTTP o archivo). Mensaje de error o None.
 
-        Si PT está por HTTP, garantiza los runtime patches (idempotente). Por el
-        canal de archivo los patches viajan con cada comando envuelto, así que no
-        hace falta el paso aparte.
+        Los helpers del script engine (lwAddDevice, etc.) los define la extensión
+        (installMcpHelpers en la V5), así que no hay nada que inyectar por canal.
         """
         ch = _pick_channel()
-        if ch == "http":
-            _ensure_pt_patches()
-            return None
-        if ch == "file":
+        if ch in ("http", "file"):
             return None
         # Ningún canal vivo: arrancar el HTTP por si la ventana está por abrirse.
         _ensure_bridge()
@@ -2501,8 +2377,6 @@ def register_tools(mcp: FastMCP) -> None:
 
         # Solo consulta PT si el bridge está conectado (validación dinámica)
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -2579,8 +2453,6 @@ def register_tools(mcp: FastMCP) -> None:
             )
 
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
 
         # Validación estática + topológica
         query_fn = _query_pt_devices if bridge_ok else None
@@ -2714,8 +2586,6 @@ def register_tools(mcp: FastMCP) -> None:
         - dry_run: si True, devuelve payload sin enviarlo
         """
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
 
         name_js = json.dumps(str(name_or_number))
         router_js = json.dumps(router)
@@ -2810,8 +2680,6 @@ def register_tools(mcp: FastMCP) -> None:
         - dry_run: si True, devuelve payload sin enviarlo
         """
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
         result = remove_acl_uc(
@@ -2936,8 +2804,6 @@ def register_tools(mcp: FastMCP) -> None:
         )
 
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -3005,8 +2871,6 @@ def register_tools(mcp: FastMCP) -> None:
         - dry_run: si True, devuelve payload sin enviarlo
         """
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
         result = remove_nat_uc(
@@ -3086,8 +2950,6 @@ def register_tools(mcp: FastMCP) -> None:
         )
 
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
 
@@ -3177,8 +3039,6 @@ def register_tools(mcp: FastMCP) -> None:
             bpduguard_ports=bpduguard_ports or [],
         )
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         result = apply_stp_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3217,8 +3077,6 @@ def register_tools(mcp: FastMCP) -> None:
             violation=violation, sticky=sticky, static_macs=static_macs or [],
         )
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         result = apply_port_security_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3267,8 +3125,6 @@ def register_tools(mcp: FastMCP) -> None:
             service_password_encryption=service_password_encryption,
         )
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         result = apply_hardening_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
@@ -3312,8 +3168,6 @@ def register_tools(mcp: FastMCP) -> None:
             ospf_hello_interval=ospf_hello_interval, delay=delay,
         )
         bridge_ok = _ensure_bridge() and _bridge_pt_connected()
-        if bridge_ok:
-            _ensure_pt_patches()
         result = apply_interface_tuning_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,

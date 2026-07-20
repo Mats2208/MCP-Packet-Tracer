@@ -60,8 +60,8 @@ class TestIPv6Generator:
 
 
 class TestIPv6RuntimePatch:
-    def test_configurePcIpv6_in_runtime_patches(self):
+    def test_configurePcIpv6_defined_in_extension(self):
         from pathlib import Path
-        src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
-        assert "configurePcIpv6" in src
-        assert "setIpv6AddressAutoConfig" in src
+        js = Path("SCRIPT-ENGIONE/main.js").read_text(encoding="utf-8")
+        assert "GLOBAL.configurePcIpv6 = function" in js
+        assert "setIpv6AddressAutoConfig" in js
