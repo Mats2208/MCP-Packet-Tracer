@@ -25,12 +25,18 @@ env/
 UI-HELPER/
 UI-HELPER-TOOLS/
 
+# SCRIPT-ENGIONE: only main.js is our own code (bridge, token, installMcpHelpers).
+# The rest are reference copies of PTBuilder's script engine
+# (kimmknight/PTBuilder, credited in the README) — not redistributed here.
+SCRIPT-ENGIONE/*.js
+!SCRIPT-ENGIONE/main.js
+
 # macOS
 .DS_Store
 
 
 # Generated runtime artifacts
-data/test_*
+data/
 tmp/
 
 CLAUDE.md
