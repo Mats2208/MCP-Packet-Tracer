@@ -58,6 +58,27 @@ def js_escape(s: str) -> str:
     )
 
 
+def interpret_ping(stat_line: str) -> bool:
+    """True si una línea de estadística de ping indica al menos un paquete recibido.
+
+    Cubre los dos formatos que produce Packet Tracer:
+      - Host (PC/Server): "Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)"
+      - IOS (router/switch): "Success rate is 100 percent (4/5)"
+    """
+    if not stat_line:
+        return False
+    m = re.search(r"Received\s*=\s*(\d+)", stat_line)
+    if m:
+        return int(m.group(1)) > 0
+    m = re.search(r"Success rate is (\d+) percent", stat_line)
+    if m:
+        return int(m.group(1)) > 0
+    m = re.search(r"\((\d+)/(\d+)\)", stat_line)
+    if m:
+        return int(m.group(1)) > 0
+    return False
+
+
 def resolve_within(base: Path, *parts: str) -> Path:
     """Resuelve `parts` bajo `base` y verifica que el resultado no se escape.
 

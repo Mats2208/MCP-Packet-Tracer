@@ -12,6 +12,7 @@ from src.packet_tracer_mcp.shared.utils import (
     js_escape,
     safe_name_component,
     resolve_within,
+    interpret_ping,
 )
 from src.packet_tracer_mcp.domain.models.plans import TopologyPlan, DevicePlan
 from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
@@ -149,6 +150,27 @@ def test_newlines_in_hardening_fields_are_rejected(field, value):
     result = apply_hardening_uc(cfg, bridge_send=lambda js: True)
     assert not result["valid"], f"{field} aceptó un salto de línea"
     assert not result["sent"]
+
+
+@pytest.mark.parametrize(
+    "stat,expected",
+    [
+        # Formato host (PC/Server), verificado contra PT 9.0 en vivo
+        ("Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),", True),
+        ("Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),", False),
+        ("Packets: Sent = 4, Received = 2, Lost = 2 (50% loss),", True),
+        # Formato IOS (router/switch)
+        ("Success rate is 100 percent (5/5)", True),
+        ("Success rate is 0 percent (0/5)", False),
+        ("Success rate is 80 percent (4/5)", True),
+        # Basura / vacío
+        ("", False),
+        ("no stats here", False),
+    ],
+)
+def test_interpret_ping(stat, expected):
+    """El parser de conectividad, con los dos formatos reales de PT."""
+    assert interpret_ping(stat) is expected
 
 
 def test_legitimate_hardening_still_works():

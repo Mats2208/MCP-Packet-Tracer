@@ -69,7 +69,7 @@ from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE
-from ...shared.utils import js_escape, safe_name_component
+from ...shared.utils import js_escape, safe_name_component, interpret_ping as _interpret_ping
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -1168,6 +1168,93 @@ def register_tools(mcp: FastMCP) -> None:
             "If you use the MCP Control Center extension, open it in Packet Tracer "
             "(Extensions > MCP BUILDER) and click 'Pair with MCP server'.\n"
             + warn
+        )
+
+    @mcp.tool()
+    def pt_verify_connectivity(
+        from_device: str,
+        to_ip: str,
+        count: int = 4,
+        timeout_s: float = 20.0,
+    ) -> str:
+        """
+        Ejecuta un ping REAL desde un dispositivo en PT y devuelve el resultado.
+
+        A diferencia de las validaciones que solo se imprimen como "verificá a
+        mano", esto corre `ping` en la consola del dispositivo y parsea la salida
+        real: cuántos paquetes llegaron. Sirve para confirmar que una topología
+        recién desplegada de verdad tiene conectividad.
+
+        Funciona con hosts (PC/Server/Laptop, formato "Packets: Sent=..") y con
+        dispositivos IOS (router/switch, formato "Success rate is N percent").
+
+        Parametros:
+        - from_device: nombre del dispositivo que origina el ping
+        - to_ip: IP destino
+        - count: reservado; PT usa su default por tipo (PC 4, IOS 5). Un flag
+          "-n" rompería en IOS, así que por ahora no se fuerza.
+        - timeout_s: tiempo máximo de espera (default 20s). Un ping FALLIDO tarda
+          más que uno exitoso: cada paquete espera su propio timeout antes de
+          declararse perdido (~13s medidos para 4 paquetes perdidos).
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        dev = json.dumps(from_device)
+        target = json.dumps(to_ip.strip())
+
+        # 1) Baseline: cuántos bloques de estadística hay ya en la consola, y
+        #    disparar el ping. La consola conserva histórico, así que contamos
+        #    marcadores en vez de fiarnos del largo (que se trunca/reemplaza).
+        # Un `ping IP` pelado funciona en ambos mundos: el PC manda 4 paquetes y el
+        # IOS 5. Meter "-n N" rompería en IOS, así que se deja el default de cada
+        # uno; `count` queda para uso futuro si se agrega selección por tipo.
+        arm = (
+            f"var cp=ipc.network().getDevice({dev}).getCommandPrompt();"
+            "if(!cp){reportResult('ERR:device sin consola');}"
+            "else{var o=String(cp.getOutput());"
+            "var m=o.match(/Packets: Sent|Success rate/g);"
+            "var base=m?m.length:0;"
+            f"cp.enterCommand('ping {json.loads(target)}');"
+            "reportResult('BASE:'+base);}"
+        )
+        armed = _bridge_send_and_wait(arm, timeout=8.0)
+        if armed is None:
+            return "Sin respuesta de PT (timeout) al iniciar el ping."
+        if not armed.startswith("BASE:"):
+            return f"No se pudo iniciar el ping: {armed}"
+        base = int(armed[5:])
+
+        # 2) Sondear la consola hasta que aparezca un bloque de estadística nuevo.
+        poll = (
+            f"var cp=ipc.network().getDevice({dev}).getCommandPrompt();"
+            "var o=String(cp.getOutput());"
+            "var m=o.match(/Packets: Sent|Success rate/g);"
+            "var cur=m?m.length:0;"
+            f"if(cur> {base}){{"
+            "var stat=o.match(/Packets: Sent = \\d+, Received = (\\d+), Lost = (\\d+)[^\\n]*|Success rate is (\\d+) percent \\((\\d+)\\/(\\d+)\\)/g);"
+            "reportResult('DONE:'+(stat?stat[stat.length-1]:'sin stats'));"
+            "}else{reportResult('WAIT');}"
+        )
+
+        deadline = time.time() + timeout_s
+        last = "WAIT"
+        while time.time() < deadline:
+            time.sleep(0.6)
+            r = _bridge_send_and_wait(poll, timeout=5.0)
+            if r is None:
+                continue
+            last = r
+            if r.startswith("DONE:"):
+                stat = r[5:]
+                ok = _interpret_ping(stat)
+                verdict = "CONECTIVIDAD OK" if ok else "SIN CONECTIVIDAD"
+                return f"{from_device} → {to_ip}: {verdict}\n{stat}"
+
+        return (
+            f"{from_device} → {to_ip}: sin resultado tras {timeout_s:.0f}s. "
+            "El ping puede seguir corriendo; reintentá o subí timeout_s."
         )
 
     @mcp.tool()
