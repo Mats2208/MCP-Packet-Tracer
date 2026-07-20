@@ -141,7 +141,8 @@ function init() {
     pollBridgeStatus();
 
     // Poll for commands every 500ms
-    setInterval(pollCommands, 500);
+    // Se auto-reencadena (long-poll), no lleva setInterval.
+    pollCommands();
 
     updateQBPreview();
 }
@@ -401,31 +402,44 @@ function handleUnauthorized() {
     });
 }
 
+/* Long-poll encadenado: el bridge retiene /next hasta que haya algo (o ~2s) y
+   devuelve TODOS los comandos en cola de una vez. Antes esto era un setInterval
+   de 500 ms que se traía un comando por vuelta, así que una topología de 40
+   comandos tardaba decenas de segundos. Se reencadena siempre — nunca hay una
+   rama que deje el bucle muerto. */
 function pollCommands() {
-    if (!S.bridgeUp) return;
+    if (!S.bridgeUp) { setTimeout(pollCommands, 500); return; }
+    var again = function() { setTimeout(pollCommands, 0); };
     try {
         var x = new XMLHttpRequest();
         x.open("GET", bridgeUrl("/next"), true);
-        x.timeout = 1000;
+        // Holgado respecto al long-poll del bridge, para no cortarlo nosotros.
+        x.timeout = 8000;
         x.onload = function() {
-            if (x.status === 401) { handleUnauthorized(); return; }
+            if (x.status === 401) { handleUnauthorized(); setTimeout(pollCommands, 1000); return; }
             if (x.status === 200 && x.responseText) {
-                var cmd = x.responseText;
-                var preview = cmd.length > 120 ? cmd.substring(0, 120) + "…" : cmd;
-                log("MCP → PT: " + preview, "recv");
+                var batch = x.responseText;
+                var n = batch.split("\n").length;
+                var preview = batch.length > 120 ? batch.substring(0, 120) + "…" : batch;
+                log("MCP → PT (" + n + " cmd" + (n > 1 ? "s" : "") + "): " + preview, "recv");
                 try {
-                    $se("runCode", cmd);
-                    S.commandCount++;
-                    log("Executed successfully", "ok");
+                    // El lote entero va en un solo runCode: cada comando ya
+                    // trae su try/catch, así que uno malo no tumba a los demás.
+                    $se("runCode", batch);
+                    S.commandCount += n;
+                    log("Batch executed", "ok");
                     updateCommandCount();
                 } catch(e) {
                     log("Execution failed: " + e.message, "err");
                 }
             }
+            again();
         };
-        x.onerror = x.ontimeout = function() {};
+        x.onerror = x.ontimeout = function() { setTimeout(pollCommands, 500); };
         x.send();
-    } catch(e) {}
+    } catch(e) {
+        setTimeout(pollCommands, 1000);
+    }
 }
 
 function updateConnectionUI() {
@@ -587,29 +601,42 @@ function executeCode() {
         return t && !t.startsWith("//");
     });
 
-    var sent = 0;
-    lines.forEach(function(line) {
+    var cmds = lines.map(function(line) {
         var cmd = line.trim();
-        if (!cmd) return;
         // Add semicolon if missing (PT Script Engine requires it)
-        if (!cmd.endsWith(";")) cmd += ";";
-        try {
-            var x = new XMLHttpRequest();
-            x.open("POST", bridgeUrl("/queue"), false);
-            x.setRequestHeader("Content-Type", "text/plain");
-            x.send(cmd);
-            if (x.status === 200) sent++;
-        } catch(e) {}
+        return cmd.endsWith(";") ? cmd : cmd + ";";
     });
 
-    if (sent > 0) {
-        S.commandCount += sent;
-        updateCommandCount();
-        log(sent + " command" + (sent > 1 ? "s" : "") + " queued via bridge", "ok");
+    queueCommands(cmds, function(sent) {
+        if (sent > 0) {
+            S.commandCount += sent;
+            updateCommandCount();
+            log(sent + " command" + (sent > 1 ? "s" : "") + " queued via bridge", "ok");
+        } else {
+            log("Failed to queue commands — check bridge connection", "err");
+        }
         switchTab("terminal");
-    } else {
-        log("Failed to queue commands — check bridge connection", "err");
-        switchTab("terminal");
+    });
+}
+
+/* Encola un lote en una sola petición ASÍNCRONA.
+   Antes era un XHR síncrono por comando dentro de un forEach: bloqueaba el hilo
+   de la UI del webview y hacía una ida y vuelta HTTP por línea. */
+function queueCommands(cmds, onDone) {
+    if (!cmds || !cmds.length) { if (onDone) onDone(0); return; }
+    try {
+        var x = new XMLHttpRequest();
+        x.open("POST", bridgeUrl("/queue"), true);
+        x.setRequestHeader("Content-Type", "text/plain");
+        x.timeout = 5000;
+        x.onload = function() {
+            if (x.status === 401) { handleUnauthorized(); if (onDone) onDone(0); return; }
+            if (onDone) onDone(x.status === 200 ? cmds.length : 0);
+        };
+        x.onerror = x.ontimeout = function() { if (onDone) onDone(0); };
+        x.send(cmds.join("\n"));
+    } catch(e) {
+        if (onDone) onDone(0);
     }
 }
 
@@ -1216,25 +1243,17 @@ function quickBuild() {
     log("Quick Build: sending " + v.routers + "R " + v.pcs + "PC topology via bridge…", "cmd");
 
     var lines = script.split("\n").filter(function(l) { return l.trim() && !l.trim().startsWith("//"); });
-    var sent = 0;
-    lines.forEach(function(line) {
-        try {
-            var x = new XMLHttpRequest();
-            x.open("POST", bridgeUrl("/queue"), false);  // sync for simplicity
-            x.setRequestHeader("Content-Type", "text/plain");
-            x.send(line);
-            if (x.status === 200) sent++;
-        } catch(e) {}
-    });
 
-    if (sent > 0) {
-        S.commandCount += sent;
-        updateCommandCount();
-        log("Quick Build: " + sent + " commands queued", "ok");
-        switchTab("terminal");
-    } else {
-        log("Quick Build: failed to queue commands (bridge error)", "err");
-    }
+    queueCommands(lines, function(sent) {
+        if (sent > 0) {
+            S.commandCount += sent;
+            updateCommandCount();
+            log("Quick Build: " + sent + " commands queued", "ok");
+            switchTab("terminal");
+        } else {
+            log("Quick Build: failed to queue commands (bridge error)", "err");
+        }
+    });
 }
 
 // ------------------------------------------------------- Notifications -----

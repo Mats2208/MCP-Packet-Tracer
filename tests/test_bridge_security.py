@@ -183,8 +183,52 @@ def test_routes_still_resolve_with_query_string(bridge):
     """
     status, _, _ = _request(bridge, f"/status?t={TOKEN}")
     assert status == 200
+    # Se encola algo primero: /next hace long-poll y si no, esperaría el timeout.
+    bridge._queue.put_nowait("noop();")
     status, _, _ = _request(bridge, f"/next?t={TOKEN}")
     assert status == 200
+
+
+# --- Lote y long-poll ------------------------------------------------------
+
+
+def test_next_returns_the_whole_queue_in_one_response(bridge):
+    """Entregar de a uno cada 500 ms hacía que 40 comandos tardaran decenas de segundos."""
+    for i in range(25):
+        bridge._queue.put_nowait(f"cmd{i}();")
+
+    status, body, _ = _request(bridge, f"/next?t={TOKEN}")
+    assert status == 200
+    assert body.split("\n") == [f"cmd{i}();" for i in range(25)]
+    assert bridge._queue.empty()
+
+
+def test_next_long_polls_instead_of_returning_empty(bridge):
+    """Sin cola, /next espera; con cola, contesta al instante."""
+    import threading
+    import time as _t
+
+    t0 = _t.monotonic()
+    threading.Timer(0.3, lambda: bridge._queue.put_nowait("late();")).start()
+    status, body, _ = _request(bridge, f"/next?t={TOKEN}")
+    elapsed = _t.monotonic() - t0
+
+    assert status == 200
+    assert body == "late();"
+    # Llegó cuando apareció el comando, no en el siguiente tick fijo.
+    assert 0.25 < elapsed < 2.0, f"tardó {elapsed:.2f}s"
+
+
+def test_batch_is_capped(bridge):
+    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+        MAX_BATCH_COMMANDS,
+    )
+
+    for i in range(MAX_BATCH_COMMANDS + 10):
+        bridge._queue.put_nowait(f"c{i}();")
+    _, body, _ = _request(bridge, f"/next?t={TOKEN}")
+    assert len(body.split("\n")) == MAX_BATCH_COMMANDS
+    assert not bridge._queue.empty()
 
 
 

@@ -696,6 +696,10 @@ def register_tools(mcp: FastMCP) -> None:
     _BRIDGE_PORT = DEFAULT_PORT
     _BRIDGE_URL = f"http://127.0.0.1:{_BRIDGE_PORT}"
 
+    # Comandos por POST. Acotado para no acercarse al límite de cuerpo del bridge
+    # con topologías grandes, y para que el progreso sea visible en PT.
+    _DEPLOY_BATCH = 50
+
     # El bootstrap y reportResult() viven en live_bridge.py, no acá. Antes había
     # tres copias (esta, la de live_bridge y la de la extensión) y ya habían
     # divergido: la de acá no definía reportResult, así que quien pegaba ESTE
@@ -922,7 +926,7 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_live_deploy(
         plan_json: str,
-        command_delay: float = 1.0,
+        command_delay: float = 0.0,
     ) -> str:
         """
         Envia comandos directamente a Packet Tracer en tiempo real.
@@ -933,13 +937,15 @@ def register_tools(mcp: FastMCP) -> None:
 
         Parámetros:
         - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
-        - command_delay: retardo entre comandos en segundos (default 1.0).
-          Valores menores a 1.0 pueden disparar popups de error en PT porque
-          configureIosDevice/configurePcIp se ejecutan antes de que el dispositivo
-          termine de inicializarse. El valor recibido se clampa a un mínimo de 1.0.
+        - command_delay: retardo entre LOTES en segundos (default 0.0).
+          Los comandos ya no se envían de a uno: van en lotes que PT ejecuta en
+          un solo runCode, donde cada uno lleva su propio try/catch. Medido
+          contra PT 9.0, crear 10 dispositivos + enlaces + configurar IOS de
+          corrido tarda ~100 ms y la config queda aplicada. Subilo solo si tu
+          instalación se atraganta.
         """
-        if command_delay < 1.0:
-            command_delay = 1.0
+        if command_delay < 0.0:
+            command_delay = 0.0
         if not _ensure_bridge():
             return (
                 "No se pudo iniciar el bridge HTTP en :54321.\n"
@@ -970,12 +976,18 @@ def register_tools(mcp: FastMCP) -> None:
             if line.strip() and not line.strip().startswith("//")
         ]
 
+        # Enviar por lotes: antes era un POST y un sleep(>=1s) POR COMANDO, así
+        # que una topología de 40 comandos tardaba 40 segundos sin ninguna razón
+        # técnica. Cada comando conserva su propio guard dentro del lote.
         sent = 0
-        for cmd in commands:
-            status, _ = _http_post(f"{_BRIDGE_URL}/queue", _js_guard(cmd))
+        for i in range(0, len(commands), _DEPLOY_BATCH):
+            chunk = commands[i:i + _DEPLOY_BATCH]
+            payload = "\n".join(_js_guard(c) for c in chunk)
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
             if status == 200:
-                sent += 1
-            time.sleep(command_delay)
+                sent += len(chunk)
+            if command_delay:
+                time.sleep(command_delay)
 
         dev_ok = 0
         dev_fail = []

@@ -40,6 +40,16 @@ MAX_BODY_BYTES = 1 << 20
 # Cola acotada: si PT se cuelga, la cola no puede crecer sin techo.
 MAX_QUEUE_ITEMS = 1000
 
+# /next espera hasta este tiempo a que aparezca un comando en vez de contestar
+# vacío al instante. Baja la latencia (el comando sale apenas se encola, no en el
+# siguiente tick de 500 ms) y elimina el goteo de peticiones vacías.
+NEXT_LONGPOLL_SECONDS = 2.0
+
+# Comandos que /next entrega por respuesta. PT los ejecuta en un solo runCode.
+# Medido contra PT 9.0: 10 dispositivos + enlaces + config IOS en ~100 ms
+# ejecutados de corrido, sin necesidad de espaciarlos.
+MAX_BATCH_COMMANDS = 200
+
 
 
 def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
@@ -118,6 +128,25 @@ class PTCommandBridge:
             "client_headers": dict(self._client_headers),
             "token_id": self.token_id,
         }
+
+    def drain_commands(self) -> list[str]:
+        """Espera al primer comando y se lleva todos los que ya estén en cola.
+
+        Entregar de a uno cada 500 ms hacía que una topología de 40 comandos
+        tardara decenas de segundos. PT ejecuta el lote entero en un solo
+        runCode, y cada comando ya trae su propio try/catch.
+        """
+        cmds: list[str] = []
+        try:
+            cmds.append(self._queue.get(timeout=NEXT_LONGPOLL_SECONDS))
+        except Empty:
+            return cmds
+        while len(cmds) < MAX_BATCH_COMMANDS:
+            try:
+                cmds.append(self._queue.get_nowait())
+            except Empty:
+                break
+        return cmds
 
     # -- servidor -------------------------------------------------------
 
@@ -234,13 +263,11 @@ class PTCommandBridge:
 
                 if path == "/next":
                     self._remember_client()
-                    try:
-                        cmd = bridge._queue.get_nowait()
-                    except Empty:
-                        cmd = ""
-                    self._respond(200, cmd)
+                    # Marcar la conexión ANTES del long-poll: si no, mientras se
+                    # espera en la cola el bridge se cree desconectado.
                     bridge._connected = True
                     bridge._last_poll_time = time.time()
+                    self._respond(200, "\n".join(bridge.drain_commands()))
                 elif path == "/status":
                     self._respond(200, json.dumps(bridge.status_dict()))
                 elif path == "/result":
