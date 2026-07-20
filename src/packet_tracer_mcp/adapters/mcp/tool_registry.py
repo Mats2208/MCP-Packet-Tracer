@@ -69,7 +69,7 @@ from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE
-from ...shared.utils import js_escape
+from ...shared.utils import js_escape, safe_name_component
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -1169,6 +1169,77 @@ def register_tools(mcp: FastMCP) -> None:
             "(Extensions > MCP BUILDER) and click 'Pair with MCP server'.\n"
             + warn
         )
+
+    @mcp.tool()
+    def pt_save_project(filename: str, directory: str = "") -> str:
+        """
+        Guarda la topologia activa de Packet Tracer como archivo .pkt.
+
+        Cierra el ciclo: hasta ahora el MCP construia la topologia pero guardarla
+        requeria Ctrl+S a mano.
+
+        Parametros:
+        - filename: nombre del archivo (se le agrega .pkt si falta)
+        - directory: carpeta destino. Vacio = carpeta de guardado de PT.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        name = safe_name_component(filename.strip(), "topology")
+        if not name.lower().endswith(".pkt"):
+            name += ".pkt"
+
+        js = (
+            "var aw=ipc.appWindow();"
+            f"var dir={json.dumps(directory.strip())};"
+            "if(!dir){dir=String(aw.getDefaultFileSaveLocation());}"
+            "dir=String(dir).replace(/\\\\/g,'/').replace(/\\/+$/,'');"
+            f"var full=dir+'/'+{json.dumps(name)};"
+            "aw.fileSaveAsNoPrompt(full,false);"
+            "var fm=ipc.systemFileManager();"
+            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:no se creo '+full));"
+        )
+        result = _bridge_send_and_wait(js, timeout=20.0)
+        if result is None:
+            return "Sin respuesta de PT (timeout) al guardar."
+        if result.startswith("OK:"):
+            path_str, _, size = result[3:].rpartition("|")
+            return f"Proyecto guardado en {path_str} ({size} bytes)."
+        return f"Error de PT al guardar: {result}"
+
+    @mcp.tool()
+    def pt_open_project(path: str) -> str:
+        """
+        Abre un archivo .pkt en Packet Tracer.
+
+        ATENCION: reemplaza la topologia actualmente abierta. Si tiene cambios sin
+        guardar, guardalos antes con pt_save_project.
+
+        Parametros:
+        - path: ruta completa al archivo .pkt
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        target = path.strip().replace("\\", "/")
+        if not target.lower().endswith(".pkt"):
+            return "El archivo debe terminar en .pkt"
+
+        js = (
+            "var fm=ipc.systemFileManager();"
+            f"var p={json.dumps(target)};"
+            "if(!fm.fileExists(p)){reportResult('ERR:no existe '+p);}"
+            "else{ipc.appWindow().fileOpen(p);"
+            "reportResult('OK:'+ipc.network().getDeviceCount());}"
+        )
+        result = _bridge_send_and_wait(js, timeout=30.0)
+        if result is None:
+            return "Sin respuesta de PT (timeout) al abrir."
+        if result.startswith("OK:"):
+            return f"Proyecto abierto: {target} ({result[3:]} dispositivos)."
+        return f"Error de PT al abrir: {result}"
 
     # ------------------------------------------------------------------
     # Helpers para tools bidireccionales (send command → wait for result)
