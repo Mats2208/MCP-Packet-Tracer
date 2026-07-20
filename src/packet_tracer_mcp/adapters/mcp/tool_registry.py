@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.request
+import urllib.parse
 from mcp.server.fastmcp import FastMCP
 
 from ...domain.models.plans import TopologyPlan
@@ -53,7 +54,13 @@ from ...infrastructure.generator.cli_config_generator import (
 from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
-from ...infrastructure.execution.live_bridge import PTCommandBridge
+from ...infrastructure.execution.live_bridge import (
+    PTCommandBridge, DEFAULT_PORT, bootstrap_script, report_result_js,
+)
+from ...infrastructure.execution.bridge_token import (
+    get_bridge_token, token_fingerprint, token_path, token_was_rotated,
+    token_is_ephemeral,
+)
 from ...infrastructure.execution.live_executor import LiveExecutor
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
@@ -686,29 +693,14 @@ def register_tools(mcp: FastMCP) -> None:
     # LIVE DEPLOY (direct to Packet Tracer)
     # ------------------------------------------------------------------
 
-    _BRIDGE_URL = "http://127.0.0.1:54321"
-    _BRIDGE_PORT = 54321
-    _BOOTSTRAP = (
-        '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync('
-        '"setInterval(function(){var x=new XMLHttpRequest();'
-        "x.open('GET','http://127.0.0.1:54321/next',true);"
-        'x.onload=function(){if(x.status===200&&x.responseText)'
-        "{try{$se('runCode',x.responseText)}catch(e){}}};x.onerror=function(){};"
-        'x.send()},500)");'
-    )
-    _REPORT_RESULT_JS = (
-        "function reportResult(d){"
-        "var s=String(d)"
-        ".replace(/\\\\/g,'\\\\\\\\')"
-        ".replace(/'/g,\"\\\\'\")"
-        ".replace(/\\n/g,'\\\\n');"
-        "window.webview.evaluateJavaScriptAsync("
-        "\"var x=new XMLHttpRequest();"
-        f"x.open('POST','http://127.0.0.1:{_BRIDGE_PORT}/result',true);"
-        "x.setRequestHeader('Content-Type','text/plain');"
-        "x.send('\"+s+\"');\")"
-        "}"
-    )
+    _BRIDGE_PORT = DEFAULT_PORT
+    _BRIDGE_URL = f"http://127.0.0.1:{_BRIDGE_PORT}"
+
+    # El bootstrap y reportResult() viven en live_bridge.py, no acá. Antes había
+    # tres copias (esta, la de live_bridge y la de la extensión) y ya habían
+    # divergido: la de acá no definía reportResult, así que quien pegaba ESTE
+    # snippet se quedaba con un bridge donde send_and_wait nunca recibía nada.
+    # Se generan bajo demanda porque llevan el token adentro.
 
     # Runtime patches que sobrescriben las funciones nativas del PT script engine
     # con versiones que tienen guards defensivos. Sin estos, llamar configureIosDevice
@@ -814,9 +806,18 @@ def register_tools(mcp: FastMCP) -> None:
     # Se resetea cuando PT se desconecta para reaplicar al reconectar.
     _patches_applied: list[bool] = [False]  # list para mutación en closures
 
+    def _signed(url: str) -> str:
+        """Añade el token del bridge a la URL.
+
+        Se firma acá y no en cada llamada para que no exista un camino sin token
+        que alguien pueda agregar por descuido más adelante.
+        """
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}t={urllib.parse.quote(get_bridge_token())}"
+
     def _http_get(url: str, timeout: float = 2.0):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as r:
+            with urllib.request.urlopen(_signed(url), timeout=timeout) as r:
                 return r.status, r.read().decode("utf-8")
         except Exception:
             return None, None
@@ -824,7 +825,7 @@ def register_tools(mcp: FastMCP) -> None:
     def _http_post(url: str, body: str, timeout: float = 3.0):
         try:
             data = body.encode("utf-8")
-            req = urllib.request.Request(url, data=data, method="POST")
+            req = urllib.request.Request(_signed(url), data=data, method="POST")
             req.add_header("Content-Type", "text/plain")
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.status, r.read().decode("utf-8")
@@ -842,9 +843,29 @@ def register_tools(mcp: FastMCP) -> None:
         """
         return "try{" + js + "}catch(__pterr){}"
 
+    def _bridge_identity() -> str:
+        """Quién está escuchando en el puerto: 'ours' | 'foreign' | 'none'.
+
+        Antes bastaba con que algo contestara 200 a /ping para darlo por bueno —
+        y a partir de ahí se le mandaban TODOS los payloads JS a ese proceso,
+        fuera lo que fuera. Ahora /ping devuelve un documento de identidad con la
+        huella del token, así que se puede distinguir el nuestro de un extraño.
+        """
+        status, body = _http_get(f"{_BRIDGE_URL}/ping", timeout=1.0)
+        if status != 200 or not body:
+            return "none"
+        try:
+            doc = json.loads(body)
+        except Exception:
+            return "foreign"
+        if doc.get("service") != "pt-mcp-bridge":
+            return "foreign"
+        if doc.get("id") != token_fingerprint(get_bridge_token()):
+            return "foreign"
+        return "ours"
+
     def _bridge_is_up() -> bool:
-        status, _ = _http_get(f"{_BRIDGE_URL}/ping", timeout=1.0)
-        return status == 200
+        return _bridge_identity() == "ours"
 
     def _bridge_pt_connected() -> bool:
         status, body = _http_get(f"{_BRIDGE_URL}/status", timeout=1.0)
@@ -893,8 +914,10 @@ def register_tools(mcp: FastMCP) -> None:
                 return False  # puerto bloqueado por proceso externo no-bridge
         return _bridge_is_up()
 
-    # --- Arrancar bridge INMEDIATAMENTE al registrar tools ---
-    _ensure_bridge()
+    # El bridge se arranca bajo demanda desde las tools que lo necesitan.
+    # Antes se levantaba acá, al registrar tools: importar el servidor abría un
+    # socket aunque nadie fuera a usar el despliegue en vivo, ampliando sin
+    # motivo la ventana en la que el puerto está escuchando.
 
     @mcp.tool()
     def pt_live_deploy(
@@ -924,12 +947,15 @@ def register_tools(mcp: FastMCP) -> None:
             )
 
         if not _bridge_pt_connected():
+            if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
+                return _stale_client_message()
             return (
-                "Bridge activo en http://127.0.0.1:54321 pero PT NO esta conectado.\n\n"
-                "Pega esto en Builder Code Editor (Extensions > Builder Code Editor) "
-                "y haz clic en Run:\n\n"
-                + _BOOTSTRAP
-                + "\n\nLuego llama a pt_live_deploy nuevamente.\n\n"
+                f"Bridge activo en http://127.0.0.1:{_BRIDGE_PORT} pero PT NO esta conectado.\n\n"
+                "Si usas la extension MCP Control Center: abrela en PT "
+                "(Extensions > MCP BUILDER) y pulsa 'Pair with MCP server'.\n"
+                "Si no, llama a pt_get_bootstrap y pega el resultado en "
+                "Builder Code Editor.\n\n"
+                "Luego llama a pt_live_deploy nuevamente.\n\n"
                 "IMPORTANTE: XMLHttpRequest NO existe en el Script Engine de PT.\n"
                 "El bootstrap inyecta un polling loop en el webview (QWebEngine) "
                 "que SI tiene XMLHttpRequest."
@@ -1059,27 +1085,125 @@ def register_tools(mcp: FastMCP) -> None:
 
         return "\n".join(report)
 
+    def _stale_client_message() -> str:
+        """Mensaje para cuando PT llega al bridge pero lo rechazamos por token.
+
+        Sin esto, 'PT no está abierto' y 'PT está pero su extensión es vieja' se
+        veían exactamente igual, y el síntoma era 'dejó de andar' sin causa.
+        """
+        return (
+            "Packet Tracer IS reaching the bridge, but every request is being "
+            "REJECTED (missing or invalid token).\n\n"
+            "Why: this version requires an automatically-generated local token on "
+            "every bridge request. The code running inside Packet Tracer was built "
+            "by an older version and doesn't carry it. Nothing is wrong with your "
+            "setup.\n\n"
+            "Fix (once, then never again):\n"
+            "  - MCP Control Center extension: update to V5.0+ from\n"
+            "    https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest\n"
+            "    then click 'Pair with MCP server' in the extension window.\n"
+            "  - Pasted bootstrap: run pt_get_bootstrap, replace the old snippet\n"
+            "    in Builder Code Editor with the new one, and click Run.\n\n"
+            "The token is stored on this machine and reused across restarts, so "
+            "you only do this once."
+        )
+
     @mcp.tool()
     def pt_bridge_status() -> str:
         """
         Verifica el estado del bridge HTTP con Packet Tracer.
-        El bridge se inicia automaticamente si no esta corriendo —
-        no necesitas ejecutar start_bridge.ps1 manualmente.
+        El bridge se inicia automaticamente si no esta corriendo.
         """
+        identity = _bridge_identity()
+        if identity == "foreign":
+            return (
+                f"Port {_BRIDGE_PORT} is occupied by a process that is NOT this "
+                "MCP server's bridge.\n"
+                "Refusing to send commands to it — they would be executed by "
+                "whatever is listening there.\n"
+                "Free the port (or close the other MCP server instance) and retry."
+            )
+
         if not _ensure_bridge():
             return (
-                "Could not start HTTP bridge on :54321.\n"
+                f"Could not start HTTP bridge on :{_BRIDGE_PORT}.\n"
                 "Port blocked by another process. Free the port and try again."
             )
 
         if _bridge_pt_connected():
-            return "Bridge ACTIVE and CONNECTED. Packet Tracer is receiving commands at http://127.0.0.1:54321"
+            msg = (
+                "Bridge ACTIVE and CONNECTED. Packet Tracer is receiving commands "
+                f"at http://127.0.0.1:{_BRIDGE_PORT}"
+            )
+            if _bridge_instance is not None and _bridge_instance._client_headers:
+                msg += f"\nPT client headers: {_bridge_instance._client_headers}"
+            return msg
+
+        # PT no responde. ¿Está ausente, o está siendo rechazado?
+        if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
+            return _stale_client_message()
+
+        warn = ""
+        if token_was_rotated():
+            warn = (
+                "\n\nNOTE: the stored token was missing or corrupt and has been "
+                "regenerated. Anything paired before now is stale and must pair again."
+            )
+        if token_is_ephemeral():
+            warn += (
+                "\n\nWARNING: the token could not be written to disk, so it will "
+                "change on every restart and you'll have to pair again each time."
+            )
 
         return (
-            "Bridge active at http://127.0.0.1:54321 but PT is NOT connected.\n\n"
-            "Paste this in Builder Code Editor (Extensions > Builder Code Editor) "
-            "and click Run:\n\n"
-            + _BOOTSTRAP
+            f"Bridge active at http://127.0.0.1:{_BRIDGE_PORT} but PT is NOT connected.\n\n"
+            "If you use the MCP Control Center extension, open it in Packet Tracer "
+            "(Extensions > MCP BUILDER) and click 'Pair with MCP server'.\n"
+            "Otherwise run pt_get_bootstrap and paste the result into "
+            "Builder Code Editor." + warn
+        )
+
+    @mcp.tool()
+    def pt_get_bootstrap() -> str:
+        """
+        Devuelve el snippet de arranque para pegar en Builder Code Editor.
+
+        SECRETO: el snippet contiene un token unico de esta maquina. No lo pegues
+        en issues, chats ni capturas de pantalla. Solo hace falta pegarlo una vez.
+        """
+        _ensure_bridge()
+        return (
+            "Paste this into Extensions > Builder Code Editor and click Run.\n"
+            "It contains a secret unique to this machine — do not share it.\n\n"
+            + bootstrap_script(_BRIDGE_PORT, get_bridge_token())
+            + f"\n\nToken file: {token_path()}"
+        )
+
+    @mcp.tool()
+    def pt_pair_bridge(seconds: float = 120.0) -> str:
+        """
+        Abre una ventana para que la extension de PT se empareje con el bridge.
+
+        La extension corre en un webview con esquema propio y no puede leer el
+        token del disco, asi que lo pide una vez por HTTP y lo guarda. Tras
+        emparejar, sobrevive reinicios de PT y del servidor MCP.
+
+        Parametros:
+        - seconds: duracion de la ventana (default 120).
+        """
+        if not _ensure_bridge():
+            return f"Could not start bridge on :{_BRIDGE_PORT}."
+        if _bridge_instance is None:
+            return (
+                "The bridge on this port was started by another process; "
+                "pair from the instance that owns it."
+            )
+        _bridge_instance.open_pairing(seconds)
+        return (
+            f"Pairing window open for {seconds:.0f}s.\n"
+            "In Packet Tracer: Extensions > MCP BUILDER > 'Pair with MCP server'.\n"
+            "Only one client can pair per window; if the extension still reports "
+            "'not paired' afterwards, something else claimed it — reopen and retry."
         )
 
     # ------------------------------------------------------------------
@@ -1098,7 +1222,7 @@ def register_tools(mcp: FastMCP) -> None:
         'PT_ERROR: ...' vía reportResult en vez de abrir un modal que mate el bridge.
         """
         wrapped = (
-            _REPORT_RESULT_JS
+            report_result_js(_BRIDGE_PORT, get_bridge_token())
             + ";try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
         status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
