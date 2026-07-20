@@ -1120,66 +1120,85 @@ def register_tools(mcp: FastMCP) -> None:
             "every bridge request. The code running inside Packet Tracer was built "
             "by an older version and doesn't carry it. Nothing is wrong with your "
             "setup.\n\n"
-            "Fix (once, then never again):\n"
-            "  - MCP Control Center extension: update to V5.0+ from\n"
-            "    https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest\n"
-            "    then click 'Pair with MCP server' in the extension window.\n"
-            "The token is stored on this machine and reused across restarts, so "
-            "you only do this once."
+            "Fix: update the MCP Control Center extension to V5.0+ from\n"
+            "https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest\n"
+            "and reopen it. V5 reads the token from disk automatically — nothing "
+            "to pair or paste. The token is stored on this machine and reused "
+            "across restarts."
         )
 
     @mcp.tool()
     def pt_bridge_status() -> str:
         """
-        Verifica el estado del bridge HTTP con Packet Tracer.
-        El bridge se inicia automaticamente si no esta corriendo.
+        Verifica por qué canal está conectado Packet Tracer.
+
+        Hay dos: HTTP (cuando la ventana MCP Control Center está abierta) y
+        archivo (cuando está cerrada pero PT sigue abierto con la extensión). Con
+        cualquiera de los dos, el despliegue funciona.
         """
         identity = _bridge_identity()
         if identity == "foreign":
             return (
                 f"Port {_BRIDGE_PORT} is occupied by a process that is NOT this "
-                "MCP server's bridge.\n"
-                "Refusing to send commands to it — they would be executed by "
-                "whatever is listening there.\n"
-                "Free the port (or close the other MCP server instance) and retry."
+                "MCP server's bridge (likely a leftover MCP server from an earlier "
+                "session).\n"
+                "Refusing to send commands to it — they would run in whatever is "
+                "listening there.\n"
+                "Kill that process (or restart the MCP server) and retry."
             )
 
-        if not _ensure_bridge():
+        http_up = _ensure_bridge()
+        http_connected = http_up and _bridge_pt_connected()
+        file_alive = _file_bridge.pt_alive()
+
+        # Cabeceras reales del webview de PT (incluye el Origin: pt-sm:), útil
+        # para diagnóstico y para ajustar CORS más adelante.
+        hdr = ""
+        if _bridge_instance is not None and _bridge_instance._client_headers:
+            hdr = f"\nPT client headers: {_bridge_instance._client_headers}"
+
+        if http_connected and file_alive:
             return (
-                f"Could not start HTTP bridge on :{_BRIDGE_PORT}.\n"
-                "Port blocked by another process. Free the port and try again."
+                "CONNECTED por ambos canales:\n"
+                f"  • HTTP (ventana abierta) — http://127.0.0.1:{_BRIDGE_PORT}\n"
+                "  • file-bridge (Script Engine, sigue si cerrás la ventana)" + hdr
+            )
+        if http_connected:
+            return (
+                "CONNECTED por HTTP (ventana MCP Control Center abierta) — "
+                f"http://127.0.0.1:{_BRIDGE_PORT}.\n"
+                "Nota: el file-bridge aún no reportó heartbeat; si cerrás la "
+                "ventana, esperá unos segundos a que tome el relevo." + hdr
+            )
+        if file_alive:
+            return (
+                "CONNECTED por file-bridge (la ventana está cerrada, pero PT sigue "
+                "abierto con la extensión). El despliegue funciona igual, un poco "
+                "más lento que por HTTP. Abrí MCP Control Center si querés el canal "
+                "HTTP y el panel de logs."
             )
 
-        if _bridge_pt_connected():
-            msg = (
-                "Bridge ACTIVE and CONNECTED. Packet Tracer is receiving commands "
-                f"at http://127.0.0.1:{_BRIDGE_PORT}"
-            )
-            if _bridge_instance is not None and _bridge_instance._client_headers:
-                msg += f"\nPT client headers: {_bridge_instance._client_headers}"
-            return msg
-
-        # PT no responde. ¿Está ausente, o está siendo rechazado?
+        # Ningún canal.
         if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
             return _stale_client_message()
 
         warn = ""
         if token_was_rotated():
             warn = (
-                "\n\nNOTE: the stored token was missing or corrupt and has been "
-                "regenerated. Anything paired before now is stale and must pair again."
+                "\n\nNOTA: el token guardado faltaba o estaba corrupto y se "
+                "regeneró. Reabrí la extensión para que lo relea."
             )
         if token_is_ephemeral():
             warn += (
-                "\n\nWARNING: the token could not be written to disk, so it will "
-                "change on every restart and you'll have to pair again each time."
+                "\n\nADVERTENCIA: el token no se pudo escribir a disco, así que "
+                "cambia en cada reinicio."
             )
 
         return (
-            f"Bridge active at http://127.0.0.1:{_BRIDGE_PORT} but PT is NOT connected.\n\n"
-            "If you use the MCP Control Center extension, open it in Packet Tracer "
-            "(Extensions > MCP BUILDER) and click 'Pair with MCP server'.\n"
-            + warn
+            "Packet Tracer NO está conectado por ningún canal.\n"
+            "Abrí PT con la extensión MCP Control Center instalada "
+            "(Extensions > MCP BUILDER). Con la ventana abierta usa HTTP; si la "
+            "cerrás, el file-bridge toma el relevo mientras PT siga abierto." + warn
         )
 
     @mcp.tool()
