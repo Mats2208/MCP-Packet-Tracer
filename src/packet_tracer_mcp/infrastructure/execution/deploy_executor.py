@@ -12,6 +12,7 @@ from pathlib import Path
 from ...domain.models.plans import TopologyPlan
 from ..generator.ptbuilder_generator import generate_ptbuilder_script, generate_full_script
 from ..generator.cli_config_generator import generate_all_configs
+from ...shared.utils import safe_name_component, resolve_within
 from .executor_base import ExecutorBase
 
 
@@ -48,8 +49,8 @@ class DeployExecutor(ExecutorBase):
     def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
         """Despliega el plan: clipboard + archivos + instrucciones."""
         base_name = (project_name or plan.name or "topology").strip() or "topology"
-        safe_name = base_name.replace(" ", "_")
-        project_dir = self.output_dir / safe_name
+        safe_name = safe_name_component(base_name)
+        project_dir = resolve_within(self.output_dir, safe_name)
         project_dir.mkdir(parents=True, exist_ok=True)
 
         # Generar scripts
@@ -72,7 +73,9 @@ class DeployExecutor(ExecutorBase):
         files["full_script"] = str(full_path)
 
         for device_name, config_text in configs.items():
-            cfg_path = project_dir / f"{device_name}_config.txt"
+            cfg_path = resolve_within(
+                project_dir, f"{safe_name_component(device_name, 'device')}_config.txt"
+            )
             cfg_path.write_text(config_text, encoding="utf-8")
             files[f"config_{device_name}"] = str(cfg_path)
 

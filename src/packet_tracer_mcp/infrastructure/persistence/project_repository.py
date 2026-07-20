@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 from ...domain.models.plans import TopologyPlan
+from ...shared.utils import safe_name_component, resolve_within
 
 
 class ProjectRepository:
@@ -19,8 +20,8 @@ class ProjectRepository:
     def save_plan(self, plan: TopologyPlan, project_name: str | None = None) -> Path:
         """Guarda un plan como JSON."""
         base_name = (project_name or plan.name or "topology").strip() or "topology"
-        name = base_name.replace(" ", "_")
-        project_dir = self.base_dir / name
+        name = safe_name_component(base_name)
+        project_dir = resolve_within(self.base_dir, name)
         project_dir.mkdir(parents=True, exist_ok=True)
 
         plan_path = project_dir / "plan.json"
@@ -41,7 +42,9 @@ class ProjectRepository:
 
     def load_plan(self, project_name: str) -> TopologyPlan:
         """Carga un plan desde JSON."""
-        plan_path = self.base_dir / project_name / "plan.json"
+        plan_path = resolve_within(
+            self.base_dir, safe_name_component(project_name), "plan.json"
+        )
         if not plan_path.exists():
             raise FileNotFoundError(f"Proyecto '{project_name}' no encontrado")
         return TopologyPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
@@ -61,7 +64,9 @@ class ProjectRepository:
 
     def delete_project(self, project_name: str) -> bool:
         """Elimina un proyecto."""
-        project_dir = self.base_dir / project_name
+        # rmtree confinado: sin resolve_within, un project_name con ".." borra
+        # recursivamente cualquier directorio de la máquina.
+        project_dir = resolve_within(self.base_dir, safe_name_component(project_name))
         if not project_dir.exists():
             return False
         import shutil
