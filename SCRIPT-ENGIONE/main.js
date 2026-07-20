@@ -187,21 +187,159 @@ function startFileBridge() {
     fileBridgeTick();
 }
 
-/* PENDIENTE (requiere probar con esta V5 + PT abierto):
- * Los comandos interactivos (query, configureIosDevice, getCommandPrompt, save/
- * open, verify) usan funciones NATIVAS de userfunctions.js, asi que ya funcionan
- * por este canal. Pero pt_live_deploy de una topologia NUEVA usa lwAddDevice /
- * lwAddLink, que hoy los inyecta el servidor por HTTP (runtime patches) y NO
- * estan en userfunctions.js. Por el canal de archivo esas dos funciones faltan.
- * Fix pendiente: definir lwAddDevice/lwAddLink/swapLaptopToWireless/
- * configurePcIpv6 en el scope global del Script Engine (aca, codigo propio, sin
- * tocar userfunctions.js), para que ambos canales las tengan y el servidor deje
- * de inyectarlas. Portar desde _RUNTIME_PATCHES_JS del tool_registry. */
+/* Los helpers que el canal de archivo necesita (lwAddDevice/lwAddLink y las
+ * versiones mejoradas de configurePcIp/addModule/etc.) los instala
+ * installMcpHelpers() al arrancar — ver mas abajo. Ambos canales, HTTP y
+ * archivo, ejecutan las mismas versiones, con o sin ventana. */
+
+/* ==================================================================
+ * MCP HELPERS
+ *
+ * Versiones mejoradas de los helpers que el servidor MCP necesita. Antes las
+ * inyectaba por HTTP (runtime patches), asi que solo existian cuando la ventana
+ * estaba abierta. Aca viven en la extension: disponibles para AMBOS canales
+ * (HTTP y archivo), con o sin ventana.
+ *
+ * lwAddDevice / lwAddLink no existen en userfunctions.js — son necesarias para
+ * desplegar una topologia nueva. Las demas sobreescriben a las nativas con
+ * versiones mas robustas (p.ej. configurePcIp que no hardcodea FastEthernet0).
+ *
+ * GLOBAL se captura a nivel de archivo, donde `this` es el objeto global del
+ * Script Engine. installMcpHelpers() se llama desde main(), cuando el resto de
+ * archivos ya cargo, de modo que estas versiones ganan sin importar el orden.
+ * ================================================================== */
+
+var GLOBAL = this;
+
+function installMcpHelpers() {
+    // addModule — power-cycle alrededor de addModule nativo (algunos modulos
+    // fallan si el device esta encendido).
+    GLOBAL.addModule = function (deviceName, slot, model) {
+        var device = ipc.network().getDevice(deviceName);
+        if (!device) { return false; }
+        var hasPower = typeof device.getPower === "function" && typeof device.setPower === "function";
+        var powerState = false;
+        if (hasPower) { powerState = device.getPower(); device.setPower(false); }
+        var moduleType = allModuleTypes[model];
+        var result = device.addModule(slot, moduleType, model);
+        if (hasPower && powerState) {
+            device.setPower(true);
+            if (typeof device.skipBoot === "function") { device.skipBoot(); }
+        }
+        if (result != true) { return false; }
+        return true;
+    };
+
+    // lwAddDevice — crea el device en la vista Logica (visible sin save+reload).
+    // El addDevice global escribe al modelo pero PT genera un auto-nombre
+    // (Router0, Switch1) que renombramos al solicitado.
+    GLOBAL.lwAddDevice = function (name, deviceType, model, x, y) {
+        var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();
+        var autoName = lw.addDevice(deviceType, model, x, y);
+        if (autoName && autoName !== name) {
+            var d = ipc.network().getDevice(autoName);
+            if (d && typeof d.setName === "function") { d.setName(name); }
+        }
+        // Fallback: lw.addDevice falla en silencio para algunos modelos
+        // (Laptop-PT devuelve "" y no crea nada). Si no quedo findable, usamos
+        // el addDevice global, que resuelve por NOMBRE de modelo.
+        if (!ipc.network().getDevice(name)) {
+            try { addDevice(name, model, x, y); } catch (e) {}
+        }
+        return name;
+    };
+
+    // lwAddLink — crea el link en la vista Logica. Cable como string o enum int.
+    GLOBAL.lwAddLink = function (d1, p1, d2, p2, cable) {
+        var CT = {
+            straight: 8100, cross: 8101, crossover: 8101, roll: 8102, fiber: 8103,
+            phone: 8104, cable: 8105, serial: 8106, auto: 8107, console: 8108,
+            wireless: 8109, coaxial: 8110, octal: 8111, cellular: 8112, usb: 8113,
+            custom_io: 8114
+        };
+        var t = (typeof cable === "number") ? cable : (CT[(cable || "auto").toLowerCase()] || 8107);
+        var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();
+        return lw.createLink(d1, p1, d2, p2, t);
+    };
+
+    // configurePcIp — no hardcodea FastEthernet0: busca el primer puerto ethernet
+    // (o Wireless0) iterando getPorts(). Funciona con PC/Server/Laptop.
+    GLOBAL.configurePcIp = function (deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer) {
+        var device = ipc.network().getDevice(deviceName);
+        if (!device) { return false; }
+        var port = null;
+        if (typeof device.getPorts === "function") {
+            var ports = device.getPorts();
+            for (var i = 0; i < ports.length; i++) {
+                var pn = ports[i];
+                if (typeof pn !== "string") { continue; }
+                if (pn.indexOf("Ethernet") >= 0 || pn === "Wireless0") {
+                    var p = device.getPort(pn);
+                    if (p) { port = p; break; }
+                }
+            }
+        }
+        if (!port) { port = device.getPort("FastEthernet0"); }
+        if (!port) { return false; }
+        if (dhcpEnabled === true || dhcpEnabled === false) {
+            if (typeof device.setDhcpFlag === "function") { device.setDhcpFlag(dhcpEnabled); }
+        }
+        if (ipaddress && subnetMask) { port.setIpSubnetMask(ipaddress, subnetMask); }
+        if (defaultGateway) {
+            if (typeof device.setDefaultGateway === "function") { device.setDefaultGateway(defaultGateway); }
+            else if (typeof port.setDefaultGateway === "function") { port.setDefaultGateway(defaultGateway); }
+        }
+        if (dnsServer && typeof port.setDnsServerIp === "function") { port.setDnsServerIp(dnsServer); }
+        return true;
+    };
+
+    // configurePcIpv6 — IPv6 + SLAAC (auto-config por RA) en el primer puerto
+    // ethernet/Wireless0 del host. addIpv6Address falla en HostPort.
+    GLOBAL.configurePcIpv6 = function (deviceName) {
+        var device = ipc.network().getDevice(deviceName);
+        if (!device) { return false; }
+        if (typeof device.getPorts !== "function") { return false; }
+        var ports = device.getPorts();
+        for (var i = 0; i < ports.length; i++) {
+            var pn = ports[i];
+            if (typeof pn !== "string") { continue; }
+            if (pn.indexOf("Ethernet") >= 0 || pn === "Wireless0") {
+                var p = device.getPort(pn);
+                if (p) {
+                    if (typeof p.setIpv6Enabled === "function") { p.setIpv6Enabled(true); }
+                    if (typeof p.setIpv6AddressAutoConfig === "function") { p.setIpv6AddressAutoConfig(true); }
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // swapLaptopToWireless — cambia el NIC ethernet de una laptop por uno
+    // inalambrico (slot "0" -> PT-LAPTOP-NM-1W) para que tenga Wireless0 y
+    // auto-asocie a un AP por SSID default.
+    GLOBAL.swapLaptopToWireless = function (deviceName) {
+        var device = ipc.network().getDevice(deviceName);
+        if (!device) { return false; }
+        var hasPower = typeof device.getPower === "function" && typeof device.setPower === "function";
+        if (hasPower) { device.setPower(false); }
+        try { device.removeModule("0"); } catch (e) {}
+        var result = device.addModule("0", allModuleTypes["PT-LAPTOP-NM-1W"], "PT-LAPTOP-NM-1W");
+        if (hasPower) {
+            device.setPower(true);
+            if (typeof device.skipBoot === "function") { device.skipBoot(); }
+        }
+        return result == true;
+    };
+}
 
 function main() {
     builder = new builder();
     builder.init();
     window = new htmlWindow();
+    // Instala los helpers mejorados antes de arrancar cualquier canal, para que
+    // HTTP y archivo ejecuten exactamente las mismas versiones.
+    installMcpHelpers();
     startBridge();
     // El bridge por archivo corre independiente de la ventana.
     startFileBridge();
