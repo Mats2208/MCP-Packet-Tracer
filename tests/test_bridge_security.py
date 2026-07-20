@@ -121,10 +121,20 @@ def test_loopback_hosts_accepted(bridge):
 
 
 def test_oversized_body_rejected(bridge):
-    status, _, _ = _request(
-        bridge, f"/queue?t={TOKEN}", "POST", body="A" * (MAX_BODY_BYTES + 1)
-    )
-    assert status == 413
+    """Un cuerpo enorme se rechaza SIN leerlo.
+
+    El servidor responde 413 y cierra; como deliberadamente no drena el cuerpo,
+    el cliente puede ver el corte de conexión antes de llegar a leer la
+    respuesta (igual que nginx). Lo que se afirma es la propiedad que importa
+    —no se encoló nada—, no cuál de los dos finales le tocó al cliente.
+    """
+    try:
+        status, _, _ = _request(
+            bridge, f"/queue?t={TOKEN}", "POST", body="A" * (MAX_BODY_BYTES + 1)
+        )
+        assert status == 413
+    except (ConnectionError, OSError):
+        pass
     assert bridge._queue.empty()
 
 

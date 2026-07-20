@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows es la plataforma principal (Packet Tracer, portapapeles vía
+        # clip.exe). Ubuntu corre igual para detectar suposiciones de rutas.
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Run tests
+        # Token fijo para que los tests del bridge no toquen el archivo real
+        # del usuario que corre el runner.
+        env:
+          PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
+        run: python -m pytest -q

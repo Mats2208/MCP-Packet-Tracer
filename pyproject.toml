@@ -18,6 +18,14 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Los tests importan `src.packet_tracer_mcp`. Fijarlo acá evita depender de la
+# inserción implícita de rootdir y garantiza una sola identidad del módulo.
+# Además, un par de tests leen archivos por ruta relativa al repo, así que la
+# suite debe correrse desde la raíz.
+pythonpath = ["."]
+
 [project.scripts]
 pt-mcp = "packet_tracer_mcp.server:main"
 
