@@ -36,6 +36,28 @@ def safe_name_component(name: str, fallback: str = "topology") -> str:
     return cleaned[:_MAX_COMPONENT_LEN]
 
 
+def js_escape(s: str) -> str:
+    """Escapa una string para insertarla en un literal JS.
+
+    Un literal JS no puede cruzar un fin de línea, y JS trata U+2028/U+2029 como
+    tales. Sin escaparlos, un nombre con un salto no "se cuela" como código: rompe
+    el parseo y el comando entero se pierde en silencio dentro del catch del
+    bridge, que es peor que fallar ruidosamente.
+
+    Para construir una llamada entera preferí `json.dumps`; esto es para los
+    casos en que hay que interpolar dentro de un literal ya existente.
+    """
+    return (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def resolve_within(base: Path, *parts: str) -> Path:
     """Resuelve `parts` bajo `base` y verifica que el resultado no se escape.
 

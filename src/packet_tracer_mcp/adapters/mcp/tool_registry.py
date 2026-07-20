@@ -70,6 +70,7 @@ from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.constants import DEFAULT_LAN_BASE, DEFAULT_LINK_BASE
+from ...shared.utils import js_escape
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -1210,9 +1211,9 @@ def register_tools(mcp: FastMCP) -> None:
     # Helpers para tools bidireccionales (send command → wait for result)
     # ------------------------------------------------------------------
 
-    def _js_escape(s: str) -> str:
-        """Escape a string for safe insertion into JS string literals."""
-        return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+    # Definido en shared/utils.py: al vivir dentro de esta closure no habia
+    # forma de testearlo, y es justo la clase de funcion que hay que testear.
+    _js_escape = js_escape
 
     def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
         """Send JS to bridge, injecting reportResult() into scope, and wait for response.
