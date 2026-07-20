@@ -2,19 +2,22 @@
 HTTP Command Bridge for Packet Tracer.
 
 Allows Python to send JavaScript commands to PT via the MCP Control Center
-extension (or a pasted bootstrap snippet). Works by running a local HTTP server
-that the PT webview polls for commands.
+extension. Works by running a local HTTP server that the PT webview polls for
+commands.
 
-SECURITY: every endpoint except /ping and /pair requires the shared token from
+SECURITY: every endpoint except /ping requires the shared token from
 bridge_token.py. Binding to 127.0.0.1 is NOT a security control here — a POST
 with Content-Type text/plain is a CORS-simple request, so any web page open in
 any browser on this host could reach /queue, and PT executes whatever it finds
 there via new Function(). The token is what closes that; see bridge_token.py.
 
+The extension gets the token by reading the token file through PT's Script
+Engine (ipc.systemFileManager), so there is nothing to pair and no window in
+which the secret is served over HTTP.
+
 Usage:
     1. Start the bridge: bridge = PTCommandBridge(); bridge.start()
-    2. The extension pairs once (POST /pair) and stores the token, or the user
-       pastes bootstrap_script() output in Builder Code Editor ONCE
+    2. Open the MCP Control Center in PT — it authenticates on its own
     3. Send commands: bridge.send("addDevice('R1','2911',100,100)")
 """
 
@@ -37,10 +40,6 @@ MAX_BODY_BYTES = 1 << 20
 # Cola acotada: si PT se cuelga, la cola no puede crecer sin techo.
 MAX_QUEUE_ITEMS = 1000
 
-# Ventana de emparejamiento tras arrancar el bridge. La extensión vive en un
-# webview con esquema propio (this-sm:) y no puede leer el token del disco, así
-# que lo pide una vez por HTTP y lo guarda con $putData.
-PAIR_WINDOW_SECONDS = 120.0
 
 
 def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
@@ -68,36 +67,6 @@ def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
     )
 
 
-def bootstrap_script(port: int = DEFAULT_PORT, token: str = "") -> str:
-    """Bootstrap de un solo uso para pegar en Builder Code Editor.
-
-    IMPORTANTE: executeCode() de PTBuilder elimina los saltos de línea del código
-    antes de pasarlo al script engine, así que el JS interno tiene que funcionar
-    sin ellos. Tampoco se usan comentarios // (se comerían el resto de la línea).
-
-    El token viaja como query param y no como header a propósito: así la petición
-    sigue siendo CORS-simple y mantiene exactamente la misma forma que las que ya
-    funcionan hoy. Un header nuevo dispararía preflight, cuyo comportamiento en el
-    webview de PT no está verificado.
-    """
-    inner_js = (
-        "setInterval(function(){"
-        "var x=new XMLHttpRequest();"
-        f"x.open('GET','http://127.0.0.1:{port}/next?t={token}',true);"
-        "x.onload=function(){"
-        "if(x.status===200&&x.responseText){"
-        "try{$se('runCode',x.responseText)}catch(e){}"
-        "}};"
-        "x.onerror=function(){};"
-        "x.send()"
-        "},500)"
-    )
-    return (
-        f'/* PT-MCP Bridge - paste in Builder Code Editor and click Run */\n'
-        f'window.webview.evaluateJavaScriptAsync("{inner_js}");\n'
-        f'{report_result_js(port, token)}\n'
-    )
-
 
 class PTCommandBridge:
     """HTTP bridge between Python and Packet Tracer's webview extension."""
@@ -119,23 +88,7 @@ class PTCommandBridge:
         # Lo que PT manda realmente en su primer poll autenticado. Es la única
         # forma de saber qué Origin usa el webview sin adivinar.
         self._client_headers: dict[str, str] = {}
-        self._pair_deadline: float = time.time() + PAIR_WINDOW_SECONDS
-        self._paired: bool = False
 
-    # -- emparejamiento -------------------------------------------------
-
-    def open_pairing(self, seconds: float = PAIR_WINDOW_SECONDS) -> float:
-        """Reabre la ventana de emparejamiento. Devuelve el deadline."""
-        self._pair_deadline = time.time() + seconds
-        return self._pair_deadline
-
-    @property
-    def pairing_open(self) -> bool:
-        return time.time() < self._pair_deadline
-
-    @property
-    def pairing_seconds_left(self) -> float:
-        return max(0.0, self._pair_deadline - time.time())
 
     # -- estado ---------------------------------------------------------
 
@@ -162,9 +115,6 @@ class PTCommandBridge:
             "unauth_recent": self.saw_recent_unauthorized,
             "unauth_count": self._unauth_count,
             "unauth_paths": sorted(self._unauth_paths),
-            "paired": self._paired,
-            "pairing_open": self.pairing_open,
-            "pairing_seconds_left": round(self.pairing_seconds_left, 1),
             "client_headers": dict(self._client_headers),
             "token_id": self.token_id,
         }
@@ -305,19 +255,6 @@ class PTCommandBridge:
             def do_POST(self):
                 path, qs = self._parse()
 
-                if path == "/pair":
-                    # Única vía por la que el token sale del proceso. Acotada en
-                    # el tiempo y solo desde loopback.
-                    if not self._host_ok():
-                        self._deny(403)
-                        return
-                    if not bridge.pairing_open:
-                        self._deny(403)
-                        return
-                    bridge._paired = True
-                    self._respond(200, json.dumps({"token": bridge.token}))
-                    return
-
                 if not self._authorized(qs):
                     self._deny(401, path)
                     return
@@ -410,9 +347,6 @@ class PTCommandBridge:
         except Empty:
             return None
 
-    def bootstrap_script(self) -> str:
-        """Bootstrap con el puerto y token de esta instancia."""
-        return bootstrap_script(self.port, self.token)
 
 
 def generate_topology_js(

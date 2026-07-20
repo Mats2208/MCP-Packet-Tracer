@@ -13,7 +13,6 @@ import pytest
 
 from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
     PTCommandBridge,
-    bootstrap_script,
     MAX_BODY_BYTES,
 )
 
@@ -188,23 +187,6 @@ def test_routes_still_resolve_with_query_string(bridge):
     assert status == 200
 
 
-# --- Emparejamiento --------------------------------------------------------
-
-
-def test_pairing_serves_token_only_inside_window(bridge):
-    status, body, _ = _request(bridge, "/pair", "POST", body="")
-    assert status == 200
-    assert json.loads(body)["token"] == TOKEN
-
-    bridge._pair_deadline = 0  # ventana cerrada
-    assert _request(bridge, "/pair", "POST", body="")[0] == 403
-
-
-def test_pairing_rejects_foreign_host(bridge):
-    status, _, _ = _request(
-        bridge, "/pair", "POST", body="", host="evil.example:1234"
-    )
-    assert status == 403
 
 
 # --- Diagnóstico -----------------------------------------------------------
@@ -252,13 +234,13 @@ def test_importing_the_server_does_not_open_a_socket():
     assert out.stdout.strip() == "0", out.stderr
 
 
-def test_bootstrap_carries_token_and_survives_newline_stripping():
-    """PT elimina los \\n del código, así que el JS interno no puede depender de ellos."""
-    script = bootstrap_script(54321, TOKEN)
-    assert f"t={TOKEN}" in script
-    assert "try{$se('runCode',x.responseText)}catch(e){}" in script
-    assert "function reportResult(d)" in script
+def test_report_result_js_carries_token_and_stays_single_line():
+    """PT elimina los \\n del código, así que el JS inyectado no puede depender de ellos."""
+    from src.packet_tracer_mcp.infrastructure.execution.live_bridge import (
+        report_result_js,
+    )
 
-    # El JS que se inyecta en el webview va en una sola línea.
-    inner = script.split('evaluateJavaScriptAsync("')[1].split('");')[0]
-    assert "\n" not in inner
+    js = report_result_js(54321, TOKEN)
+    assert f"/result?t={TOKEN}" in js
+    assert "function reportResult(d)" in js
+    assert "\n" not in js

@@ -39,18 +39,14 @@ That's it — the module is now registered.
     500 ms and runs commands via the Script Engine), so it connects on its own. The
     Editor / Terminal / Status / Quick Build tabs let you watch and drive it live.
 
-!!! info "Pairing (once per machine)"
-    Since **v0.6.0** the bridge requires a token unique to your machine — without it
-    any web page you visited while PT was open could inject and run code inside
-    Packet Tracer. The extension pairs itself the first time the window opens and
-    stores the token, so normally you do nothing.
+!!! info "Authentication (nothing to do)"
+    Since **v0.6.0** the bridge requires a token unique to your machine — without
+    it, any web page you visited while PT was open could inject and run code inside
+    Packet Tracer. The MCP server creates the token on first run and the extension
+    reads it through PT's Script Engine. Nothing to configure, nothing to paste.
 
-    If the log says the bridge rejected the token, run `pt_pair_bridge` in your MCP
-    client and press **Pair with MCP server** in the extension window. Extensions
-    built before V5.0 cannot authenticate and must be updated.
-
-    The bootstrap snippet shown in the extension now contains that token. Treat it
-    like a password: keep it out of issues, chats and screen shares.
+    If the Terminal tab reports that no token was found, start the MCP server once
+    and reopen the window. Extensions built before V5.0 cannot authenticate.
 
 !!! tip "Keep it responsive"
     If Packet Tracer feels sluggish while the window is in the background, **minimize**

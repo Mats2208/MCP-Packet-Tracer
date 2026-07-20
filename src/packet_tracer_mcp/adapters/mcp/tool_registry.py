@@ -55,11 +55,10 @@ from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import (
-    PTCommandBridge, DEFAULT_PORT, bootstrap_script, report_result_js,
+    PTCommandBridge, DEFAULT_PORT, report_result_js,
 )
 from ...infrastructure.execution.bridge_token import (
-    get_bridge_token, token_fingerprint, token_path, token_was_rotated,
-    token_is_ephemeral,
+    get_bridge_token, token_fingerprint, token_was_rotated, token_is_ephemeral,
 )
 from ...infrastructure.execution.live_executor import LiveExecutor
 from ...infrastructure.persistence.project_repository import ProjectRepository
@@ -954,8 +953,6 @@ def register_tools(mcp: FastMCP) -> None:
                 f"Bridge activo en http://127.0.0.1:{_BRIDGE_PORT} pero PT NO esta conectado.\n\n"
                 "Si usas la extension MCP Control Center: abrela en PT "
                 "(Extensions > MCP BUILDER) y pulsa 'Pair with MCP server'.\n"
-                "Si no, llama a pt_get_bootstrap y pega el resultado en "
-                "Builder Code Editor.\n\n"
                 "Luego llama a pt_live_deploy nuevamente.\n\n"
                 "IMPORTANTE: XMLHttpRequest NO existe en el Script Engine de PT.\n"
                 "El bootstrap inyecta un polling loop en el webview (QWebEngine) "
@@ -1103,8 +1100,6 @@ def register_tools(mcp: FastMCP) -> None:
             "  - MCP Control Center extension: update to V5.0+ from\n"
             "    https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest\n"
             "    then click 'Pair with MCP server' in the extension window.\n"
-            "  - Pasted bootstrap: run pt_get_bootstrap, replace the old snippet\n"
-            "    in Builder Code Editor with the new one, and click Run.\n\n"
             "The token is stored on this machine and reused across restarts, so "
             "you only do this once."
         )
@@ -1160,51 +1155,7 @@ def register_tools(mcp: FastMCP) -> None:
             f"Bridge active at http://127.0.0.1:{_BRIDGE_PORT} but PT is NOT connected.\n\n"
             "If you use the MCP Control Center extension, open it in Packet Tracer "
             "(Extensions > MCP BUILDER) and click 'Pair with MCP server'.\n"
-            "Otherwise run pt_get_bootstrap and paste the result into "
-            "Builder Code Editor." + warn
-        )
-
-    @mcp.tool()
-    def pt_get_bootstrap() -> str:
-        """
-        Devuelve el snippet de arranque para pegar en Builder Code Editor.
-
-        SECRETO: el snippet contiene un token unico de esta maquina. No lo pegues
-        en issues, chats ni capturas de pantalla. Solo hace falta pegarlo una vez.
-        """
-        _ensure_bridge()
-        return (
-            "Paste this into Extensions > Builder Code Editor and click Run.\n"
-            "It contains a secret unique to this machine — do not share it.\n\n"
-            + bootstrap_script(_BRIDGE_PORT, get_bridge_token())
-            + f"\n\nToken file: {token_path()}"
-        )
-
-    @mcp.tool()
-    def pt_pair_bridge(seconds: float = 120.0) -> str:
-        """
-        Abre una ventana para que la extension de PT se empareje con el bridge.
-
-        La extension corre en un webview con esquema propio y no puede leer el
-        token del disco, asi que lo pide una vez por HTTP y lo guarda. Tras
-        emparejar, sobrevive reinicios de PT y del servidor MCP.
-
-        Parametros:
-        - seconds: duracion de la ventana (default 120).
-        """
-        if not _ensure_bridge():
-            return f"Could not start bridge on :{_BRIDGE_PORT}."
-        if _bridge_instance is None:
-            return (
-                "The bridge on this port was started by another process; "
-                "pair from the instance that owns it."
-            )
-        _bridge_instance.open_pairing(seconds)
-        return (
-            f"Pairing window open for {seconds:.0f}s.\n"
-            "In Packet Tracer: Extensions > MCP BUILDER > 'Pair with MCP server'.\n"
-            "Only one client can pair per window; if the extension still reports "
-            "'not paired' afterwards, something else claimed it — reopen and retry."
+            + warn
         )
 
     # ------------------------------------------------------------------

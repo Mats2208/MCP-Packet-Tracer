@@ -1067,13 +1067,11 @@
                         snippet below if you prefer driving PT from the Builder Code Editor.
                     </p>
                     <p class="bootstrap-desc">
-                        <strong>Pairing:</strong> the bridge requires a token unique to this
-                        machine. Pairing happens automatically when this window opens. If the
-                        log says the bridge rejected the token, run <code>pt_pair_bridge</code>
-                        in your MCP client and press the button below.
-                    </p>
-                    <p class="bootstrap-desc">
-                        <button class="btn btn-accent" onclick="pairWithServer()">Pair with MCP server</button>
+                        <strong>Authentication:</strong> the bridge requires a token unique to
+                        this machine, created the first time the MCP server runs. This window
+                        reads it automatically through the Script Engine — nothing to configure.
+                        If the Terminal tab says no token was found, start the MCP server once
+                        and reopen this window.
                     </p>
                     <p class="bootstrap-desc">
                         The snippet contains that token — treat it like a password and keep it

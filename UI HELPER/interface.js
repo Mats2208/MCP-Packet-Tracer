@@ -64,59 +64,53 @@ function refreshBootstrapSnippet() {
     if (el) el.textContent = bootstrapSnippet();
 }
 
-/* Pide el token al servidor MCP. Solo funciona mientras la ventana de
-   emparejamiento esté abierta (pt_pair_bridge, o los primeros segundos tras
-   arrancar el servidor). */
-function pairWithServer(onDone) {
+/* Carga el token desde el Script Engine, que lo lee del disco.
+   El webview no puede tocar archivos; el Script Engine si. $se() devuelve una
+   Promise. No hay emparejamiento ni accion del usuario: la extension arranca y
+   funciona. */
+function loadToken(onDone) {
     try {
-        var x = new XMLHttpRequest();
-        x.open("POST", BRIDGE_BASE + "/pair", true);
-        x.timeout = 3000;
-        x.onload = function() {
-            if (x.status === 200) {
-                try {
-                    var tok = JSON.parse(x.responseText).token;
-                    if (tok) {
-                        S_TOKEN = tok;
-                        try { $putData("mcp_token", tok); } catch(e) {}
-                        refreshBootstrapSnippet();
-                        log("Paired with MCP server — token stored", "ok");
-                        if (onDone) onDone(true);
-                        return;
-                    }
-                } catch(e) {}
+        $se("getMcpToken").then(function(tok) {
+            if (tok) {
+                S_TOKEN = String(tok);
+                refreshBootstrapSnippet();
+                log("MCP token loaded — bridge authenticated", "ok");
+                if (onDone) onDone(true);
+            } else {
+                reportMissingToken();
+                if (onDone) onDone(false);
             }
-            log("Pairing refused. Run pt_pair_bridge in your MCP client, " +
-                "then click 'Pair with MCP server' again.", "warn");
+        }).catch(function(e) {
+            log("Could not read the MCP token: " + e, "err");
             if (onDone) onDone(false);
-        };
-        x.onerror = x.ontimeout = function() {
-            log("Pairing failed: bridge unreachable at :54321", "err");
-            if (onDone) onDone(false);
-        };
-        x.send("");
+        });
     } catch(e) {
+        log("Script Engine unavailable — cannot read the MCP token", "err");
         if (onDone) onDone(false);
     }
+}
+
+/* Sin token el bridge devuelve 401 en todo. Decir DONDE se busco, porque la
+   causa casi siempre es que el servidor MCP nunca corrio en esta maquina. */
+function reportMissingToken() {
+    log("No MCP token found on this machine.", "err");
+    log("Start the MCP server once (it creates the token on first run), " +
+        "then reopen this window.", "warn");
+    try {
+        $se("getMcpTokenInfo").then(function(info) {
+            var d = JSON.parse(info);
+            (d.searched || []).forEach(function(p) { log("  looked in: " + p, "info"); });
+        }).catch(function() {});
+    } catch(e) {}
 }
 
 // ------------------------------------------------------------------ Init ---
 
 function init() {
-    // Token: se carga el guardado y, si no hay, se intenta emparejar en silencio.
-    // Recién arrancado el servidor MCP la ventana está abierta, así que el caso
-    // normal es que esto funcione sin que el usuario haga nada.
-    try {
-        $getData("mcp_token").then(function(tok) {
-            if (tok) {
-                S_TOKEN = tok;
-                refreshBootstrapSnippet();
-            } else {
-                pairWithServer();
-            }
-        }).catch(function() { pairWithServer(); });
-    } catch(e) { pairWithServer(); }
-
+    // El token se lee del disco a través del Script Engine en cada arranque.
+    // No se cachea con $putData a propósito: si el servidor MCP lo rota, la
+    // copia cacheada quedaría obsoleta y el fallo sería invisible.
+    loadToken();
     refreshBootstrapSnippet();
 
     // Load persisted code
@@ -394,18 +388,16 @@ function setBridgeDown() {
     updateConnectionUI();
 }
 
-/* Un 401 significa que el bridge está pero nuestro token no sirve. Se reintenta
-   emparejar, con un tope para no golpear el endpoint en bucle si la ventana
-   está cerrada. */
-var _pairRetries = 0;
+/* Un 401 significa que el bridge está pero nuestro token no sirve — típicamente
+   porque el servidor lo rotó. Se relee del disco, con un tope para no entrar en
+   bucle si el archivo realmente no está. */
+var _tokenReloads = 0;
 function handleUnauthorized() {
-    if (_pairRetries >= 3) return;
-    _pairRetries++;
-    log("Bridge rejected our token — attempting to pair…", "warn");
-    pairWithServer(function(ok) {
-        if (ok) _pairRetries = 0;
-        else log("Still unpaired. Run pt_pair_bridge in your MCP client, " +
-                 "then press 'Pair with MCP server'.", "err");
+    if (_tokenReloads >= 3) return;
+    _tokenReloads++;
+    log("Bridge rejected our token — re-reading it from disk…", "warn");
+    loadToken(function(ok) {
+        if (ok) _tokenReloads = 0;
     });
 }
 

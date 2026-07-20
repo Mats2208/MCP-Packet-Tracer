@@ -77,7 +77,7 @@ class PTCommandBridge:
     def start() → None
     def send(js_code) → bool
     def send_and_wait(js_code, timeout) → str | None
-    def bootstrap_script() → str
+    def report_result_js(port, token) → str
     @property
     def is_connected → bool
 ```

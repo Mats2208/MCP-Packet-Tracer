@@ -75,12 +75,10 @@ What actually protects it is a shared secret:
 - `/ping` is unauthenticated on purpose, so port conflicts can be diagnosed
   before you know who owns the port. It returns only a one-way fingerprint of
   the token, never the token.
-- `/pair` hands the token to the Packet Tracer extension once, inside a
-  time-boxed window, because that extension runs under a `this-sm:` origin and
-  cannot read the token file. **Known residual risk:** during that window, a
-  malicious local client could claim the token first. The window is short and
-  user-initiated, and the extension will report that it is still unpaired if it
-  lost the race.
+- The Packet Tracer extension reads the token **from the file**, through PT's
+  Script Engine (`ipc.systemFileManager`). The token is never served over HTTP
+  and there is no pairing step, so there is no window in which another local
+  client could claim it.
 - `Host` is validated against loopback, which blocks DNS rebinding.
 
 You can override the token with `PT_MCP_BRIDGE_TOKEN` for tests and CI.
