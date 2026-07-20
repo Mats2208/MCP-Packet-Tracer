@@ -60,6 +60,7 @@ from ...infrastructure.execution.live_bridge import (
 from ...infrastructure.execution.bridge_token import (
     get_bridge_token, token_fingerprint, token_was_rotated, token_is_ephemeral,
 )
+from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.live_executor import LiveExecutor
 from ...infrastructure.persistence.project_repository import ProjectRepository
 from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
@@ -923,6 +924,33 @@ def register_tools(mcp: FastMCP) -> None:
     # socket aunque nadie fuera a usar el despliegue en vivo, ampliando sin
     # motivo la ventana en la que el puerto está escuchando.
 
+    # ------------------------------------------------------------------
+    # ENRUTADO DE CANAL: HTTP (ventana abierta) o archivo (ventana cerrada)
+    # ------------------------------------------------------------------
+    # Coexisten. Se elige UN canal por comando, nunca los dos, para que nada se
+    # ejecute por partida doble. HTTP es primario cuando la ventana está abierta
+    # (el flujo probado); el archivo toma el relevo cuando el Script Engine está
+    # vivo pero la ventana cerrada.
+    _file_bridge = FileBridge()
+
+    def _pick_channel() -> str:
+        """'http' | 'file' | '' según qué ejecutor esté disponible."""
+        if _bridge_is_up() and _bridge_pt_connected():
+            return "http"
+        if _file_bridge.pt_alive():
+            return "file"
+        return ""
+
+    def _channel_send(payload: str) -> bool:
+        """Envía fire-and-forget por el canal disponible."""
+        ch = _pick_channel()
+        if ch == "http":
+            status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
+            return status == 200
+        if ch == "file":
+            return _file_bridge.send(payload)
+        return False
+
     @mcp.tool()
     def pt_live_deploy(
         plan_json: str,
@@ -946,28 +974,13 @@ def register_tools(mcp: FastMCP) -> None:
         """
         if command_delay < 0.0:
             command_delay = 0.0
-        if not _ensure_bridge():
-            return (
-                "No se pudo iniciar el bridge HTTP en :54321.\n"
-                "Puerto bloqueado por otro proceso. Libera el puerto e intenta de nuevo."
-            )
 
-        if not _bridge_pt_connected():
-            if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
-                return _stale_client_message()
-            return (
-                f"Bridge activo en http://127.0.0.1:{_BRIDGE_PORT} pero PT NO esta conectado.\n\n"
-                "Si usas la extension MCP Control Center: abrela en PT "
-                "(Extensions > MCP BUILDER) y pulsa 'Pair with MCP server'.\n"
-                "Luego llama a pt_live_deploy nuevamente.\n\n"
-                "IMPORTANTE: XMLHttpRequest NO existe en el Script Engine de PT.\n"
-                "El bootstrap inyecta un polling loop en el webview (QWebEngine) "
-                "que SI tiene XMLHttpRequest."
-            )
-
-        # Asegurar que los runtime patches estén aplicados antes de cualquier deploy.
-        # Esto evita que configurePcIp/configureIosDevice/addModule en hosts maten el bootstrap.
-        _ensure_pt_patches()
+        # Requiere un canal a PT (HTTP con ventana abierta, o archivo con el
+        # Script Engine vivo). _check_bridge arranca el HTTP y aplica los patches
+        # por el canal correcto.
+        err = _check_bridge()
+        if err:
+            return err
 
         plan = TopologyPlan.model_validate_json(plan_json)
         script = generate_executable_script(plan)
@@ -983,8 +996,7 @@ def register_tools(mcp: FastMCP) -> None:
         for i in range(0, len(commands), _DEPLOY_BATCH):
             chunk = commands[i:i + _DEPLOY_BATCH]
             payload = "\n".join(_js_guard(c) for c in chunk)
-            status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
-            if status == 200:
+            if _channel_send(payload):
                 sent += len(chunk)
             if command_delay:
                 time.sleep(command_delay)
@@ -1337,39 +1349,55 @@ def register_tools(mcp: FastMCP) -> None:
     _js_escape = js_escape
 
     def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
-        """Send JS to bridge, injecting reportResult() into scope, and wait for response.
+        """Manda JS y espera el resultado, por el canal disponible.
 
-        El js_call se envuelve en un try/catch a nivel Script Engine: si lanza una
-        excepción no capturada (p.ej. una API inexistente), se reporta como
+        El js_call se envuelve en try/catch: un error no capturado se reporta como
         'PT_ERROR: ...' vía reportResult en vez de abrir un modal que mate el bridge.
+
+        HTTP y archivo difieren en cómo llega reportResult, así que el envoltorio
+        se arma distinto por canal:
+        - HTTP: report_result_js define un reportResult que hace XHR a /result.
+        - archivo: el Script Engine inyecta un reportResult local que captura el
+          valor y lo escribe al res; acá se manda el js "crudo" con su try/catch.
         """
-        wrapped = (
-            report_result_js(_BRIDGE_PORT, get_bridge_token())
-            + ";try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+        ch = _pick_channel()
+        guarded = (
+            "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
-        status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
-        if status_post != 200:
-            return None
-        status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
-        if status_get == 200:
-            return body
+        if ch == "http":
+            wrapped = report_result_js(_BRIDGE_PORT, get_bridge_token()) + ";" + guarded
+            status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
+            if status_post != 200:
+                return None
+            status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
+            return body if status_get == 200 else None
+        if ch == "file":
+            return _file_bridge.send_and_wait(guarded, timeout=timeout)
         return None
 
     def _check_bridge() -> str | None:
-        """Check bridge+PT connectivity. Returns error message or None if OK.
+        """Verifica que haya un canal a PT (HTTP o archivo). Mensaje de error o None.
 
-        Si PT está conectado, también garantiza que los runtime patches estén
-        aplicados (idempotente — solo envía la primera vez por conexión).
+        Si PT está por HTTP, garantiza los runtime patches (idempotente). Por el
+        canal de archivo los patches viajan con cada comando envuelto, así que no
+        hace falta el paso aparte.
         """
-        if not _ensure_bridge():
-            return "Could not start bridge on :54321."
-        if not _bridge_pt_connected():
-            return (
-                "Bridge active but PT is not connected.\n"
-                "Run the bootstrap in Builder Code Editor."
-            )
-        _ensure_pt_patches()
-        return None
+        ch = _pick_channel()
+        if ch == "http":
+            _ensure_pt_patches()
+            return None
+        if ch == "file":
+            return None
+        # Ningún canal vivo: arrancar el HTTP por si la ventana está por abrirse.
+        _ensure_bridge()
+        if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
+            return _stale_client_message()
+        return (
+            "Packet Tracer no está conectado por ningún canal.\n"
+            "Abrí la extensión MCP Control Center en PT (Extensions > MCP BUILDER). "
+            "Con la ventana abierta usa HTTP; si la cerrás, el canal por archivo "
+            "toma el relevo mientras PT siga abierto."
+        )
 
     # ------------------------------------------------------------------
     # QUERY / INTERACT with existing topology in PT
