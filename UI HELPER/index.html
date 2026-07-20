@@ -1063,7 +1063,21 @@
                 <div class="bootstrap-section">
                     <div class="section-title">Bootstrap Snippet</div>
                     <p class="bootstrap-desc">
-                        Paste this in PT <strong>Extensions → Builder Code Editor</strong> and click <strong>Run</strong> to start the polling loop.
+                        This window already polls the bridge on its own — you only need the
+                        snippet below if you prefer driving PT from the Builder Code Editor.
+                    </p>
+                    <p class="bootstrap-desc">
+                        <strong>Pairing:</strong> the bridge requires a token unique to this
+                        machine. Pairing happens automatically when this window opens. If the
+                        log says the bridge rejected the token, run <code>pt_pair_bridge</code>
+                        in your MCP client and press the button below.
+                    </p>
+                    <p class="bootstrap-desc">
+                        <button class="btn btn-accent" onclick="pairWithServer()">Pair with MCP server</button>
+                    </p>
+                    <p class="bootstrap-desc">
+                        The snippet contains that token — treat it like a password and keep it
+                        out of issues, chats and screen shares.
                     </p>
                     <div class="snippet-wrap">
                         <div class="snippet-code" id="bootstrapSnippet"></div>

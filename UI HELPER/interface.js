@@ -34,20 +34,90 @@ var S = {
     _saveTimer:    null,
 };
 
-var BOOTSTRAP_SNIPPET =
-    '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync(' +
-    '"setInterval(function(){var x=new XMLHttpRequest();' +
-    "x.open('GET','http://127.0.0.1:54321/next',true);" +
-    'x.onload=function(){if(x.status===200&&x.responseText)' +
-    "{$se('runCode',x.responseText)}};x.onerror=function(){};" +
-    'x.send()},500)");';
+var BRIDGE_BASE = "http://127.0.0.1:54321";
+
+// Token compartido con el servidor MCP. Este webview corre bajo el esquema
+// this-sm: y no tiene acceso al sistema de archivos, así que no puede leer el
+// token del disco: lo pide una vez por POST /pair y lo guarda con $putData,
+// que sobrevive a reinicios de Packet Tracer.
+var S_TOKEN = "";
+
+function bridgeUrl(path) {
+    return BRIDGE_BASE + path + (S_TOKEN ? "?t=" + encodeURIComponent(S_TOKEN) : "");
+}
+
+function bootstrapSnippet() {
+    var q = encodeURIComponent(S_TOKEN);
+    return '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync(' +
+        '"setInterval(function(){var x=new XMLHttpRequest();' +
+        "x.open('GET','http://127.0.0.1:54321/next?t=" + q + "',true);" +
+        'x.onload=function(){if(x.status===200&&x.responseText)' +
+        // try/catch: sin él, un error dentro de runCode abre un modal de PT que
+        // congela el webview y mata el polling. Las otras copias del bootstrap
+        // ya lo tenían; esta se había quedado atrás.
+        "{try{$se('runCode',x.responseText)}catch(e){}}};x.onerror=function(){};" +
+        'x.send()},500)");';
+}
+
+function refreshBootstrapSnippet() {
+    var el = document.getElementById("bootstrapSnippet");
+    if (el) el.textContent = bootstrapSnippet();
+}
+
+/* Pide el token al servidor MCP. Solo funciona mientras la ventana de
+   emparejamiento esté abierta (pt_pair_bridge, o los primeros segundos tras
+   arrancar el servidor). */
+function pairWithServer(onDone) {
+    try {
+        var x = new XMLHttpRequest();
+        x.open("POST", BRIDGE_BASE + "/pair", true);
+        x.timeout = 3000;
+        x.onload = function() {
+            if (x.status === 200) {
+                try {
+                    var tok = JSON.parse(x.responseText).token;
+                    if (tok) {
+                        S_TOKEN = tok;
+                        try { $putData("mcp_token", tok); } catch(e) {}
+                        refreshBootstrapSnippet();
+                        log("Paired with MCP server — token stored", "ok");
+                        if (onDone) onDone(true);
+                        return;
+                    }
+                } catch(e) {}
+            }
+            log("Pairing refused. Run pt_pair_bridge in your MCP client, " +
+                "then click 'Pair with MCP server' again.", "warn");
+            if (onDone) onDone(false);
+        };
+        x.onerror = x.ontimeout = function() {
+            log("Pairing failed: bridge unreachable at :54321", "err");
+            if (onDone) onDone(false);
+        };
+        x.send("");
+    } catch(e) {
+        if (onDone) onDone(false);
+    }
+}
 
 // ------------------------------------------------------------------ Init ---
 
 function init() {
-    // Show bootstrap snippet
-    var el = document.getElementById("bootstrapSnippet");
-    if (el) el.textContent = BOOTSTRAP_SNIPPET;
+    // Token: se carga el guardado y, si no hay, se intenta emparejar en silencio.
+    // Recién arrancado el servidor MCP la ventana está abierta, así que el caso
+    // normal es que esto funcione sin que el usuario haga nada.
+    try {
+        $getData("mcp_token").then(function(tok) {
+            if (tok) {
+                S_TOKEN = tok;
+                refreshBootstrapSnippet();
+            } else {
+                pairWithServer();
+            }
+        }).catch(function() { pairWithServer(); });
+    } catch(e) { pairWithServer(); }
+
+    refreshBootstrapSnippet();
 
     // Load persisted code
     try {
@@ -271,9 +341,16 @@ function exportLogs() {
 function pollBridgeStatus() {
     try {
         var x = new XMLHttpRequest();
-        x.open("GET", "http://127.0.0.1:54321/status", true);
+        x.open("GET", bridgeUrl("/status"), true);
         x.timeout = 2000;
         x.onload = function() {
+            if (x.status === 401) {
+                // El bridge está vivo pero no nos reconoce: token ausente,
+                // caducado o rotado. Reintentar el emparejamiento una vez.
+                handleUnauthorized();
+                setBridgeDown();
+                return;
+            }
             if (x.status === 200) {
                 try {
                     var data = JSON.parse(x.responseText);
@@ -317,13 +394,29 @@ function setBridgeDown() {
     updateConnectionUI();
 }
 
+/* Un 401 significa que el bridge está pero nuestro token no sirve. Se reintenta
+   emparejar, con un tope para no golpear el endpoint en bucle si la ventana
+   está cerrada. */
+var _pairRetries = 0;
+function handleUnauthorized() {
+    if (_pairRetries >= 3) return;
+    _pairRetries++;
+    log("Bridge rejected our token — attempting to pair…", "warn");
+    pairWithServer(function(ok) {
+        if (ok) _pairRetries = 0;
+        else log("Still unpaired. Run pt_pair_bridge in your MCP client, " +
+                 "then press 'Pair with MCP server'.", "err");
+    });
+}
+
 function pollCommands() {
     if (!S.bridgeUp) return;
     try {
         var x = new XMLHttpRequest();
-        x.open("GET", "http://127.0.0.1:54321/next", true);
+        x.open("GET", bridgeUrl("/next"), true);
         x.timeout = 1000;
         x.onload = function() {
+            if (x.status === 401) { handleUnauthorized(); return; }
             if (x.status === 200 && x.responseText) {
                 var cmd = x.responseText;
                 var preview = cmd.length > 120 ? cmd.substring(0, 120) + "…" : cmd;
@@ -510,7 +603,7 @@ function executeCode() {
         if (!cmd.endsWith(";")) cmd += ";";
         try {
             var x = new XMLHttpRequest();
-            x.open("POST", "http://127.0.0.1:54321/queue", false);
+            x.open("POST", bridgeUrl("/queue"), false);
             x.setRequestHeader("Content-Type", "text/plain");
             x.send(cmd);
             if (x.status === 200) sent++;
@@ -638,7 +731,7 @@ document.addEventListener("keydown", function(e) {
 // -------------------------------------------------------- Bootstrap snippet -
 
 function copyBootstrap() {
-    navigator.clipboard.writeText(BOOTSTRAP_SNIPPET).then(function() {
+    navigator.clipboard.writeText(bootstrapSnippet()).then(function() {
         log("Bootstrap snippet copied to clipboard", "ok");
     }).catch(function(e) {
         log("Failed to copy: " + e, "err");
@@ -1135,7 +1228,7 @@ function quickBuild() {
     lines.forEach(function(line) {
         try {
             var x = new XMLHttpRequest();
-            x.open("POST", "http://127.0.0.1:54321/queue", false);  // sync for simplicity
+            x.open("POST", bridgeUrl("/queue"), false);  // sync for simplicity
             x.setRequestHeader("Content-Type", "text/plain");
             x.send(line);
             if (x.status === 200) sent++;
