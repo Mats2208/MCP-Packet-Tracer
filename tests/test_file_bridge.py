@@ -108,6 +108,22 @@ def test_pt_alive_reflects_heartbeat(bridge_dir):
     assert not fb.pt_alive()
 
 
+def test_newlines_are_written_as_exact_bytes(bridge_dir):
+    """Regresión: en Windows write_text traducía \\n → \\r\\n, y un CR/LF real
+    dentro de un string literal JS es SyntaxError. Un configureIosDevice con
+    saltos de línea llegaba corrupto al Script Engine. El req debe tener los
+    bytes EXACTOS del comando."""
+    fb = FileBridge(bridge_dir)
+    fb._ensure()
+    payload = 'configureIosDevice("R1","enable\nhostname R1\nend");'
+    target = bridge_dir / "probe.js"
+    fb._write_atomic(target, payload)
+
+    raw = target.read_bytes()
+    assert b"\r\n" not in raw, "el \\n se tradujo a \\r\\n — corrompe strings JS"
+    assert raw == payload.encode("utf-8"), "los bytes no son exactos"
+
+
 def test_no_partial_reads_under_concurrency(bridge_dir):
     """La escritura atómica: el SE nunca ve un req a medio escribir.
 

@@ -87,8 +87,13 @@ class FileBridge:
     def _write_atomic(self, path: Path, text: str) -> None:
         # tmp + replace: el Script Engine, que lista el directorio, nunca ve un
         # archivo a medio escribir (replace es atómico dentro del volumen).
+        #
+        # Bytes EXACTOS: escribir en binario, no write_text. En Windows el modo
+        # texto traduce \n -> \r\n, y un CR/LF real dentro de un string literal
+        # JS es SyntaxError. El comando (p.ej. configureIosDevice con \n entre
+        # líneas de CLI) debe llegar al Script Engine tal cual se generó.
         tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
+        tmp.write_bytes(text.encode("utf-8"))
         os.replace(tmp, path)
 
     def send(self, js_code: str) -> bool:
