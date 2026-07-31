@@ -135,12 +135,16 @@ them in real time, which is what makes a step-by-step trace possible.
           send an ARP request for that IP address and buffers this packet.
     ```
 
-!!! warning "Originating a PDU from the API is not supported"
-    Packet Tracer 9's `Simulation.createFrameInstance` exists but rejects every
-    argument shape tried, and no `addSimplePdu` is exposed on the workspace,
-    logical workspace or simulation objects in this build. So there is no
-    `pt_send_pdu`. Generate traffic the way a user would — `pt_verify_connectivity`
-    runs a real ping — and then read the trace.
+!!! warning "There is no `pt_send_pdu` — the API can't originate a packet"
+    `Simulation.createFrameInstance(Device, TrafficType, int, QString)` does
+    succeed, and `finalizeFrameInstance` accepts the result, but the event list
+    stays empty. Per Cisco's own reference, `FrameInstance` "holds traffic
+    details" and pairs with `addDecision(...)` — it is how an **extension
+    implementing its own protocol reports its traffic** into the simulation
+    panel, not a way to push a PDU through a device's stack. The GUI's *Add
+    Simple PDU* is not exposed over IPC (`addSimplePdu` exists on no object).
+    Generate traffic the way a user would — `pt_verify_connectivity` runs a real
+    ping — and then read the trace.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

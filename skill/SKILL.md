@@ -80,8 +80,14 @@ your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle w
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
-There is **no `pt_send_pdu`**: `createFrameInstance` rejects every argument shape and no `addSimplePdu`
-exists in this PT build — generate traffic with a real ping instead.
+There is **no `pt_send_pdu`**: `createFrameInstance(Device, TrafficType, int, QString)` builds an object
+but `finalizeFrameInstance` never puts it in the event list — that pair is how an extension *reports*
+its own protocol's traffic, not how you originate a PDU. Generate traffic with a real ping instead.
+
+**Looking up an API signature:** PT ships its full IpcAPI reference at
+`C:\Program Files\Cisco Packet Tracer 9.0.0\help\default\IpcAPI\` (2757 Doxygen pages, one per class,
+**with argument types**). Read it before probing — `for (var k in obj)` gives names but not arity, and
+PT's only error is `Invalid arguments for IPC call "X"`.
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Advanced builds (verified live 2026-06-27)

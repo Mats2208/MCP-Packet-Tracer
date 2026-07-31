@@ -79,6 +79,32 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
   `pt_device_power` (`setPower`/`getPower` — los exponen TODOS los modelos, incluido PC-PT;
   `skipBoot`/`isBooting` solo los IOS).
 
+## ⭐ La API está documentada EN DISCO — consultala antes de sondear
+
+Packet Tracer instala la referencia completa de su IpcAPI junto al programa:
+
+```
+C:\Program Files\Cisco Packet Tracer 9.0.0\help\default\IpcAPI\    (2757 archivos)
+```
+
+Doxygen HTML, una página por clase: `class_simulation.html`, `class_frame_instance.html`,
+`class_device.html`, `class_port.html`, `class_vlan_manager.html`, … y `*-members.html` con la
+lista completa de miembros heredados. Las firmas están con tipos:
+
+```
+FrameInstance  createFrameInstance ( Device, TrafficType, int, QString )
+void           addDecision ( string, QString, bool, int )
+Port           getOutPort ( int )
+```
+
+**Buscar acá primero.** Enumerar por `for (var k in obj)` da los nombres pero NO la aridad ni los
+tipos, y PT solo contesta `Invalid arguments for IPC call "X"` sin decir qué esperaba — así que
+adivinar firmas a fuerza de sondas es caro y poco confiable. Extraer texto:
+
+```bash
+python -c "import re,html;s=open('class_simulation.html',encoding='utf-8',errors='replace').read();print(html.unescape(re.sub(r'<[^>]+>',' ',s)))"
+```
+
 ## Limitaciones que siguen abiertas
 - No se resuelven dinámicamente los puertos de módulos agregados (hay que conocer el naming).
 - **`VtyLine` no expone estado de contraseña** (`getPassword`/`isLoginLocal` no existen): es un
@@ -86,10 +112,15 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
 - **`Link.getOtherPort()` falla en links tipo Cable** (`Invalid arguments`) aunque la extensión
   lo use; para resolver vecinos hay que ir por `getPort1`/`getPort2`.
 - `getUserEntryAt(i)` **lanza** `out of bound` en vez de devolver null, y devuelve un string.
-- **Originar un PDU por API NO se pudo**: `Simulation.createFrameInstance` existe pero rechaza
-  las 7 firmas probadas (`(nombreSrc,nombreDst)`, `(devSrc,devDst)`, `(dev,port,ip)`, …) y
-  **no hay `addSimplePdu`** en `LogicalWorkspace`, `Workspace` ni `Simulation` en esta build.
-  Por eso no hay `pt_send_pdu`: se genera tráfico con un ping real y se lee el trace.
+- **Originar un PDU por API no es lo que `createFrameInstance` hace.** La firma real, sacada de
+  la doc oficial de PT (ver abajo), es `createFrameInstance(Device, TrafficType, int, QString)` —
+  4 argumentos. Con ella el objeto SÍ se crea y `finalizeFrameInstance(fi)` no falla, pero el
+  event list sigue en 0: `FrameInstance` "holds traffic details", y junto con
+  `addDecision(id, description, osiIn, layer)` es la API para que **una extensión que implementa
+  su propio protocolo reporte su tráfico** al panel de simulación, no para inyectar un ping por
+  el stack del dispositivo. El "Add Simple PDU" de la GUI no está expuesto por IPC (`addSimplePdu`
+  no existe en `LogicalWorkspace`, `Workspace` ni `Simulation`). Por eso no hay `pt_send_pdu`:
+  se genera tráfico con un ping real y se lee el trace.
 - `FrameInstance` SÍ es rico (37 miembros): `getFrameDecsionAt(i)` —con el typo de PT— devuelve
   `{description, osiLayer, osiIn}`, que es el panel "PDU Details" en texto. `getOutPort(0)` lanza
   si `getOutPortCount()` es 0 (frame en buffer). No hay `getDecisionCount()`: el conteo de
