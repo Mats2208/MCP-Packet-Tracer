@@ -4,7 +4,7 @@
 
 **Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
 
-[![Version](https://img.shields.io/badge/version-0.6.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Pydantic v2](https://img.shields.io/badge/pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 [![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
@@ -222,6 +222,14 @@ authenticated bridge. That is a capability, not a vulnerability.
 Found a vulnerability? Report it privately via
 [GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
 not a public issue. [SECURITY.md](SECURITY.md) documents the full threat model.
+
+## What's new
+
+**v0.7.0** — the server can now read a live topology, not just build one:
+security auditing, per-port inspection, packet tracing with Packet Tracer's own
+per-layer decision log, NetFlow, and config backup. It also fixes
+`pt_full_build(deploy=True)`, which used to report success while leaving the
+canvas empty. Full list in the **[Changelog](CHANGELOG.md)**.
 
 ## Contributing
 

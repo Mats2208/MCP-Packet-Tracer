@@ -14,7 +14,7 @@ a local HTTP bridge.
 
 ```bash
 pip install -e ".[test]"
-python -m pytest          # from the repo root, 187 tests, no PT required
+python -m pytest          # from the repo root, no PT required
 ```
 
 There is no linter or formatter configured. Match the surrounding style: type

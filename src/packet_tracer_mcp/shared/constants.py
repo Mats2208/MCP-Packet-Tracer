@@ -28,7 +28,7 @@ DEFAULT_DNS = "8.8.8.8"
 # antes (decía nat="unsupported" mientras pt_apply_nat existía). Lo de abajo son los
 # valores base que el recurso enriquece dinámicamente.
 CAPABILITIES = {
-    "version": "0.6.0",
+    "version": "0.7.0",
     "routing": ["static", "static_floating", "ospf", "eigrp", "rip", "none"],
     "features": ["dhcp", "wan", "switching", "auto_fix", "explain", "dry_run",
                  "floating_routes", "ospf_multi_process", "eigrp_as_config",
@@ -43,9 +43,12 @@ CAPABILITIES = {
                  "config_backup", "project_metadata", "workspace_options"],
     # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool
     # dedicada de alto nivel todavía — candidatos a futura expansión, NO "imposibles".
-    "supported_via_cli": ["vlan", "trunk", "stp", "port_security", "qos", "ipv6"],
-    # Genuinamente no implementado en ninguna forma.
-    "unsupported": [],
+    # vlan/trunk/stp/port_security/ipv6 salieron de acá: ya tienen tool propia.
+    # QoS se queda: se puede LEER con pt_read_qos pero no crear por API.
+    "supported_via_cli": ["qos", "bgp", "hsrp", "voip"],
+    # Genuinamente no implementado en ninguna forma. Originar un PDU no está:
+    # PT no lo expone a las extensiones (el "Add Simple PDU" es solo GUI).
+    "unsupported": ["originate_pdu"],
     "max_routers": 20,
     "max_pcs_per_lan": 24,
     "max_switches_per_router": 4,

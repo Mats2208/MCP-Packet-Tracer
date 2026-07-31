@@ -12,7 +12,8 @@ application/      use cases + DTOs
 domain/           pure business logic (no I/O)
   models/        TopologyPlan, ACLPlan, NAT, errors …
   rules/         cable_rules, device_rules, ip_rules, acl_rules, nat_rules
-  services/      orchestrator, validator, auto_fixer, ip_planner, explainer, estimator
+  services/      orchestrator, validator, auto_fixer, ip_planner, explainer, estimator,
+                 topology_diff, security_audit, port_inspect, packet_trace
 infrastructure/   adapters to the outside world
   catalog/       devices, cables, modules, aliases, templates
   generator/     ptbuilder_generator, cli_config_generator, acl/nat generators

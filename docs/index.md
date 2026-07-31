@@ -34,6 +34,10 @@ fully cabled, configured and running topology.
 | **NAT / PAT** | Static, dynamic, overload | Translate addresses on live routers via the bridge |
 | **Hardening** | SSH, local users, enable-secret, banner | Device hardening on live routers/switches |
 | **Verification** | Plan-vs-live diff + health check | Drift, down links, duplicate IPs |
+| **Security audit** | Grades the **live** config, not the plan | Missing `enable secret`, reversible (type 7) credentials, `config-register 0x2142` |
+| **Live inspection** | Reads the device: ports, VLANs, power | Line/protocol status, duplex, NAT mode, applied ACLs |
+| **Packet tracing** | Step the simulation and read **why** a packet did what it did | PT's own per-OSI-layer decision log |
+| **Telemetry & backup** | NetFlow exporters, real startup-config, workspace behaviour | Collector address + version; serial and config-register; auto-cabling |
 | **Deploy** | Real-time HTTP bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
 | **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
 | **Catalog** | 74 devices · 151 modules · 15 cables | With aliases and validation |

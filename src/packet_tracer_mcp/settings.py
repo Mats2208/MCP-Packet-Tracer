@@ -2,7 +2,7 @@
 Configuración global del servidor.
 """
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
