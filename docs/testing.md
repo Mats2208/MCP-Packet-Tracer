@@ -24,7 +24,10 @@ python -m pytest -q
 The bridge/PT-facing tools (`pt_live_deploy`, `pt_add_*`, `pt_delete_*`,
 `pt_apply_acl`, …) require a running Packet Tracer with the
 [live bridge](live-deploy.md) connected; they're validated manually against PT.
-A full QA pass of all 46 tools was performed on **PT 9.0.0**.
+A full QA pass of the first 46 tools was performed on **PT 9.0.0**. The four
+inspection tools added later — `pt_audit_security`, `pt_inspect_ports`,
+`pt_read_vlans` and `pt_device_power` — were each verified individually against
+**PT 9.0.0.0810** when they landed, against a live 2911 and 2960-24TT.
 
 !!! note "Unit tests don't start the MCP server"
     They exercise domain/application code directly. To verify the server actually

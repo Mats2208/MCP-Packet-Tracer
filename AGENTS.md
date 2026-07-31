@@ -14,7 +14,7 @@ a local HTTP bridge.
 
 ```bash
 pip install -e ".[test]"
-python -m pytest          # from the repo root, 187 tests, no PT required
+python -m pytest          # from the repo root, no PT required
 ```
 
 There is no linter or formatter configured. Match the surrounding style: type
@@ -28,7 +28,7 @@ comments in Spanish or English following whatever the file already uses.
 | `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
 | `src/packet_tracer_mcp/application/` | Use cases: rules + generators, dependencies injected |
 | `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP + file bridges, device catalog |
-| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 46 MCP tools |
+| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 58 MCP tools |
 | `EXTENSION/script-engine/` | Script-engine side of the extension. `main.js` is ours (tracked); the rest are PTBuilder reference copies (gitignored) |
 | `EXTENSION/webview/` | The MCP Control Center webview (`index.html` + `interface.js`) |
 
@@ -51,6 +51,10 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
    returns `ValidationResult`, so the use case decides whether to proceed.
 5. **A bug fix needs a test that fails without it.** Write the failing test
    first; if it passes before your change, it isn't testing the bug.
+6. **Never guess a PT API signature.** If a method isn't already used somewhere
+   in this repo, confirm it against Cisco's reference before writing code on top
+   of it — PT answers a wrong call with a bare `Invalid arguments for IPC call
+   "X"`, so a guess fails without telling you why.
 
 ## Working with the bridge
 

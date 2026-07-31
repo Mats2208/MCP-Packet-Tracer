@@ -53,7 +53,7 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (46)
+## Tool catalog (58)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -71,6 +71,26 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
 `pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs).
 **Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
+**Live-state inspection (read the device, not the plan):** `pt_audit_security(device="")` (security
+posture with severities; never returns passwords or hashes, only the algorithm label),
+`pt_inspect_ports(device, only_linked)` (per-port line/protocol, MAC, duplex, bandwidth, MTU, CDP,
+NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
+your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
+**Backup / workspace:** `pt_backup_config(device, include_xml)` (real startup-config + serial,
+config-register, boot images), `pt_project_metadata(description="")` (saved filename, PT version,
+description, device/link count; pass `description` to set it), `pt_workspace_options(...)` — tri-state
+flags, `-1` leaves a setting alone. Turn `auto_cabling=0` before a scripted build if you need links on
+exact interfaces, and check `external_network_access` before assuming traffic stays in the simulator.
+**Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
+monitors, remove, dry_run)` configures a NetFlow exporter directly (not via CLI) and reads it back to
+confirm. `pt_read_qos(device)` is **read-only**: QoS cannot be created programmatically, so author
+class-maps and policy-maps with IOS CLI and use this to verify.
+**Simulation:** `pt_simulation_mode(on)` (Realtime ↔ Simulation), `pt_simulation_step(action, times)`
+(`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
+plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
+Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
+There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
+*Add Simple PDU* button does. Generate traffic with a real ping instead.
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Advanced builds (verified live 2026-06-27)

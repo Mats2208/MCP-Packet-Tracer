@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **46 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **58 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -101,6 +101,77 @@ All accept `dry_run=True` to preview the generated CLI without touching PT.
 | `pt_diff` | Compare a plan vs the live topology (missing/extra devices, IP mismatches). |
 | `pt_health_check` | Sweep the live topology: down links, cabled-without-IP, duplicate IPs. |
 | `pt_verify_connectivity` | Run a **real ping** from a device's console and parse the result (reachable or not). |
+
+## Live-state inspection
+
+These read the **device**, not the plan — useful to confirm a change landed, or to
+understand a topology you didn't build. Verified against PT 9.0.0.0810.
+
+| Tool | What it does |
+|------|--------------|
+| `pt_audit_security` | Security posture of every IOS device, graded high/medium/low: missing `enable secret`, reversibly-stored credentials (type 7), `service password-encryption` off, no local users, no MOTD banner, config-register left at `0x2142`. |
+| `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
+| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
+| `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+## Backup & workspace
+
+| Tool | What it does |
+|------|--------------|
+| `pt_backup_config` | The device's real startup-config — the one it rereads on reboot — plus serial, config-register, boot images and uptime. `include_xml=True` adds the full device dump. |
+| `pt_project_metadata` | The open project's saved filename, the PT version that wrote it, its description and the device/link count. Pass `description` to set it. |
+| `pt_workspace_options` | Read or toggle workspace behaviour: auto-cabling, access to the **real** network, and the canvas labels that decide whether a screenshot is readable. |
+
+!!! tip "Turn auto-cabling off before a scripted build"
+    With auto-cabling on, Packet Tracer picks the cable and the port for you. If
+    you want a link on an exact interface, `pt_workspace_options(auto_cabling=0)`
+    first.
+
+## Telemetry & QoS
+
+| Tool | What it does |
+|------|--------------|
+| `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. |
+| `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
+
+!!! note "NetFlow is configured natively; QoS can only be read"
+    These two look symmetric but are not. `pt_apply_netflow` configures the
+    exporter directly and verifies the result — no CLI involved. QoS, by
+    contrast, can be **read** but not created programmatically, so class-maps and
+    policy-maps are authored through IOS CLI (`pt_send_raw` →
+    `configureIosDevice`) and `pt_read_qos` is how you confirm it landed.
+
+## Simulation
+
+Packet Tracer's Simulation mode holds packets in an event list instead of moving
+them in real time, which is what makes a step-by-step trace possible.
+
+| Tool | What it does |
+|------|--------------|
+| `pt_simulation_mode` | Switch between Realtime and Simulation. |
+| `pt_simulation_step` | Advance, rewind or reset the simulation (`forward` / `back` / `reset`). |
+| `pt_read_packet_trace` | Read the event list: per frame the device, ingress/egress port, source, destination, traffic type and outcome — **plus PT's own per-OSI-layer explanation** of what the device decided and why. |
+
+!!! tip "`pt_read_packet_trace` answers *why*, not just *what*"
+    The decision log is the same text Packet Tracer shows in its **PDU Details**
+    pane. A failing ping stops being "no reply" and becomes a cause:
+
+    ```
+    L3 :: The destination IP address is in the same subnet. The device sets the next-hop to destination.
+    L2 :: The next-hop IP address is not in the ARP table. The ARP process tries to
+          send an ARP request for that IP address and buffers this packet.
+    ```
+
+!!! warning "There is no `pt_send_pdu`"
+    Packet Tracer does not let an extension originate a packet the way the GUI's
+    *Add Simple PDU* button does. Generate traffic the way a user would —
+    `pt_verify_connectivity` runs a real ping — and then read the trace.
+
+!!! warning "`pt_audit_security` never returns credentials"
+    Passwords and hashes do not leave the device. The reader classifies each
+    credential by its prefix and transmits only the algorithm label (`md5`,
+    `type7`, `scrypt`, …) — enough to audit, without putting a hash into the LLM's
+    context or the MCP client's logs.
 
 !!! tip "Build flags"
     `pt_plan_topology` / `pt_full_build` accept `vlans` (router-on-a-stick VLAN count),

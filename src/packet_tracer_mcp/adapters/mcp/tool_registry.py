@@ -42,6 +42,14 @@ from ...application.use_cases.apply_hardening import (
 from ...application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ...domain.models.interface_tuning import InterfaceTuning
 from ...domain.services.topology_diff import diff as topology_diff, health_check
+from ...domain.services.security_audit import audit_security
+from ...domain.services.port_inspect import nat_mode_label, summarize_ports
+from ...domain.services.packet_trace import summarize_trace, traffic_type_label
+from ...domain.models.netflow import NetflowExporter
+from ...domain.models.errors import ErrorCode, PlanError
+from ...domain.rules.netflow_rules import (
+    validate_netflow, validate_netflow_against_topology,
+)
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -415,8 +423,12 @@ def register_tools(mcp: FastMCP) -> None:
         """
         Pipeline completo: planifica, valida, genera, explica, estima y despliega.
 
-        Si deploy=True (default), copia el script al portapapeles de Windows
-        y genera instrucciones paso a paso para Packet Tracer.
+        Con deploy=True (default) el despliegue depende de si hay canal a PT:
+        - Si el bridge está conectado, la topología se crea DE VERDAD en Packet
+          Tracer (misma ruta que pt_live_deploy, con verificación y reconcile),
+          y además se exportan los archivos del proyecto a disco.
+        - Si no hay canal, cae al modo manual: copia el script al portapapeles
+          y genera instrucciones paso a paso.
 
         Parámetros:
         - routers: Número de routers (1-20)
@@ -554,23 +566,38 @@ def register_tools(mcp: FastMCP) -> None:
             parts.append("=" * 60)
             parts.append("DESPLIEGUE EN PACKET TRACER")
             parts.append("=" * 60)
-            deploy_exec = DeployExecutor(output_dir="projects")
-            deploy_result = deploy_exec.execute(plan, project_name=f"build_{routers}r_{pcs_per_lan}pc")
-            if deploy_result["clipboard"]:
-                parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+            project_name = f"build_{routers}r_{pcs_per_lan}pc"
+
+            # Con un canal vivo hay que desplegar de verdad. Antes esto SIEMPRE
+            # iba al portapapeles, así que el pipeline "completo" terminaba con
+            # el canvas vacío aunque el bridge estuviera conectado: el usuario
+            # veía "✅ Validación: PASS" y en PT no había nada.
+            if _pick_channel() != "":
+                parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
-                parts.append("Instrucciones:")
-                parts.append("  1. Abre Packet Tracer")
-                parts.append("  2. Ve a Extensions > Scripting")
-                parts.append("  3. Pega (Ctrl+V) y ejecuta")
-                parts.append("")
-                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                export_result = ManualExecutor(output_dir="projects").execute(
+                    plan, project_name=project_name
+                )
+                parts.append(f"Archivos exportados en: {export_result['project_dir']}")
                 parts.append("  Configs CLI en archivos *_config.txt")
             else:
-                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
-                parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
-            parts.append("")
-            parts.append(deploy_result["instructions"])
+                deploy_exec = DeployExecutor(output_dir="projects")
+                deploy_result = deploy_exec.execute(plan, project_name=project_name)
+                if deploy_result["clipboard"]:
+                    parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+                    parts.append("")
+                    parts.append("Instrucciones:")
+                    parts.append("  1. Abre Packet Tracer")
+                    parts.append("  2. Ve a Extensions > Scripting")
+                    parts.append("  3. Pega (Ctrl+V) y ejecuta")
+                    parts.append("")
+                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                    parts.append("  Configs CLI en archivos *_config.txt")
+                else:
+                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                    parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
+                parts.append("")
+                parts.append(deploy_result["instructions"])
 
         # --- Plan JSON ---
         parts.append("")
@@ -1797,6 +1824,9 @@ def register_tools(mcp: FastMCP) -> None:
         description: str = "",
         mac_address: str = "",
         power: int = -1,
+        zone_member: str = "",
+        proxy_arp: int = -1,
+        ike: int = -1,
     ) -> str:
         """
         Configura atributos low-level de un puerto en un dispositivo vivo en PT.
@@ -1815,6 +1845,13 @@ def register_tools(mcp: FastMCP) -> None:
         - description: texto descriptivo (vacío = no cambia)
         - mac_address: MAC en formato "AABB.CCDD.EEFF" (vacío = no cambia)
         - power: 1 enciende puerto, 0 lo apaga, -1 no cambia
+        - zone_member: nombre de la security zone del puerto, para Zone-Based
+          Firewall (vacío = no cambia). Solo en interfaces de router.
+        - proxy_arp: 1 activa Proxy ARP, 0 lo desactiva, -1 no cambia. Apagarlo
+          es hardening habitual: con Proxy ARP el router responde ARPs que no
+          son suyos y filtra información de la topología.
+        - ike: 1 habilita IKE en la interfaz (VPN IPsec), 0 lo deshabilita,
+          -1 no cambia.
 
         Devuelve qué atributos se aplicaron (los que tenían método disponible en
         la API del puerto). Si algún `setXxx` no existe en el modelo del device,
@@ -1863,6 +1900,24 @@ def register_tools(mcp: FastMCP) -> None:
             v = "true" if power == 1 else "false"
             parts.append(
                 f'if(typeof p.setPower==="function"){{p.setPower({v});applied.push("power={v}");}}'
+            )
+
+        # Zone-Based Firewall / Proxy ARP / IKE: solo existen en puertos de
+        # router, así que el typeof no es defensivo de más — en un switch o un
+        # host estos setters no están y llamarlos abriría un modal.
+        if zone_member:
+            parts.append(
+                f'if(typeof p.setZoneMemberName==="function"){{p.setZoneMemberName({json.dumps(zone_member)});applied.push("zone_member");}}'
+            )
+        if proxy_arp in (0, 1):
+            v = "true" if proxy_arp == 1 else "false"
+            parts.append(
+                f'if(typeof p.setProxyArpEnabled==="function"){{p.setProxyArpEnabled({v});applied.push("proxy_arp={v}");}}'
+            )
+        if ike in (0, 1):
+            v = "true" if ike == 1 else "false"
+            parts.append(
+                f'if(typeof p.setIkeEnabled==="function"){{p.setIkeEnabled({v});applied.push("ike={v}");}}'
             )
 
         parts.append('reportResult(JSON.stringify({success:true,applied:applied}));')
@@ -3144,6 +3199,10 @@ def register_tools(mcp: FastMCP) -> None:
         ospf_cost: int | None = None,
         ospf_priority: int | None = None,
         ospf_hello_interval: int | None = None,
+        ospf_dead_interval: int | None = None,
+        ospf_auth_key: str | None = None,
+        ospf_md5_key_id: int | None = None,
+        ospf_md5_key: str | None = None,
         delay: int | None = None,
         dry_run: bool = False,
     ) -> str:
@@ -3156,18 +3215,28 @@ def register_tools(mcp: FastMCP) -> None:
         - clock_rate: SOLO en interfaces Serial (extremo DCE). Ej 64000, 2000000.
           Aplicar clock_rate a una interfaz no-serial es un error de validación.
         - bandwidth: ancho de banda en kbps (`bandwidth N`).
-        - ospf_cost / ospf_priority / ospf_hello_interval: knobs OSPF por interfaz.
+        - ospf_cost / ospf_priority: knobs OSPF por interfaz.
+        - ospf_hello_interval / ospf_dead_interval: timers OSPF. Tienen que
+          coincidir con los del vecino o la adyacencia no forma; la convención
+          IOS es dead = 4 x hello, y dead <= hello se rechaza.
+        - ospf_md5_key + ospf_md5_key_id: autenticación OSPF message-digest
+          (recomendada). El id tiene que coincidir con el del vecino.
+        - ospf_auth_key: autenticación OSPF en texto plano. Funciona, pero la
+          clave viaja legible por la red — se emite un warning.
         - delay: delay de la interfaz (afecta métrica EIGRP), en decenas de microsegundos.
         - dry_run: si True, solo valida y devuelve el CLI/payload.
 
-        Ejemplo: clock rate DCE en el serial de R1:
-          pt_apply_interface_tuning(router="R1", interface="Serial0/0/0",
-                                    clock_rate=64000, dry_run=True)
+        Ejemplo: autenticar OSPF con MD5 entre R1 y su vecino:
+          pt_apply_interface_tuning(router="R1", interface="GigabitEthernet0/0",
+                                    ospf_md5_key_id=1, ospf_md5_key="s3cr3t")
         """
         cfg = InterfaceTuning(
             router=router, interface=interface, clock_rate=clock_rate,
             bandwidth=bandwidth, ospf_cost=ospf_cost, ospf_priority=ospf_priority,
-            ospf_hello_interval=ospf_hello_interval, delay=delay,
+            ospf_hello_interval=ospf_hello_interval,
+            ospf_dead_interval=ospf_dead_interval, ospf_auth_key=ospf_auth_key,
+            ospf_md5_key_id=ospf_md5_key_id, ospf_md5_key=ospf_md5_key,
+            delay=delay,
         )
         bridge_ok = _pick_channel() != ""
         result = apply_interface_tuning_uc(
@@ -3225,3 +3294,1197 @@ def register_tools(mcp: FastMCP) -> None:
                  f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # AUDITORÍA DE SEGURIDAD — postura real leída de los dispositivos vivos
+    # ------------------------------------------------------------------
+
+    # Clasifica cada credencial por su prefijo y devuelve SOLO la etiqueta del
+    # algoritmo. El hash nunca cruza el bridge: terminaría en el contexto del LLM
+    # y en los logs del cliente MCP, y la etiqueta alcanza para auditar.
+    # Verificado contra PT 9.0.0.0810: `enable secret`/`username X secret` dan
+    # "$1$...", y `username X password` con service-password-encryption da hex
+    # type-7 (reversible con decodificadores públicos).
+    _AUDIT_ALGO_JS = (
+        "function __algo(s){"
+        "  if(!s) return null;"
+        "  s = String(s);"
+        "  if(s.indexOf('$1$')===0) return 'md5';"
+        "  if(s.indexOf('$8$')===0) return 'pbkdf2';"
+        "  if(s.indexOf('$9$')===0) return 'scrypt';"
+        "  if(/^[0-9A-Fa-f]{4,}$/.test(s)) return 'type7';"
+        "  return 'plaintext';"
+        "}"
+    )
+
+    _SECURITY_AUDIT_JS = (
+        "try {"
+        + _AUDIT_ALGO_JS +
+        "  var __net = ipc.network();"
+        "  var __out = [];"
+        "  var __n = __net.getDeviceCount();"
+        "  for (var __i = 0; __i < __n; __i++) {"
+        "    try {"
+        "      var __d = __net.getDeviceAt(__i);"
+        # Los hosts (PC/Server/Laptop) no exponen configuración IOS: llamar a
+        # estos getters ahí lanza y abre un modal que congela el bridge.
+        "      if (!__d || typeof __d.getEnableSecret !== 'function') continue;"
+        "      var __users = [];"
+        "      try {"
+        "        var __uc = __d.getUserPassCount();"
+        "        for (var __j = 0; __j < __uc; __j++) {"
+        # getUserEntryAt lanza 'out of bound' en vez de devolver null, así que
+        # cada lectura va con su propio guard.
+        "          try {"
+        "            var __u = String(__d.getUserEntryAt(__j));"
+        "            __users.push({ name: __u, algo: __algo(__d.getUserPass(__u)) });"
+        "          } catch (__ue) {}"
+        "        }"
+        "      } catch (__uce) {}"
+        "      var __sec = __d.getEnableSecret();"
+        "      var __pwd = __d.getEnablePassword();"
+        "      __out.push({"
+        "        name: __d.getName(),"
+        "        model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+        "        hostname: (typeof __d.getHostName === 'function') ? __d.getHostName() : '',"
+        "        enable_secret_set: !!__sec,"
+        "        enable_secret_algo: __algo(__sec),"
+        "        enable_password_set: !!__pwd,"
+        "        service_password_encryption: (typeof __d.getServicePasswordEncryption === 'function')"
+        "          ? !!__d.getServicePasswordEncryption() : false,"
+        "        banner_set: (typeof __d.getBannerMotd === 'function')"
+        "          ? !!__d.getBannerMotd() : false,"
+        "        users: __users,"
+        "        config_register: (typeof __d.getConfigRegister === 'function')"
+        "          ? __d.getConfigRegister() : null"
+        "      });"
+        "    } catch (__pe) {}"
+        "  }"
+        "  reportResult(JSON.stringify({ devices: __out }));"
+        "} catch (__e) { reportResult('ERROR:' + __e); }"
+    )
+
+    @mcp.tool()
+    def pt_audit_security(device: str = "") -> str:
+        """
+        Audita la postura de seguridad REAL de los dispositivos vivos en PT.
+
+        No lee el plan: lee la configuración efectiva de cada router/switch del
+        canvas y reporta hallazgos con severidad (high/medium/low). Detecta
+        `enable secret` ausente, credenciales guardadas de forma reversible
+        (type 7), `service password-encryption` apagado, falta de usuarios
+        locales, banner MOTD ausente y config-register en 0x2142 (que descarta
+        la startup-config en el próximo reboot).
+
+        Las contraseñas y hashes NUNCA salen del dispositivo: solo se transmite
+        la etiqueta del algoritmo con que están guardadas.
+
+        Los hosts (PC/Server/Laptop) se omiten: no tienen configuración IOS.
+
+        Parámetros:
+        - device: si se indica, audita solo ese dispositivo; vacío = todos.
+
+        Ejemplo: auditar toda la topología:
+          pt_audit_security()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(_SECURITY_AUDIT_JS, timeout=12.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+
+        try:
+            devices = json.loads(raw).get("devices", [])
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        wanted = device.strip()
+        if wanted:
+            devices = [d for d in devices if d.get("name") == wanted]
+            if not devices:
+                return (
+                    f"'{wanted}' no existe en la topología activa o no tiene "
+                    "configuración IOS (los PCs y servidores no la tienen). "
+                    "Usá pt_query_topology para ver los nombres reales."
+                )
+
+        result = audit_security(devices)
+        counts = result["counts"]
+        if not devices:
+            result["summary"] = "No hay dispositivos con configuración IOS en el canvas."
+        elif result["secure"]:
+            result["summary"] = (
+                f"✅ {result['devices_audited']} dispositivo(s) auditado(s), "
+                f"sin hallazgos altos ni medios ({counts['low']} bajo(s))."
+            )
+        else:
+            result["summary"] = (
+                f"⚠ {counts['high']} hallazgo(s) alto(s), {counts['medium']} medio(s), "
+                f"{counts['low']} bajo(s) en {result['devices_audited']} dispositivo(s)."
+            )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # INSPECCIÓN DE PUERTOS — estado físico y lógico leído del dispositivo
+    # ------------------------------------------------------------------
+
+    def _inspect_ports_js(device: str) -> str:
+        """Lector por puerto. `device` vacío = todos.
+
+        Cada getter va detrás de un typeof: la superficie de Port cambia por
+        modelo (un PC-PT no tiene getNatMode ni getAclInID) y una llamada a un
+        método inexistente lanza y abre un modal que congela el bridge.
+        """
+        want = json.dumps(device.strip())
+        return (
+            "try {"
+            f"  var __want = {want};"
+            "  var __net = ipc.network();"
+            "  var __out = [];"
+            "  var __n = __net.getDeviceCount();"
+            "  for (var __i = 0; __i < __n; __i++) {"
+            "    try {"
+            "      var __d = __net.getDeviceAt(__i);"
+            "      if (!__d) continue;"
+            "      var __dn = __d.getName();"
+            "      if (__want && __dn !== __want) continue;"
+            "      var __ports = [];"
+            "      var __pc = __d.getPortCount();"
+            "      for (var __j = 0; __j < __pc; __j++) {"
+            "        try {"
+            "          var __p = __d.getPortAt(__j);"
+            "          if (!__p) continue;"
+            "          __ports.push({"
+            "            name: __p.getName(),"
+            "            up: !!__p.isPortUp(),"
+            "            protocol_up: (typeof __p.isProtocolUp === 'function') ? !!__p.isProtocolUp() : null,"
+            "            linked: !!__p.getLink(),"
+            "            ip: __p.getIpAddress(),"
+            "            mask: __p.getSubnetMask(),"
+            "            mac: (typeof __p.getMacAddress === 'function') ? __p.getMacAddress() : null,"
+            "            description: (typeof __p.getDescription === 'function') ? __p.getDescription() : '',"
+            "            duplex_full: (typeof __p.isFullDuplex === 'function') ? !!__p.isFullDuplex() : null,"
+            "            bandwidth_kbps: (typeof __p.getBandwidth === 'function') ? __p.getBandwidth() : null,"
+            "            mtu: (typeof __p.getMtu === 'function') ? __p.getMtu() : null,"
+            "            delay: (typeof __p.getDelay === 'function') ? __p.getDelay() : null,"
+            "            cdp: (typeof __p.isCdpEnable === 'function') ? !!__p.isCdpEnable() : null,"
+            "            dhcp_client: (typeof __p.isDhcpClientOn === 'function') ? !!__p.isDhcpClientOn() : null,"
+            "            wireless: (typeof __p.isWirelessPort === 'function') ? !!__p.isWirelessPort() : null,"
+            "            nat_mode_raw: (typeof __p.getNatMode === 'function') ? __p.getNatMode() : null,"
+            "            acl_in: (typeof __p.getAclInID === 'function') ? __p.getAclInID() : '',"
+            "            acl_out: (typeof __p.getAclOutID === 'function') ? __p.getAclOutID() : ''"
+            "          });"
+            "        } catch (__pe) {}"
+            "      }"
+            "      __out.push({"
+            "        name: __dn,"
+            "        model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+            "        ports: __ports"
+            "      });"
+            "    } catch (__de) {}"
+            "  }"
+            "  reportResult(JSON.stringify({ devices: __out }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+    @mcp.tool()
+    def pt_inspect_ports(device: str = "", only_linked: bool = False) -> str:
+        """
+        Estado real de cada puerto de un dispositivo vivo en PT.
+
+        Lee del dispositivo, no del plan: line/protocol status, MAC, IP/máscara,
+        duplex, ancho de banda, MTU, delay, CDP, cliente DHCP, modo NAT y ACLs
+        aplicadas. Marca anomalías (cable puesto con el puerto down, línea up con
+        protocolo down).
+
+        Es la vista de DETALLE de un dispositivo; para el barrido de toda la
+        topología (links caídos, IPs duplicadas) usá pt_health_check.
+
+        Parámetros:
+        - device: nombre del dispositivo; vacío = todos (verboso en topologías grandes).
+        - only_linked: si True, devuelve solo puertos con cable conectado.
+
+        Ejemplo: ver por qué no levanta un enlace de R1:
+          pt_inspect_ports(device="R1", only_linked=True)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(_inspect_ports_js(device), timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            devices = json.loads(raw).get("devices", [])
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        wanted = device.strip()
+        if wanted and not devices:
+            return (
+                f"'{wanted}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+
+        for dev in devices:
+            ports = dev.get("ports", [])
+            if only_linked:
+                ports = [p for p in ports if p.get("linked")]
+            for port in ports:
+                port["nat_mode"] = nat_mode_label(port.pop("nat_mode_raw", None))
+            dev["ports"] = ports
+
+        result = summarize_ports(devices)
+        result["devices"] = devices
+        anomalies = result["anomalies"]
+        result["summary"] = (
+            f"✅ {result['ports_up']}/{result['ports_total']} puerto(s) up, "
+            f"{result['ports_linked']} cableado(s), sin anomalías."
+            if not anomalies
+            else f"⚠ {len(anomalies)} anomalía(s) en {result['ports_total']} puerto(s)."
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # VLANs — leídas del VlanManager del switch, no del plan
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_read_vlans(switch: str) -> str:
+        """
+        Lee la base de datos de VLANs REAL de un switch en PT.
+
+        Devuelve cada VLAN con su número, nombre y si es una de las que trae PT
+        de fábrica (1, 1002-1005). Sirve para confirmar que un pt_apply_vlan
+        quedó aplicado, o para descubrir qué hay en una topología que no armaste.
+
+        Parámetros:
+        - switch: nombre del switch en PT.
+
+        Ejemplo: pt_read_vlans(switch="SW1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        name = json.dumps(switch.strip())
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({name});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); } else {"
+            "    var __vm = (typeof __d.getProcess === 'function') ? __d.getProcess('VlanManager') : null;"
+            "    if (!__vm) { reportResult(JSON.stringify({ found: true, supported: false })); } else {"
+            "      var __vs = [];"
+            "      var __n = __vm.getVlanCount();"
+            "      for (var __i = 0; __i < __n; __i++) {"
+            "        try {"
+            "          var __v = __vm.getVlanAt(__i);"
+            "          if (!__v) continue;"
+            "          __vs.push({"
+            "            number: __v.getVlanNumber(),"
+            "            name: __v.getName(),"
+            "            is_default: !!__v.isDefault()"
+            "          });"
+            "        } catch (__ve) {}"
+            "      }"
+            "      reportResult(JSON.stringify({"
+            "        found: true, supported: true,"
+            "        max_vlans: __vm.getMaxVlans(),"
+            "        vlan_interfaces: __vm.getVlanIntCount(),"
+            "        vlans: __vs"
+            "      }));"
+            "    }"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{switch}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return (
+                f"'{switch}' no expone VlanManager: no es un switch o el modelo no "
+                "maneja VLANs. Usá pt_get_device_details para ver qué es."
+            )
+
+        vlans = data.get("vlans", [])
+        custom = [v for v in vlans if not v.get("is_default")]
+        data["summary"] = (
+            f"{len(vlans)} VLAN(s): {len(custom)} propia(s), "
+            f"{len(vlans) - len(custom)} de fábrica. "
+            f"Máximo del modelo: {data.get('max_vlans')}."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # ENCENDIDO / APAGADO de dispositivos
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_device_power(device: str, on: bool = True) -> str:
+        """
+        Enciende o apaga un dispositivo en PT, con lectura de verificación.
+
+        Útil para simular una caída de equipo y ver cómo reacciona el routing, o
+        para reiniciar un router y que relea su startup-config.
+
+        Funciona en todos los modelos, incluidos los PCs. Los hosts no tienen
+        arranque IOS, así que al encenderlos `booting` vuelve null; en un router
+        o switch se saltea el boot para no esperar el arranque completo.
+
+        Parámetros:
+        - device: nombre del dispositivo en PT.
+        - on: True enciende (default), False apaga.
+
+        Ejemplo: simular la caída de R2:
+          pt_device_power(device="R2", on=False)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        name = json.dumps(device.strip())
+        want = "true" if on else "false"
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({name});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.setPower !== 'function' || typeof __d.getPower !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __before = !!__d.getPower();"
+            f"    __d.setPower({want});"
+            f"    if ({want} && typeof __d.skipBoot === 'function') {{ __d.skipBoot(); }}"
+            "    reportResult(JSON.stringify({"
+            "      found: true, supported: true,"
+            "      before: __before, after: !!__d.getPower(),"
+            "      booting: (typeof __d.isBooting === 'function') ? !!__d.isBooting() : null"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            # No se observó ningún modelo sin setPower/getPower en PT 9.0.0.0810
+            # (ni siquiera los PCs), pero la superficie varía por build y un
+            # método ausente lanza y abre un modal que congela el bridge.
+            return f"'{device}' no expone control de energía en esta build de PT."
+
+        verb = "encendido" if on else "apagado"
+        if data["after"] == on:
+            data["summary"] = (
+                f"✅ '{device}' {verb}."
+                if data["before"] != on
+                else f"'{device}' ya estaba {verb}; sin cambios."
+            )
+        else:
+            data["summary"] = (
+                f"⚠ Se pidió {verb} pero PT reporta power={data['after']}. "
+                "El modelo puede no soportar el cambio."
+            )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # SIMULACIÓN — modo, paso a paso y lectura del event list
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_simulation_mode(on: bool = True) -> str:
+        """
+        Cambia PT entre modo Realtime y modo Simulación.
+
+        En modo Simulación los paquetes NO avanzan solos: quedan encolados en el
+        event list y hay que moverlos con pt_simulation_step. Eso es lo que
+        permite leer el recorrido paquete por paquete con pt_read_packet_trace.
+
+        Parámetros:
+        - on: True entra a Simulación (default), False vuelve a Realtime.
+
+        Ejemplo: pt_simulation_mode(on=True)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        want = "true" if on else "false"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            "  var __before = !!__s.isSimulationMode();"
+            f"  __s.setSimulationMode({want});"
+            "  reportResult(JSON.stringify({"
+            "    before: __before, after: !!__s.isSimulationMode(),"
+            "    frames: __s.getFrameInstanceCount(), sim_time: __s.getCurrentSimTime()"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        mode = "Simulación" if data["after"] else "Realtime"
+        data["summary"] = (
+            f"Modo {mode}. {data['frames']} frame(s) en el event list."
+            if data["before"] != data["after"]
+            else f"Ya estaba en modo {mode}; sin cambios."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_simulation_step(action: str = "forward", times: int = 1) -> str:
+        """
+        Avanza, retrocede o reinicia la simulación paso a paso.
+
+        Requiere estar en modo Simulación (pt_simulation_mode(on=True)). Cada
+        paso mueve los paquetes un evento; después de avanzar, leé el resultado
+        con pt_read_packet_trace.
+
+        Parámetros:
+        - action: "forward" (default) | "back" | "reset".
+        - times: cuántos pasos dar (1-100, ignorado en "reset").
+
+        Ejemplo: avanzar 5 eventos:
+          pt_simulation_step(action="forward", times=5)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        act = action.strip().lower()
+        if act not in ("forward", "back", "reset"):
+            return json.dumps(
+                {"error": f"action inválida: '{action}'. Usá forward, back o reset."},
+                ensure_ascii=False,
+            )
+        steps = max(1, min(int(times), 100))
+
+        call = {"forward": "__s.forward();", "back": "__s.backward();",
+                "reset": "__s.resetSimulation();"}[act]
+        loop = call if act == "reset" else f"for (var __i = 0; __i < {steps}; __i++) {{ {call} }}"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            "  if (!__s.isSimulationMode()) {"
+            "    reportResult(JSON.stringify({ simulation_mode: false }));"
+            "  } else {"
+            "    var __b = __s.getFrameInstanceCount();"
+            f"   {loop}"
+            "    reportResult(JSON.stringify({"
+            "      simulation_mode: true, frames_before: __b,"
+            "      frames_after: __s.getFrameInstanceCount(),"
+            "      sim_time: __s.getCurrentSimTime(),"
+            "      current_index: __s.getCurrentFrameInstanceIndex()"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("simulation_mode"):
+            return (
+                "PT está en modo Realtime, así que no hay nada que avanzar. "
+                "Llamá pt_simulation_mode(on=True) primero."
+            )
+        data["action"] = act
+        data["steps"] = 1 if act == "reset" else steps
+        data["summary"] = (
+            f"{act} x{data['steps']} — {data['frames_after']} frame(s) en el event list "
+            f"(antes {data['frames_before']})."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_read_packet_trace(
+        limit: int = 20,
+        device: str = "",
+        include_decisions: bool = True,
+    ) -> str:
+        """
+        Lee el event list de la simulación: qué hizo cada paquete y POR QUÉ.
+
+        Además del recorrido (dispositivo, puerto de entrada/salida, origen,
+        destino, tipo de tráfico y desenlace) devuelve el log de decisiones que
+        PT genera por capa OSI — el mismo texto del panel "PDU Details" de su
+        GUI. Ahí es donde se ve la causa real de un ping que no anda, por
+        ejemplo: "The next-hop IP address is not in the ARP table."
+
+        Requiere modo Simulación con tráfico generado (pt_simulation_mode(on=True)
+        y después un ping, o pt_simulation_step para que avancen los eventos).
+
+        Parámetros:
+        - limit: máximo de frames a devolver (1-200, default 20).
+        - device: si se indica, solo los frames que pasaron por ese dispositivo.
+        - include_decisions: si False, omite el log por capa (respuesta más corta).
+
+        Ejemplo: ver por qué se cae un ping:
+          pt_read_packet_trace(limit=10)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        lim = max(1, min(int(limit), 200))
+        want = json.dumps(device.strip())
+        dec = "true" if include_decisions else "false"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            f"  var __lim = {lim}; var __want = {want}; var __wd = {dec};"
+            "  var __n = __s.getFrameInstanceCount();"
+            "  var __out = [];"
+            "  for (var __i = 0; __i < __n && __out.length < __lim; __i++) {"
+            "    try {"
+            "      var __f = __s.getFrameInstanceAt(__i);"
+            "      if (!__f) continue;"
+            "      var __dev = __f.getDevice();"
+            "      var __dn = __dev ? __dev.getName() : '';"
+            "      if (__want && __dn !== __want) continue;"
+            "      var __prev = __f.getPreviousDevice();"
+            "      var __ip = __f.getInPort();"
+            "      var __op = null;"
+            # getOutPort(0) lanza cuando getOutPortCount() es 0 (frame en buffer,
+            # todavía sin puerto de salida elegido).
+            "      try {"
+            "        if (__f.getOutPortCount() > 0) {"
+            "          var __o = __f.getOutPort(0); __op = __o ? __o.getName() : null;"
+            "        }"
+            "      } catch (__oe) {}"
+            "      var __dl = [];"
+            "      if (__wd) {"
+            # No hay getDecisionCount(); el conteo de nodos del flowchart coincide
+            # con el de decisiones (verificado: 6/6 y 3/3 en un ping real).
+            "        var __dc = __f.getFlowChartNodeCount();"
+            "        for (var __j = 0; __j < __dc; __j++) {"
+            "          try {"
+            # getFrameDecsionAt: el typo es de PT, no nuestro.
+            "            var __d = __f.getFrameDecsionAt(__j);"
+            "            if (!__d) continue;"
+            "            __dl.push({ layer: __d.osiLayer, inbound: !!__d.osiIn,"
+            "                        description: __d.description });"
+            "          } catch (__de) {}"
+            "        }"
+            "      }"
+            "      __out.push({"
+            "        index: __i, device: __dn,"
+            "        previous_device: __prev ? __prev.getName() : null,"
+            "        in_port: __ip ? __ip.getName() : null, out_port: __op,"
+            "        source: __f.getSourceString(), destination: __f.getDestinationString(),"
+            "        traffic_type_raw: __f.getUserTrafficType(),"
+            "        sim_time: __f.getStartSimTime(), transit_time: __f.getTransitTime(),"
+            "        sent: !!__f.isFrameSent(), accepted: !!__f.isFrameAccepted(),"
+            "        dropped: !!__f.isFrameDropped(), buffered: !!__f.isFrameBuffered(),"
+            "        in_transit: !!__f.isFrameOnTransit(),"
+            "        collided_at_device: !!__f.isFrameCollidedAtDevice(),"
+            "        collided_on_link: !!__f.isFrameCollidedOnLink(),"
+            "        not_forwarded: !!__f.isFrameNotForwarded(),"
+            "        unexpected: !!__f.isFrameUnexpected(),"
+            "        decisions: __dl"
+            "      });"
+            "    } catch (__pe) {}"
+            "  }"
+            "  reportResult(JSON.stringify({"
+            "    total: __n, simulation_mode: !!__s.isSimulationMode(), frames: __out"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        frames = data.get("frames", [])
+        for frame in frames:
+            frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+
+        result = summarize_trace(frames)
+        result["total_in_event_list"] = data.get("total", 0)
+        result["simulation_mode"] = data.get("simulation_mode", False)
+        result["trace"] = frames
+
+        if not data.get("simulation_mode"):
+            result["summary"] = (
+                "PT está en modo Realtime: el event list no retiene paquetes. "
+                "Llamá pt_simulation_mode(on=True) y generá tráfico."
+            )
+        elif not frames:
+            result["summary"] = (
+                "Modo Simulación activo pero sin frames. Generá tráfico "
+                "(por ejemplo pt_verify_connectivity) y volvé a leer."
+            )
+        elif result["clean"]:
+            result["summary"] = (
+                f"{result['frames']} frame(s) leídos, ninguno descartado."
+            )
+        else:
+            reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
+            result["summary"] = (
+                f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
+            )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # BACKUP y METADATA del proyecto
+    # ------------------------------------------------------------------
+
+    # La startup-config vuelve con las líneas separadas por COMAS, no por
+    # saltos. Reconstruirla es lo que la vuelve pegable en una CLI.
+    _MAX_BACKUP_XML = 200_000
+
+    @mcp.tool()
+    def pt_backup_config(device: str, include_xml: bool = False) -> str:
+        """
+        Respalda la configuración de arranque de un dispositivo de PT.
+
+        Devuelve la startup-config real (la que el equipo relee al reiniciar),
+        más su número de serie, config-register, imágenes de arranque y uptime.
+        Sirve para guardar un estado conocido antes de tocar algo, o para
+        comparar dos equipos.
+
+        Parámetros:
+        - device: nombre del router o switch en PT.
+        - include_xml: si True, agrega el volcado completo del dispositivo en XML
+          (topología + config + módulos). Son decenas de miles de caracteres:
+          útil para archivar, pesado para leer.
+
+        Ejemplo: pt_backup_config(device="R1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        dev = json.dumps(device.strip())
+        want_xml = "true" if include_xml else "false"
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getStartupFile !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __out = { found: true, supported: true,"
+            "      startup: String(__d.getStartupFile() || ''),"
+            "      model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+            "      hostname: (typeof __d.getHostName === 'function') ? __d.getHostName() : '',"
+            "      serial: (typeof __d.getSerialNumber === 'function') ? __d.getSerialNumber() : '',"
+            "      config_register: (typeof __d.getConfigRegister === 'function')"
+            "        ? __d.getConfigRegister() : null,"
+            "      uptime: (typeof __d.getUpTime === 'function') ? __d.getUpTime() : null,"
+            "      boot_systems: (typeof __d.getBootSystems === 'function')"
+            "        ? String(__d.getBootSystems() || '') : '' };"
+            f"    if ({want_xml} && typeof __d.serializeToXml === 'function') {{"
+            f"      __out.xml = String(__d.serializeToXml() || '').substring(0, {_MAX_BACKUP_XML});"
+            "    }"
+            "    reportResult(JSON.stringify(__out));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no tiene startup-config (los hosts de PT no la tienen)."
+
+        startup = data.pop("startup", "")
+        lines = [ln for ln in startup.split(",") if ln != ""]
+        data["startup_config"] = "\n".join(lines)
+        data["startup_lines"] = len(lines)
+        if not lines:
+            data["summary"] = (
+                f"'{device}' no tiene startup-config guardada. "
+                "Corré `write memory` en el equipo antes de respaldar."
+            )
+        else:
+            data["summary"] = (
+                f"{len(lines)} línea(s) de startup-config de '{device}' "
+                f"({data.get('model')}, serial {data.get('serial')})."
+            )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_project_metadata(description: str = "") -> str:
+        """
+        Lee (y opcionalmente escribe) los metadatos del proyecto abierto en PT.
+
+        Devuelve el archivo guardado, la versión de PT que lo escribió y la
+        descripción del proyecto, junto con el conteo de dispositivos y enlaces.
+        Útil para saber con qué se está trabajando antes de modificar algo.
+
+        Parámetros:
+        - description: si se indica, REEMPLAZA la descripción del proyecto.
+          Vacío = solo lectura.
+
+        Ejemplo: pt_project_metadata()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        new_desc = description.strip()
+        setter = (
+            f"  if (typeof __f.setNetworkDescription === 'function') "
+            f"{{ __f.setNetworkDescription({json.dumps(new_desc)}); }}"
+            if new_desc else ""
+        )
+        js = (
+            "try {"
+            "  var __a = ipc.appWindow();"
+            "  var __f = __a.getActiveFile();"
+            "  if (!__f) { reportResult(JSON.stringify({ found: false })); } else {"
+            + setter +
+            "    var __n = ipc.network();"
+            "    reportResult(JSON.stringify({"
+            "      found: true,"
+            "      saved_filename: String(__f.getSavedFilename() || ''),"
+            "      pt_version: String(__f.getVersion() || ''),"
+            "      description: String(__f.getNetworkDescription() || ''),"
+            "      devices: __n.getDeviceCount(), links: __n.getLinkCount()"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return "PT no tiene ningún archivo de red activo."
+
+        data["updated_description"] = bool(new_desc)
+        saved = data.get("saved_filename") or ""
+        data["summary"] = (
+            f"{data['devices']} dispositivo(s), {data['links']} enlace(s). "
+            + (f"Archivo: {saved}." if saved
+               else "Proyecto SIN guardar — usá pt_save_project para persistirlo.")
+            + (" Descripción actualizada." if new_desc else "")
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_workspace_options(
+        auto_cabling: int = -1,
+        external_network_access: int = -1,
+        show_port_labels: int = -1,
+        show_link_lights: int = -1,
+        show_device_labels: int = -1,
+    ) -> str:
+        """
+        Lee y ajusta opciones del workspace de PT que afectan cómo se comporta.
+
+        Sin argumentos es solo lectura. Los flags son tri-estado: 1 activa,
+        0 desactiva, -1 (default) no toca.
+
+        Parámetros:
+        - auto_cabling: el auto-cableado de PT elige el cable y el puerto por vos.
+          Apagalo antes de construir topologías por script si querés control
+          exacto de qué puerto se usa.
+        - external_network_access: permite que PT alcance la red REAL de la
+          máquina. Apagado por defecto; encenderlo saca tráfico del simulador.
+        - show_port_labels / show_link_lights / show_device_labels: qué se ve en
+          el canvas. Importa para que una captura sea legible.
+
+        Ejemplo: apagar auto-cabling antes de un deploy scripteado:
+          pt_workspace_options(auto_cabling=0)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        sets: list[str] = []
+        # OJO con la polaridad: PT expone estas dos en negativo
+        # (`setDisableAutoCabling`, `setHideDevLabel`), así que el flag amistoso
+        # va invertido. Verificado con round-trip contra PT 9.0.0.0810.
+        if auto_cabling in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setDisableAutoCabling === 'function')"
+                f" {{ __o.setDisableAutoCabling({'false' if auto_cabling == 1 else 'true'}); }}"
+            )
+        if show_device_labels in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setHideDevLabel === 'function')"
+                f" {{ __o.setHideDevLabel({'false' if show_device_labels == 1 else 'true'}); }}"
+            )
+        if external_network_access in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setEnableExternalNetworkAccess === 'function')"
+                f" {{ __o.setEnableExternalNetworkAccess({'true' if external_network_access == 1 else 'false'}); }}"
+            )
+        if show_port_labels in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setIsPortShown === 'function')"
+                f" {{ __o.setIsPortShown({'true' if show_port_labels == 1 else 'false'}); }}"
+            )
+        if show_link_lights in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setIsLinkLightShown === 'function')"
+                f" {{ __o.setIsLinkLightShown({'true' if show_link_lights == 1 else 'false'}); }}"
+            )
+
+        js = (
+            "try {"
+            "  var __o = ipc.options();"
+            + "".join(sets) +
+            "  reportResult(JSON.stringify({"
+            "    auto_cabling: !__o.isAutoCablingDisabled(),"
+            "    external_network_access: !!__o.isExternalNetworkAccessEnabled(),"
+            "    show_port_labels: !!__o.isPortShown(),"
+            "    show_link_lights: !!__o.isLinkLightsShown(),"
+            "    show_device_labels: !__o.isHideDevLabel(),"
+            "    using_metric: !!__o.isUsingMetric(),"
+            "    language: String(__o.getCurrentLanguage() || ''),"
+            "    config_path: String(__o.getConfigFilePath() || '')"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        data["changed"] = len(sets)
+        notes = []
+        if not data["auto_cabling"]:
+            notes.append("auto-cabling APAGADO (los puertos los elegís vos)")
+        if data["external_network_access"]:
+            notes.append("⚠ acceso a la red REAL habilitado")
+        data["summary"] = (
+            f"{len(sets)} opción(es) cambiada(s). " if sets else "Solo lectura. "
+        ) + ("; ".join(notes) if notes else "Configuración por defecto.")
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # NETFLOW — se configura por API nativa, no por CLI
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_apply_netflow(
+        device: str,
+        name: str,
+        destination_ip: str = "",
+        udp_port: int = 2055,
+        version: int = 9,
+        source_port: str = "",
+        monitors: list[str] | None = None,
+        remove: bool = False,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Configura un exportador NetFlow en un dispositivo de PT.
+
+        A diferencia del resto de features avanzadas, NetFlow NO va por CLI: se
+        configura directamente y se relee para verificar que quedó aplicado. Si
+        el nombre ya existe, se reconfigura en vez de duplicarse.
+
+        Parámetros:
+        - device: router donde vive el exportador.
+        - name: nombre del exportador (ej "COLLECTOR-1").
+        - destination_ip: IP del colector. Sin esto el exportador queda inerte.
+        - udp_port: puerto UDP del colector (default 2055).
+        - version: 9 (templates, recomendada) o 5 (formato fijo).
+        - source_port: interfaz de origen; vacío = la elige PT.
+        - monitors: nombres de monitores a asociar.
+        - remove: si True, borra el exportador `name` en vez de crearlo.
+        - dry_run: si True, solo valida y devuelve el payload sin tocar PT.
+
+        Ejemplo: exportar a un colector en 192.168.0.50:
+          pt_apply_netflow(device="R1", name="COLLECTOR-1", destination_ip="192.168.0.50")
+        """
+        cfg = NetflowExporter(
+            device=device, name=name, destination_ip=destination_ip.strip(),
+            udp_port=udp_port, version=version, source_port=source_port.strip(),
+            monitors=monitors or [],
+        )
+
+        res = validate_netflow(cfg)
+        errors = list(res.errors)
+        warnings = list(res.warnings)
+
+        bridge_ok = _pick_channel() != ""
+        if bridge_ok:
+            try:
+                topo = validate_netflow_against_topology(cfg, _live_devices())
+                errors.extend(topo.errors)
+                warnings.extend(topo.warnings)
+            except Exception as exc:  # pragma: no cover
+                warnings.append(PlanError(
+                    code=ErrorCode.VALIDATION_ERROR, device=cfg.device,
+                    message=f"No se pudo validar contra PT: {exc}",
+                    suggestion="Verificá el bridge con pt_bridge_status.",
+                ))
+
+        dev = json.dumps(cfg.device)
+        exporter = json.dumps(cfg.name)
+        if remove:
+            body = (
+                f"    __m.removeNFExporter({exporter});"
+                "    reportResult(JSON.stringify({ found: true, supported: true,"
+                "      removed: true, exporters: __m.getNFExporterCount() }));"
+            )
+        else:
+            sets = [f"      __e.setExporterVersion({int(cfg.version)});"]
+            if cfg.destination_ip:
+                sets.append(f"      __e.setDestinationAddr({json.dumps(cfg.destination_ip)});")
+            sets.append(f"      __e.setDestinationUdpPort({int(cfg.udp_port)});")
+            if cfg.source_port:
+                sets.append(f"      __e.setSrcPort({json.dumps(cfg.source_port)});")
+            for monitor in cfg.monitors:
+                sets.append(f"      __e.addMonitor({json.dumps(monitor)});")
+            body = (
+                f"    var __e = __m.getNFExporterByName({exporter});"
+                "    var __created = false;"
+                f"    if (!__e) {{ __e = __m.createNFExporter({exporter}); __created = true; }}"
+                f"    if (!__e) {{ reportResult(JSON.stringify({{ found: true, supported: true,"
+                "      error: 'no se pudo crear el exportador' })); } else {"
+                + "".join(sets) +
+                "      reportResult(JSON.stringify({ found: true, supported: true,"
+                "        created: __created, name: __e.getExporterName(),"
+                "        version: __e.getExporterVersion(),"
+                "        destination: String(__e.getDestinationAddr()),"
+                "        udp_port: __e.getDestinationUdpPort(),"
+                "        fully_configured: !!__e.isFullyConfigured(),"
+                "        exporters: __m.getNFExporterCount() }));"
+                "    }"
+            )
+
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getNetflowExporterManager !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __m = __d.getNetflowExporterManager();"
+            + body +
+            "  }"
+            "} catch (__e2) { reportResult('ERROR:' + __e2); }"
+        )
+
+        payload = {
+            "valid": not errors,
+            "errors": [e.to_dict() for e in errors],
+            "warnings": [w.to_dict() for w in warnings],
+            "js_payload": js,
+            "dry_run": dry_run,
+            "sent": False,
+        }
+
+        if errors:
+            payload["summary"] = f"❌ NetFlow: {len(errors)} error(es); no se envió nada."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+        if dry_run:
+            payload["summary"] = "✅ NetFlow válido. Modo dry_run — NO se envió al bridge."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no expone NetFlow (los switches y hosts de PT no lo tienen)."
+
+        payload.update(data)
+        payload["sent"] = True
+        if remove:
+            payload["summary"] = f"✅ Exportador '{name}' eliminado de {device}."
+        elif data.get("fully_configured"):
+            payload["summary"] = (
+                f"✅ '{name}' {'creado' if data.get('created') else 'actualizado'} en {device} "
+                f"→ {data.get('destination')}:{data.get('udp_port')} (v{data.get('version')})."
+            )
+        else:
+            payload["summary"] = (
+                f"⚠ '{name}' existe en {device} pero PT lo reporta incompleto: "
+                "sin destino no exporta flujos."
+            )
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # QoS — SOLO LECTURA: la API de PT no permite crear class/policy-maps
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_read_qos(device: str) -> str:
+        """
+        Lee la configuración de QoS REAL de un dispositivo: class-maps y policy-maps.
+
+        Solo lectura: QoS no se puede crear programáticamente en PT, así que para
+        CONFIGURARLO hay que mandar el CLI IOS con pt_send_raw
+        (`configureIosDevice`). Esta tool sirve para verificar que quedó aplicado.
+
+        Devuelve, por class-map, su tipo de match y su representación CLI; por
+        policy-map, cuántas clases tiene y qué features usa (bandwidth, priority,
+        shaping, fair-queue).
+
+        Parámetros:
+        - device: nombre del router en PT.
+
+        Ejemplo: pt_read_qos(device="R1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        dev = json.dumps(device.strip())
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getClassMapManager !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __cm = __d.getClassMapManager();"
+            "    var __pm = (typeof __d.getPolicyMapManager === 'function')"
+            "      ? __d.getPolicyMapManager() : null;"
+            "    var __cs = [], __ps = [];"
+            "    var __cn = __cm.getClassMapCount();"
+            "    for (var __i = 0; __i < __cn; __i++) {"
+            "      try {"
+            "        var __c = __cm.getClassMapAt(__i);"
+            "        if (!__c) continue;"
+            "        __cs.push({ name: __c.getMapName(), description: __c.getDescription(),"
+            "          match: __c.getMatchTypeString(), statements: __c.getStatementCnt(),"
+            "          is_default: !!__c.isClassDefault(), cli: __c.toString() });"
+            "      } catch (__ce) {}"
+            "    }"
+            "    if (__pm) {"
+            "      var __pn = __pm.getPolicyMapCount();"
+            "      for (var __j = 0; __j < __pn; __j++) {"
+            "        try {"
+            "          var __p = __pm.getPolicyMapAt(__j);"
+            "          if (!__p) continue;"
+            "          __ps.push({ name: __p.getMapName(), classes: __p.getClassCnt(),"
+            "            total_bandwidth: __p.getTotalBandwidth(),"
+            "            bandwidth: !!__p.isBandwidthConfigured(),"
+            "            priority: !!__p.isPriorityConfigured(),"
+            "            shaping: !!__p.isShapeConfigured(),"
+            "            fair_queue: !!__p.isFairQueueConfigured(),"
+            "            cli: __p.toString(true) });"
+            "        } catch (__pe) {}"
+            "      }"
+            "    }"
+            "    reportResult(JSON.stringify({ found: true, supported: true,"
+            "      class_maps: __cs, policy_maps: __ps }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no expone QoS (los hosts de PT no lo tienen)."
+
+        cmaps = data.get("class_maps", [])
+        pmaps = data.get("policy_maps", [])
+        custom = [c for c in cmaps if not c.get("is_default")]
+        data["summary"] = (
+            f"{len(cmaps)} class-map(s) ({len(custom)} propia(s)), "
+            f"{len(pmaps)} policy-map(s). QoS es de solo lectura por API: "
+            "para configurarlo usá CLI IOS."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)

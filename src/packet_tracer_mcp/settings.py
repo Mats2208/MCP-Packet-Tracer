@@ -2,7 +2,7 @@
 Configuración global del servidor.
 """
 
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
@@ -117,10 +117,41 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
   duplicadas) y `pt_verify_connectivity(from_device, to_ip)` — ping REAL desde la
   consola del dispositivo, con el resultado parseado (llegó/no llegó).
 
+## Inspección del estado VIVO (no leen el plan, leen el dispositivo)
+- `pt_audit_security(device="")`: postura de seguridad real con severidad. Detecta
+  enable secret ausente, credenciales reversibles (type 7), service
+  password-encryption apagado, sin usuarios locales, sin banner y config-register
+  en 0x2142. Nunca devuelve contraseñas ni hashes, solo la etiqueta del algoritmo.
+- `pt_inspect_ports(device, only_linked)`: por puerto — line/protocol status, MAC,
+  IP, duplex, ancho de banda, MTU, delay, CDP, DHCP client, modo NAT y ACLs.
+  Marca "cable puesto pero puerto down" y "línea up con protocolo down".
+- `pt_read_vlans(switch)`: base de VLANs real del switch, separando las propias de
+  las de fábrica (1, 1002-1005).
+- `pt_device_power(device, on)`: apaga/enciende con lectura de verificación, para
+  simular caídas. Todos los modelos lo soportan; solo los IOS reportan `booting`.
+
+## Telemetría y QoS — NO son simétricas
+- `pt_apply_netflow(device, name, destination_ip, ...)`: configura el exportador
+  directamente (no por CLI) y lo relee para confirmar. Si el nombre ya existe lo
+  reconfigura en vez de duplicar. Acepta `remove=True` y `dry_run=True`.
+- `pt_read_qos(device)`: SOLO LECTURA. QoS no se puede crear programáticamente, así
+  que para CONFIGURARLO hay que mandar CLI IOS con `configureIosDevice`; esta tool
+  sirve para verificar que quedó aplicado.
+
+## Simulación paso a paso
+Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivity`)
+→ `pt_read_packet_trace()` → `pt_simulation_step(action="forward")` para avanzar.
+- `pt_read_packet_trace` devuelve, por frame, el recorrido Y el log de decisiones
+  de PT por capa OSI — el mismo texto del panel "PDU Details" de la GUI. Ahí está
+  la causa real de un ping que falla ("The next-hop IP address is not in the ARP
+  table..."), no solo el síntoma.
+- NO existe `pt_send_pdu`: PT no permite originar un paquete desde una extensión
+  como sí lo hace el botón "Add Simple PDU" de la GUI. Generá tráfico con un ping real.
+
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 46 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 58 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.
