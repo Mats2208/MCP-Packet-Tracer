@@ -415,8 +415,12 @@ def register_tools(mcp: FastMCP) -> None:
         """
         Pipeline completo: planifica, valida, genera, explica, estima y despliega.
 
-        Si deploy=True (default), copia el script al portapapeles de Windows
-        y genera instrucciones paso a paso para Packet Tracer.
+        Con deploy=True (default) el despliegue depende de si hay canal a PT:
+        - Si el bridge está conectado, la topología se crea DE VERDAD en Packet
+          Tracer (misma ruta que pt_live_deploy, con verificación y reconcile),
+          y además se exportan los archivos del proyecto a disco.
+        - Si no hay canal, cae al modo manual: copia el script al portapapeles
+          y genera instrucciones paso a paso.
 
         Parámetros:
         - routers: Número de routers (1-20)
@@ -554,23 +558,38 @@ def register_tools(mcp: FastMCP) -> None:
             parts.append("=" * 60)
             parts.append("DESPLIEGUE EN PACKET TRACER")
             parts.append("=" * 60)
-            deploy_exec = DeployExecutor(output_dir="projects")
-            deploy_result = deploy_exec.execute(plan, project_name=f"build_{routers}r_{pcs_per_lan}pc")
-            if deploy_result["clipboard"]:
-                parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+            project_name = f"build_{routers}r_{pcs_per_lan}pc"
+
+            # Con un canal vivo hay que desplegar de verdad. Antes esto SIEMPRE
+            # iba al portapapeles, así que el pipeline "completo" terminaba con
+            # el canvas vacío aunque el bridge estuviera conectado: el usuario
+            # veía "✅ Validación: PASS" y en PT no había nada.
+            if _pick_channel() != "":
+                parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
-                parts.append("Instrucciones:")
-                parts.append("  1. Abre Packet Tracer")
-                parts.append("  2. Ve a Extensions > Scripting")
-                parts.append("  3. Pega (Ctrl+V) y ejecuta")
-                parts.append("")
-                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                export_result = ManualExecutor(output_dir="projects").execute(
+                    plan, project_name=project_name
+                )
+                parts.append(f"Archivos exportados en: {export_result['project_dir']}")
                 parts.append("  Configs CLI en archivos *_config.txt")
             else:
-                parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
-                parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
-            parts.append("")
-            parts.append(deploy_result["instructions"])
+                deploy_exec = DeployExecutor(output_dir="projects")
+                deploy_result = deploy_exec.execute(plan, project_name=project_name)
+                if deploy_result["clipboard"]:
+                    parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+                    parts.append("")
+                    parts.append("Instrucciones:")
+                    parts.append("  1. Abre Packet Tracer")
+                    parts.append("  2. Ve a Extensions > Scripting")
+                    parts.append("  3. Pega (Ctrl+V) y ejecuta")
+                    parts.append("")
+                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                    parts.append("  Configs CLI en archivos *_config.txt")
+                else:
+                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
+                    parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
+                parts.append("")
+                parts.append(deploy_result["instructions"])
 
         # --- Plan JSON ---
         parts.append("")
