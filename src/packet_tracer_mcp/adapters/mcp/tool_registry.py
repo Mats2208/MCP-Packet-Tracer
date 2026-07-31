@@ -42,6 +42,7 @@ from ...application.use_cases.apply_hardening import (
 from ...application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ...domain.models.interface_tuning import InterfaceTuning
 from ...domain.services.topology_diff import diff as topology_diff, health_check
+from ...domain.services.security_audit import audit_security
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -3243,4 +3244,137 @@ def register_tools(mcp: FastMCP) -> None:
             else f"⚠ {len(result['down_links'])} link(s) caído(s), "
                  f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
         )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # AUDITORÍA DE SEGURIDAD — postura real leída de los dispositivos vivos
+    # ------------------------------------------------------------------
+
+    # Clasifica cada credencial por su prefijo y devuelve SOLO la etiqueta del
+    # algoritmo. El hash nunca cruza el bridge: terminaría en el contexto del LLM
+    # y en los logs del cliente MCP, y la etiqueta alcanza para auditar.
+    # Verificado contra PT 9.0.0.0810: `enable secret`/`username X secret` dan
+    # "$1$...", y `username X password` con service-password-encryption da hex
+    # type-7 (reversible con decodificadores públicos).
+    _AUDIT_ALGO_JS = (
+        "function __algo(s){"
+        "  if(!s) return null;"
+        "  s = String(s);"
+        "  if(s.indexOf('$1$')===0) return 'md5';"
+        "  if(s.indexOf('$8$')===0) return 'pbkdf2';"
+        "  if(s.indexOf('$9$')===0) return 'scrypt';"
+        "  if(/^[0-9A-Fa-f]{4,}$/.test(s)) return 'type7';"
+        "  return 'plaintext';"
+        "}"
+    )
+
+    _SECURITY_AUDIT_JS = (
+        "try {"
+        + _AUDIT_ALGO_JS +
+        "  var __net = ipc.network();"
+        "  var __out = [];"
+        "  var __n = __net.getDeviceCount();"
+        "  for (var __i = 0; __i < __n; __i++) {"
+        "    try {"
+        "      var __d = __net.getDeviceAt(__i);"
+        # Los hosts (PC/Server/Laptop) no exponen configuración IOS: llamar a
+        # estos getters ahí lanza y abre un modal que congela el bridge.
+        "      if (!__d || typeof __d.getEnableSecret !== 'function') continue;"
+        "      var __users = [];"
+        "      try {"
+        "        var __uc = __d.getUserPassCount();"
+        "        for (var __j = 0; __j < __uc; __j++) {"
+        # getUserEntryAt lanza 'out of bound' en vez de devolver null, así que
+        # cada lectura va con su propio guard.
+        "          try {"
+        "            var __u = String(__d.getUserEntryAt(__j));"
+        "            __users.push({ name: __u, algo: __algo(__d.getUserPass(__u)) });"
+        "          } catch (__ue) {}"
+        "        }"
+        "      } catch (__uce) {}"
+        "      var __sec = __d.getEnableSecret();"
+        "      var __pwd = __d.getEnablePassword();"
+        "      __out.push({"
+        "        name: __d.getName(),"
+        "        model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+        "        hostname: (typeof __d.getHostName === 'function') ? __d.getHostName() : '',"
+        "        enable_secret_set: !!__sec,"
+        "        enable_secret_algo: __algo(__sec),"
+        "        enable_password_set: !!__pwd,"
+        "        service_password_encryption: (typeof __d.getServicePasswordEncryption === 'function')"
+        "          ? !!__d.getServicePasswordEncryption() : false,"
+        "        banner_set: (typeof __d.getBannerMotd === 'function')"
+        "          ? !!__d.getBannerMotd() : false,"
+        "        users: __users,"
+        "        config_register: (typeof __d.getConfigRegister === 'function')"
+        "          ? __d.getConfigRegister() : null"
+        "      });"
+        "    } catch (__pe) {}"
+        "  }"
+        "  reportResult(JSON.stringify({ devices: __out }));"
+        "} catch (__e) { reportResult('ERROR:' + __e); }"
+    )
+
+    @mcp.tool()
+    def pt_audit_security(device: str = "") -> str:
+        """
+        Audita la postura de seguridad REAL de los dispositivos vivos en PT.
+
+        No lee el plan: lee la configuración efectiva de cada router/switch del
+        canvas y reporta hallazgos con severidad (high/medium/low). Detecta
+        `enable secret` ausente, credenciales guardadas de forma reversible
+        (type 7), `service password-encryption` apagado, falta de usuarios
+        locales, banner MOTD ausente y config-register en 0x2142 (que descarta
+        la startup-config en el próximo reboot).
+
+        Las contraseñas y hashes NUNCA salen del dispositivo: solo se transmite
+        la etiqueta del algoritmo con que están guardadas.
+
+        Los hosts (PC/Server/Laptop) se omiten: no tienen configuración IOS.
+
+        Parámetros:
+        - device: si se indica, audita solo ese dispositivo; vacío = todos.
+
+        Ejemplo: auditar toda la topología:
+          pt_audit_security()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(_SECURITY_AUDIT_JS, timeout=12.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+
+        try:
+            devices = json.loads(raw).get("devices", [])
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        wanted = device.strip()
+        if wanted:
+            devices = [d for d in devices if d.get("name") == wanted]
+            if not devices:
+                return (
+                    f"'{wanted}' no existe en la topología activa o no tiene "
+                    "configuración IOS (los PCs y servidores no la tienen). "
+                    "Usá pt_query_topology para ver los nombres reales."
+                )
+
+        result = audit_security(devices)
+        counts = result["counts"]
+        if not devices:
+            result["summary"] = "No hay dispositivos con configuración IOS en el canvas."
+        elif result["secure"]:
+            result["summary"] = (
+                f"✅ {result['devices_audited']} dispositivo(s) auditado(s), "
+                f"sin hallazgos altos ni medios ({counts['low']} bajo(s))."
+            )
+        else:
+            result["summary"] = (
+                f"⚠ {counts['high']} hallazgo(s) alto(s), {counts['medium']} medio(s), "
+                f"{counts['low']} bajo(s) en {result['devices_audited']} dispositivo(s)."
+            )
         return json.dumps(result, indent=2, ensure_ascii=False)
