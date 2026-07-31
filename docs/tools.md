@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **50 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **53 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -113,6 +113,34 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810.
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
 | `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+## Simulation
+
+Packet Tracer's Simulation mode holds packets in an event list instead of moving
+them in real time, which is what makes a step-by-step trace possible.
+
+| Tool | What it does |
+|------|--------------|
+| `pt_simulation_mode` | Switch between Realtime and Simulation. |
+| `pt_simulation_step` | Advance, rewind or reset the simulation (`forward` / `back` / `reset`). |
+| `pt_read_packet_trace` | Read the event list: per frame the device, ingress/egress port, source, destination, traffic type and outcome — **plus PT's own per-OSI-layer explanation** of what the device decided and why. |
+
+!!! tip "`pt_read_packet_trace` answers *why*, not just *what*"
+    The decision log is the same text Packet Tracer shows in its **PDU Details**
+    pane. A failing ping stops being "no reply" and becomes a cause:
+
+    ```
+    L3 :: The destination IP address is in the same subnet. The device sets the next-hop to destination.
+    L2 :: The next-hop IP address is not in the ARP table. The ARP process tries to
+          send an ARP request for that IP address and buffers this packet.
+    ```
+
+!!! warning "Originating a PDU from the API is not supported"
+    Packet Tracer 9's `Simulation.createFrameInstance` exists but rejects every
+    argument shape tried, and no `addSimplePdu` is exposed on the workspace,
+    logical workspace or simulation objects in this build. So there is no
+    `pt_send_pdu`. Generate traffic the way a user would — `pt_verify_connectivity`
+    runs a real ping — and then read the trace.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

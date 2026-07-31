@@ -44,6 +44,7 @@ from ...domain.models.interface_tuning import InterfaceTuning
 from ...domain.services.topology_diff import diff as topology_diff, health_check
 from ...domain.services.security_audit import audit_security
 from ...domain.services.port_inspect import nat_mode_label, summarize_ports
+from ...domain.services.packet_trace import summarize_trace, traffic_type_label
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -3670,3 +3671,261 @@ def register_tools(mcp: FastMCP) -> None:
                 "El modelo puede no soportar el cambio."
             )
         return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # SIMULACIÓN — modo, paso a paso y lectura del event list
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_simulation_mode(on: bool = True) -> str:
+        """
+        Cambia PT entre modo Realtime y modo Simulación.
+
+        En modo Simulación los paquetes NO avanzan solos: quedan encolados en el
+        event list y hay que moverlos con pt_simulation_step. Eso es lo que
+        permite leer el recorrido paquete por paquete con pt_read_packet_trace.
+
+        Parámetros:
+        - on: True entra a Simulación (default), False vuelve a Realtime.
+
+        Ejemplo: pt_simulation_mode(on=True)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        want = "true" if on else "false"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            "  var __before = !!__s.isSimulationMode();"
+            f"  __s.setSimulationMode({want});"
+            "  reportResult(JSON.stringify({"
+            "    before: __before, after: !!__s.isSimulationMode(),"
+            "    frames: __s.getFrameInstanceCount(), sim_time: __s.getCurrentSimTime()"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        mode = "Simulación" if data["after"] else "Realtime"
+        data["summary"] = (
+            f"Modo {mode}. {data['frames']} frame(s) en el event list."
+            if data["before"] != data["after"]
+            else f"Ya estaba en modo {mode}; sin cambios."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_simulation_step(action: str = "forward", times: int = 1) -> str:
+        """
+        Avanza, retrocede o reinicia la simulación paso a paso.
+
+        Requiere estar en modo Simulación (pt_simulation_mode(on=True)). Cada
+        paso mueve los paquetes un evento; después de avanzar, leé el resultado
+        con pt_read_packet_trace.
+
+        Parámetros:
+        - action: "forward" (default) | "back" | "reset".
+        - times: cuántos pasos dar (1-100, ignorado en "reset").
+
+        Ejemplo: avanzar 5 eventos:
+          pt_simulation_step(action="forward", times=5)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        act = action.strip().lower()
+        if act not in ("forward", "back", "reset"):
+            return json.dumps(
+                {"error": f"action inválida: '{action}'. Usá forward, back o reset."},
+                ensure_ascii=False,
+            )
+        steps = max(1, min(int(times), 100))
+
+        call = {"forward": "__s.forward();", "back": "__s.backward();",
+                "reset": "__s.resetSimulation();"}[act]
+        loop = call if act == "reset" else f"for (var __i = 0; __i < {steps}; __i++) {{ {call} }}"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            "  if (!__s.isSimulationMode()) {"
+            "    reportResult(JSON.stringify({ simulation_mode: false }));"
+            "  } else {"
+            "    var __b = __s.getFrameInstanceCount();"
+            f"   {loop}"
+            "    reportResult(JSON.stringify({"
+            "      simulation_mode: true, frames_before: __b,"
+            "      frames_after: __s.getFrameInstanceCount(),"
+            "      sim_time: __s.getCurrentSimTime(),"
+            "      current_index: __s.getCurrentFrameInstanceIndex()"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("simulation_mode"):
+            return (
+                "PT está en modo Realtime, así que no hay nada que avanzar. "
+                "Llamá pt_simulation_mode(on=True) primero."
+            )
+        data["action"] = act
+        data["steps"] = 1 if act == "reset" else steps
+        data["summary"] = (
+            f"{act} x{data['steps']} — {data['frames_after']} frame(s) en el event list "
+            f"(antes {data['frames_before']})."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_read_packet_trace(
+        limit: int = 20,
+        device: str = "",
+        include_decisions: bool = True,
+    ) -> str:
+        """
+        Lee el event list de la simulación: qué hizo cada paquete y POR QUÉ.
+
+        Además del recorrido (dispositivo, puerto de entrada/salida, origen,
+        destino, tipo de tráfico y desenlace) devuelve el log de decisiones que
+        PT genera por capa OSI — el mismo texto del panel "PDU Details" de su
+        GUI. Ahí es donde se ve la causa real de un ping que no anda, por
+        ejemplo: "The next-hop IP address is not in the ARP table."
+
+        Requiere modo Simulación con tráfico generado (pt_simulation_mode(on=True)
+        y después un ping, o pt_simulation_step para que avancen los eventos).
+
+        Parámetros:
+        - limit: máximo de frames a devolver (1-200, default 20).
+        - device: si se indica, solo los frames que pasaron por ese dispositivo.
+        - include_decisions: si False, omite el log por capa (respuesta más corta).
+
+        Ejemplo: ver por qué se cae un ping:
+          pt_read_packet_trace(limit=10)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        lim = max(1, min(int(limit), 200))
+        want = json.dumps(device.strip())
+        dec = "true" if include_decisions else "false"
+        js = (
+            "try {"
+            "  var __s = ipc.simulation();"
+            f"  var __lim = {lim}; var __want = {want}; var __wd = {dec};"
+            "  var __n = __s.getFrameInstanceCount();"
+            "  var __out = [];"
+            "  for (var __i = 0; __i < __n && __out.length < __lim; __i++) {"
+            "    try {"
+            "      var __f = __s.getFrameInstanceAt(__i);"
+            "      if (!__f) continue;"
+            "      var __dev = __f.getDevice();"
+            "      var __dn = __dev ? __dev.getName() : '';"
+            "      if (__want && __dn !== __want) continue;"
+            "      var __prev = __f.getPreviousDevice();"
+            "      var __ip = __f.getInPort();"
+            "      var __op = null;"
+            # getOutPort(0) lanza cuando getOutPortCount() es 0 (frame en buffer,
+            # todavía sin puerto de salida elegido).
+            "      try {"
+            "        if (__f.getOutPortCount() > 0) {"
+            "          var __o = __f.getOutPort(0); __op = __o ? __o.getName() : null;"
+            "        }"
+            "      } catch (__oe) {}"
+            "      var __dl = [];"
+            "      if (__wd) {"
+            # No hay getDecisionCount(); el conteo de nodos del flowchart coincide
+            # con el de decisiones (verificado: 6/6 y 3/3 en un ping real).
+            "        var __dc = __f.getFlowChartNodeCount();"
+            "        for (var __j = 0; __j < __dc; __j++) {"
+            "          try {"
+            # getFrameDecsionAt: el typo es de PT, no nuestro.
+            "            var __d = __f.getFrameDecsionAt(__j);"
+            "            if (!__d) continue;"
+            "            __dl.push({ layer: __d.osiLayer, inbound: !!__d.osiIn,"
+            "                        description: __d.description });"
+            "          } catch (__de) {}"
+            "        }"
+            "      }"
+            "      __out.push({"
+            "        index: __i, device: __dn,"
+            "        previous_device: __prev ? __prev.getName() : null,"
+            "        in_port: __ip ? __ip.getName() : null, out_port: __op,"
+            "        source: __f.getSourceString(), destination: __f.getDestinationString(),"
+            "        traffic_type_raw: __f.getUserTrafficType(),"
+            "        sim_time: __f.getStartSimTime(), transit_time: __f.getTransitTime(),"
+            "        sent: !!__f.isFrameSent(), accepted: !!__f.isFrameAccepted(),"
+            "        dropped: !!__f.isFrameDropped(), buffered: !!__f.isFrameBuffered(),"
+            "        in_transit: !!__f.isFrameOnTransit(),"
+            "        collided_at_device: !!__f.isFrameCollidedAtDevice(),"
+            "        collided_on_link: !!__f.isFrameCollidedOnLink(),"
+            "        not_forwarded: !!__f.isFrameNotForwarded(),"
+            "        unexpected: !!__f.isFrameUnexpected(),"
+            "        decisions: __dl"
+            "      });"
+            "    } catch (__pe) {}"
+            "  }"
+            "  reportResult(JSON.stringify({"
+            "    total: __n, simulation_mode: !!__s.isSimulationMode(), frames: __out"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        frames = data.get("frames", [])
+        for frame in frames:
+            frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+
+        result = summarize_trace(frames)
+        result["total_in_event_list"] = data.get("total", 0)
+        result["simulation_mode"] = data.get("simulation_mode", False)
+        result["trace"] = frames
+
+        if not data.get("simulation_mode"):
+            result["summary"] = (
+                "PT está en modo Realtime: el event list no retiene paquetes. "
+                "Llamá pt_simulation_mode(on=True) y generá tráfico."
+            )
+        elif not frames:
+            result["summary"] = (
+                "Modo Simulación activo pero sin frames. Generá tráfico "
+                "(por ejemplo pt_verify_connectivity) y volvé a leer."
+            )
+        elif result["clean"]:
+            result["summary"] = (
+                f"{result['frames']} frame(s) leídos, ninguno descartado."
+            )
+        else:
+            reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
+            result["summary"] = (
+                f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
+            )
+        return json.dumps(result, indent=2, ensure_ascii=False)

@@ -130,10 +130,20 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 - `pt_device_power(device, on)`: apaga/enciende con lectura de verificación, para
   simular caídas. Todos los modelos lo soportan; solo los IOS reportan `booting`.
 
+## Simulación paso a paso
+Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivity`)
+→ `pt_read_packet_trace()` → `pt_simulation_step(action="forward")` para avanzar.
+- `pt_read_packet_trace` devuelve, por frame, el recorrido Y el log de decisiones
+  de PT por capa OSI — el mismo texto del panel "PDU Details" de la GUI. Ahí está
+  la causa real de un ping que falla ("The next-hop IP address is not in the ARP
+  table..."), no solo el síntoma.
+- NO existe `pt_send_pdu`: `createFrameInstance` rechaza toda firma probada y esta
+  build de PT no expone `addSimplePdu`. Generá tráfico con un ping real.
+
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 50 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 53 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

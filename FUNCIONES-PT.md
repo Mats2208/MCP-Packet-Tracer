@@ -86,6 +86,14 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
 - **`Link.getOtherPort()` falla en links tipo Cable** (`Invalid arguments`) aunque la extensión
   lo use; para resolver vecinos hay que ir por `getPort1`/`getPort2`.
 - `getUserEntryAt(i)` **lanza** `out of bound` en vez de devolver null, y devuelve un string.
+- **Originar un PDU por API NO se pudo**: `Simulation.createFrameInstance` existe pero rechaza
+  las 7 firmas probadas (`(nombreSrc,nombreDst)`, `(devSrc,devDst)`, `(dev,port,ip)`, …) y
+  **no hay `addSimplePdu`** en `LogicalWorkspace`, `Workspace` ni `Simulation` en esta build.
+  Por eso no hay `pt_send_pdu`: se genera tráfico con un ping real y se lee el trace.
+- `FrameInstance` SÍ es rico (37 miembros): `getFrameDecsionAt(i)` —con el typo de PT— devuelve
+  `{description, osiLayer, osiIn}`, que es el panel "PDU Details" en texto. `getOutPort(0)` lanza
+  si `getOutPortCount()` es 0 (frame en buffer). No hay `getDecisionCount()`: el conteo de
+  decisiones coincide con `getFlowChartNodeCount()`.
 - **SSID/WPA2 custom de Access Points NO es configurable por la API de PT** (solo GUI) — las
   laptops WiFi usan el SSID default para auto-asociar.
 - IPv6 estático en hosts no es posible por la API (se usa SLAAC).

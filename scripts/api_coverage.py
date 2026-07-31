@@ -120,7 +120,15 @@ def union_js() -> str:
         "function(){return r1.getProcess('AclProcess');},function(){return sw1.getProcess('VlanManager');},"
         "function(){return r1.getProcess('RipProcess');},function(){return r1.getProcess('NatProcess');},"
         "function(){return p0.getEncapProcess();},function(){return p0.getKeepAliveProcess();},"
-        "function(){return p0.getQosQueue();},function(){return p0.getHardwareQueue();}];"
+        "function(){return p0.getQosQueue();},function(){return p0.getHardwareQueue();},"
+        # FrameInstance y sus hijos solo existen con tráfico en el event list. Si
+        # PT está en Realtime o no se generó nada, estos tres devuelven null y el
+        # denominador sale ~40 métodos más chico — de ahí que sea un piso.
+        "function(){var s=ipc.simulation();return s.getFrameInstanceCount()>0?s.getFrameInstanceAt(0):null;},"
+        "function(){var s=ipc.simulation();if(s.getFrameInstanceCount()===0)return null;"
+        "var f=s.getFrameInstanceAt(0);return f.getFlowChartNodeCount()>0?f.getFlowChartNodeAt(0):null;},"
+        "function(){var s=ipc.simulation();if(s.getFrameInstanceCount()===0)return null;"
+        "var f=s.getFrameInstanceAt(0);return f.getFlowChartNodeCount()>0?f.getFrameDecsionAt(0):null;}];"
         "for(var i=0;i<G.length;i++){ab(G[i]);}var list=[];for(var k in U){list.push(k);}list.sort();"
         f"ipc.systemFileManager().writePlainTextToFile('{UNION_FILE}', list.join('\\n'));"
         "reportResult('union='+N+' objetos='+G.length);"
