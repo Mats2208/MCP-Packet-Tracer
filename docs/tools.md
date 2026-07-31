@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **53 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **55 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -113,6 +113,22 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810.
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
 | `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+## Telemetry & QoS
+
+| Tool | What it does |
+|------|--------------|
+| `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. |
+| `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
+
+!!! note "NetFlow is configured natively; QoS can only be read"
+    These two look symmetric but are not. `NFExporterManager` exposes
+    `createNFExporter` plus the full setter set and `isFullyConfigured()`, so
+    `pt_apply_netflow` drives PT's own objects and verifies the result — no CLI
+    involved. `ClassMapManager` has `getClassMap`, `classMapExist` and
+    `deleteClassMap` but **no create**, and `PolicyMapManager` is getters only.
+    So QoS is authored through IOS CLI (`pt_send_raw` → `configureIosDevice`) and
+    `pt_read_qos` is how you confirm it landed.
 
 ## Simulation
 

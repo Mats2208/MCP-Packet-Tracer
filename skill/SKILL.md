@@ -53,7 +53,7 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (53)
+## Tool catalog (55)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -76,6 +76,11 @@ posture with severities; never returns passwords or hashes, only the algorithm l
 `pt_inspect_ports(device, only_linked)` (per-port line/protocol, MAC, duplex, bandwidth, MTU, CDP,
 NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
 your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
+**Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
+monitors, remove, dry_run)` configures a NetFlow exporter through PT's **native API** (not CLI) and
+reads it back via `isFullyConfigured()`. `pt_read_qos(device)` is **read-only** — `ClassMapManager`
+has no `createClassMap` and `PolicyMapManager` is getters only, so author QoS with IOS CLI and use
+this to verify.
 **Simulation:** `pt_simulation_mode(on)` (Realtime ↔ Simulation), `pt_simulation_step(action, times)`
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).

@@ -45,6 +45,11 @@ from ...domain.services.topology_diff import diff as topology_diff, health_check
 from ...domain.services.security_audit import audit_security
 from ...domain.services.port_inspect import nat_mode_label, summarize_ports
 from ...domain.services.packet_trace import summarize_trace, traffic_type_label
+from ...domain.models.netflow import NetflowExporter
+from ...domain.models.errors import ErrorCode, PlanError
+from ...domain.rules.netflow_rules import (
+    validate_netflow, validate_netflow_against_topology,
+)
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -3929,3 +3934,264 @@ def register_tools(mcp: FastMCP) -> None:
                 f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # NETFLOW — se configura por API nativa, no por CLI
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_apply_netflow(
+        device: str,
+        name: str,
+        destination_ip: str = "",
+        udp_port: int = 2055,
+        version: int = 9,
+        source_port: str = "",
+        monitors: list[str] | None = None,
+        remove: bool = False,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Configura un exportador NetFlow en un dispositivo de PT.
+
+        A diferencia del resto de features avanzadas, NetFlow NO va por CLI: PT
+        expone `NFExporterManager` en su API nativa, así que el exportador se crea
+        como objeto y se relee para verificar. Si el nombre ya existe, se
+        reconfigura en vez de duplicarse.
+
+        Parámetros:
+        - device: router donde vive el exportador.
+        - name: nombre del exportador (ej "COLLECTOR-1").
+        - destination_ip: IP del colector. Sin esto el exportador queda inerte.
+        - udp_port: puerto UDP del colector (default 2055).
+        - version: 9 (templates, recomendada) o 5 (formato fijo).
+        - source_port: interfaz de origen; vacío = la elige PT.
+        - monitors: nombres de monitores a asociar.
+        - remove: si True, borra el exportador `name` en vez de crearlo.
+        - dry_run: si True, solo valida y devuelve el payload sin tocar PT.
+
+        Ejemplo: exportar a un colector en 192.168.0.50:
+          pt_apply_netflow(device="R1", name="COLLECTOR-1", destination_ip="192.168.0.50")
+        """
+        cfg = NetflowExporter(
+            device=device, name=name, destination_ip=destination_ip.strip(),
+            udp_port=udp_port, version=version, source_port=source_port.strip(),
+            monitors=monitors or [],
+        )
+
+        res = validate_netflow(cfg)
+        errors = list(res.errors)
+        warnings = list(res.warnings)
+
+        bridge_ok = _pick_channel() != ""
+        if bridge_ok:
+            try:
+                topo = validate_netflow_against_topology(cfg, _live_devices())
+                errors.extend(topo.errors)
+                warnings.extend(topo.warnings)
+            except Exception as exc:  # pragma: no cover
+                warnings.append(PlanError(
+                    code=ErrorCode.VALIDATION_ERROR, device=cfg.device,
+                    message=f"No se pudo validar contra PT: {exc}",
+                    suggestion="Verificá el bridge con pt_bridge_status.",
+                ))
+
+        dev = json.dumps(cfg.device)
+        exporter = json.dumps(cfg.name)
+        if remove:
+            body = (
+                f"    __m.removeNFExporter({exporter});"
+                "    reportResult(JSON.stringify({ found: true, supported: true,"
+                "      removed: true, exporters: __m.getNFExporterCount() }));"
+            )
+        else:
+            sets = [f"      __e.setExporterVersion({int(cfg.version)});"]
+            if cfg.destination_ip:
+                sets.append(f"      __e.setDestinationAddr({json.dumps(cfg.destination_ip)});")
+            sets.append(f"      __e.setDestinationUdpPort({int(cfg.udp_port)});")
+            if cfg.source_port:
+                sets.append(f"      __e.setSrcPort({json.dumps(cfg.source_port)});")
+            for monitor in cfg.monitors:
+                sets.append(f"      __e.addMonitor({json.dumps(monitor)});")
+            body = (
+                f"    var __e = __m.getNFExporterByName({exporter});"
+                "    var __created = false;"
+                f"    if (!__e) {{ __e = __m.createNFExporter({exporter}); __created = true; }}"
+                f"    if (!__e) {{ reportResult(JSON.stringify({{ found: true, supported: true,"
+                "      error: 'no se pudo crear el exportador' })); } else {"
+                + "".join(sets) +
+                "      reportResult(JSON.stringify({ found: true, supported: true,"
+                "        created: __created, name: __e.getExporterName(),"
+                "        version: __e.getExporterVersion(),"
+                "        destination: String(__e.getDestinationAddr()),"
+                "        udp_port: __e.getDestinationUdpPort(),"
+                "        fully_configured: !!__e.isFullyConfigured(),"
+                "        exporters: __m.getNFExporterCount() }));"
+                "    }"
+            )
+
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getNetflowExporterManager !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __m = __d.getNetflowExporterManager();"
+            + body +
+            "  }"
+            "} catch (__e2) { reportResult('ERROR:' + __e2); }"
+        )
+
+        payload = {
+            "valid": not errors,
+            "errors": [e.to_dict() for e in errors],
+            "warnings": [w.to_dict() for w in warnings],
+            "js_payload": js,
+            "dry_run": dry_run,
+            "sent": False,
+        }
+
+        if errors:
+            payload["summary"] = f"❌ NetFlow: {len(errors)} error(es); no se envió nada."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+        if dry_run:
+            payload["summary"] = "✅ NetFlow válido. Modo dry_run — NO se envió al bridge."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no expone NetFlow (los switches y hosts de PT no lo tienen)."
+
+        payload.update(data)
+        payload["sent"] = True
+        if remove:
+            payload["summary"] = f"✅ Exportador '{name}' eliminado de {device}."
+        elif data.get("fully_configured"):
+            payload["summary"] = (
+                f"✅ '{name}' {'creado' if data.get('created') else 'actualizado'} en {device} "
+                f"→ {data.get('destination')}:{data.get('udp_port')} (v{data.get('version')})."
+            )
+        else:
+            payload["summary"] = (
+                f"⚠ '{name}' existe en {device} pero PT lo reporta incompleto: "
+                "sin destino no exporta flujos."
+            )
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # QoS — SOLO LECTURA: la API de PT no permite crear class/policy-maps
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_read_qos(device: str) -> str:
+        """
+        Lee la configuración de QoS REAL de un dispositivo: class-maps y policy-maps.
+
+        Solo lectura. La API de PT expone `getClassMap`/`deleteClassMap` pero NO
+        tiene un `createClassMap`, y `PolicyMapManager` solo tiene getters — así
+        que para CONFIGURAR QoS hay que mandar el CLI IOS con pt_send_raw
+        (`configureIosDevice`). Esta tool sirve para verificar que quedó aplicado.
+
+        Devuelve, por class-map, su tipo de match y su representación CLI; por
+        policy-map, cuántas clases tiene y qué features usa (bandwidth, priority,
+        shaping, fair-queue).
+
+        Parámetros:
+        - device: nombre del router en PT.
+
+        Ejemplo: pt_read_qos(device="R1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        dev = json.dumps(device.strip())
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getClassMapManager !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __cm = __d.getClassMapManager();"
+            "    var __pm = (typeof __d.getPolicyMapManager === 'function')"
+            "      ? __d.getPolicyMapManager() : null;"
+            "    var __cs = [], __ps = [];"
+            "    var __cn = __cm.getClassMapCount();"
+            "    for (var __i = 0; __i < __cn; __i++) {"
+            "      try {"
+            "        var __c = __cm.getClassMapAt(__i);"
+            "        if (!__c) continue;"
+            "        __cs.push({ name: __c.getMapName(), description: __c.getDescription(),"
+            "          match: __c.getMatchTypeString(), statements: __c.getStatementCnt(),"
+            "          is_default: !!__c.isClassDefault(), cli: __c.toString() });"
+            "      } catch (__ce) {}"
+            "    }"
+            "    if (__pm) {"
+            "      var __pn = __pm.getPolicyMapCount();"
+            "      for (var __j = 0; __j < __pn; __j++) {"
+            "        try {"
+            "          var __p = __pm.getPolicyMapAt(__j);"
+            "          if (!__p) continue;"
+            "          __ps.push({ name: __p.getMapName(), classes: __p.getClassCnt(),"
+            "            total_bandwidth: __p.getTotalBandwidth(),"
+            "            bandwidth: !!__p.isBandwidthConfigured(),"
+            "            priority: !!__p.isPriorityConfigured(),"
+            "            shaping: !!__p.isShapeConfigured(),"
+            "            fair_queue: !!__p.isFairQueueConfigured(),"
+            "            cli: __p.toString(true) });"
+            "        } catch (__pe) {}"
+            "      }"
+            "    }"
+            "    reportResult(JSON.stringify({ found: true, supported: true,"
+            "      class_maps: __cs, policy_maps: __ps }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no expone QoS (los hosts de PT no lo tienen)."
+
+        cmaps = data.get("class_maps", [])
+        pmaps = data.get("policy_maps", [])
+        custom = [c for c in cmaps if not c.get("is_default")]
+        data["summary"] = (
+            f"{len(cmaps)} class-map(s) ({len(custom)} propia(s)), "
+            f"{len(pmaps)} policy-map(s). QoS es de solo lectura por API: "
+            "para configurarlo usá CLI IOS."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
