@@ -62,6 +62,9 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 `pt_explain_plan`, `pt_generate_script(include_configs)`, `pt_generate_configs`, `pt_full_build(deploy=…)`.
 `pt_plan_topology`/`pt_full_build` accept `vlans`, `dual_stack`, `ipv6_base`, `wireless_laptops`.
 **Disk / clipboard:** `pt_export`, `pt_deploy`.
+**PT project files:** `pt_save_project(filename)` / `pt_open_project(path)` — these write and read the
+real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scripts to disk).
+`pt_open_project` replaces the current topology.
 **Live deploy & edit:** `pt_live_deploy` (auto-reconciles dropped devices), `pt_add_device`, `pt_add_link`,
 `pt_delete_link`, `pt_delete_device`, `pt_rename_device`, `pt_move_device`, `pt_set_port`, `pt_send_raw`,
 `pt_add_module`, `pt_install_modules_batch`.
