@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **58 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **62 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -113,6 +113,30 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810.
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
 | `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+## Canvas: capture & annotations
+
+Turn a topology into something you can hand to a class. The agent stops
+describing the network and starts showing it.
+
+| Tool | What it does |
+|------|--------------|
+| `pt_screenshot` | Capture the logical canvas to an image file and return its path. |
+| `pt_add_note` | Write a text note on the canvas — label a subnet, name a trunk. |
+| `pt_draw` | Draw a line or a circle: separate areas, ring a VLAN, highlight a path. |
+| `pt_clear_annotations` | Remove notes and drawings. Never touches devices or links. |
+
+!!! tip "Self-documenting topologies"
+    Combine them: build with `pt_full_build`, label each subnet with
+    `pt_add_note`, ring the VLANs with `pt_draw`, then `pt_screenshot`. The
+    result is a diagram ready for a slide, produced from one prompt.
+
+!!! note "The screenshot returns a path, not the image"
+    A capture runs to tens of thousands of bytes. Returning it inline would fill
+    the model's context with data nobody can look at, so the file is written to
+    disk and only its path comes back. PNG is the default because it compresses a
+    line diagram far better than JPG — measured on the same canvas, 33 KB versus
+    105 KB.
 
 ## Backup & workspace
 

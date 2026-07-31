@@ -2,7 +2,7 @@
 Configuración global del servidor.
 """
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
@@ -130,6 +130,17 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 - `pt_device_power(device, on)`: apaga/enciende con lectura de verificación, para
   simular caídas. Todos los modelos lo soportan; solo los IOS reportan `booting`.
 
+## Canvas — captura y anotaciones
+- `pt_screenshot(filename, fmt, output_dir)`: guarda la imagen del canvas a disco y
+  devuelve la RUTA (nunca los bytes: son decenas de miles y llenarían el contexto).
+  PNG por defecto — comprime mucho mejor un diagrama que JPG.
+- `pt_add_note(x, y, text, size)` y `pt_draw(shape, x, y, ...)` con shape "line" o
+  "circle" y color "r,g,b,a". Las coordenadas son las mismas del canvas lógico que
+  usa pt_add_device (routers ~y=100, switches ~y=250, hosts ~y=400).
+- `pt_clear_annotations(kind)`: borra SOLO anotaciones, nunca dispositivos ni enlaces.
+- Receta para un diagrama presentable: pt_full_build → pt_add_note por subred →
+  pt_draw para encerrar cada VLAN → pt_screenshot.
+
 ## Telemetría y QoS — NO son simétricas
 - `pt_apply_netflow(device, name, destination_ip, ...)`: configura el exportador
   directamente (no por CLI) y lo relee para confirmar. Si el nombre ya existe lo
@@ -151,7 +162,7 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 58 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 62 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

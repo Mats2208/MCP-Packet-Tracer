@@ -9,6 +9,7 @@ import json
 import time
 import urllib.request
 import urllib.parse
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from ...domain.models.plans import TopologyPlan
@@ -76,7 +77,12 @@ from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
 from ...shared.enums import RoutingProtocol, TopologyTemplate
-from ...shared.utils import js_escape, safe_name_component, interpret_ping as _interpret_ping
+from ...shared.utils import (
+    js_escape, safe_name_component, resolve_within, interpret_ping as _interpret_ping,
+)
+from ...domain.services.canvas import (
+    CanvasImageError, decode_pt_image, normalize_format, validate_color,
+)
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -3974,6 +3980,252 @@ def register_tools(mcp: FastMCP) -> None:
                 f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # CANVAS — captura y anotaciones
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_screenshot(
+        filename: str = "topology",
+        fmt: str = "PNG",
+        output_dir: str = "projects",
+    ) -> str:
+        """
+        Captura el canvas lógico de PT y lo guarda como imagen.
+
+        Devuelve la RUTA del archivo, no la imagen: una captura pesa decenas de
+        miles de bytes y volcarla en la respuesta llenaría el contexto sin que
+        nadie pueda verla.
+
+        PNG comprime mucho mejor un diagrama que JPG (medido: 33 KB contra
+        105 KB del mismo canvas), así que es el default.
+
+        Parámetros:
+        - filename: nombre del archivo, sin extensión. Se sanitiza.
+        - fmt: PNG (default) | JPG | JPEG | BMP.
+        - output_dir: carpeta destino, relativa a la raíz del proyecto.
+
+        Ejemplo: pt_screenshot(filename="lab-ospf")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        try:
+            image_fmt = normalize_format(fmt)
+        except CanvasImageError as exc:
+            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+
+        js = (
+            "try {"
+            "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+            f"  reportResult(String(__lw.getWorkspaceImage({json.dumps(image_fmt)})));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        # Generoso a propósito: la imagen viaja como texto y son cientos de KB.
+        raw = _bridge_send_and_wait(js, timeout=45.0)
+        if raw is None:
+            return (
+                "Sin respuesta de PT al capturar. En canvases muy grandes la "
+                "imagen puede superar el límite del bridge; probá con fmt='PNG'."
+            )
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+
+        try:
+            blob = decode_pt_image(raw, image_fmt)
+        except CanvasImageError as exc:
+            return f"No se pudo decodificar la imagen: {exc}"
+
+        safe = safe_name_component(filename, fallback="topology")
+        ext = "jpg" if image_fmt in ("JPG", "JPEG") else image_fmt.lower()
+        try:
+            base = Path(safe_name_component(output_dir, fallback="projects"))
+            base.mkdir(parents=True, exist_ok=True)
+            target = resolve_within(base, f"{safe}.{ext}")
+            target.write_bytes(blob)
+        except (OSError, ValueError) as exc:
+            return f"No se pudo escribir la imagen: {exc}"
+
+        return json.dumps({
+            "path": str(target),
+            "format": image_fmt,
+            "bytes": len(blob),
+            "summary": f"✅ Captura guardada en {target} ({len(blob):,} bytes).",
+        }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_add_note(x: int, y: int, text: str, size: float = 12.0) -> str:
+        """
+        Escribe una nota de texto sobre el canvas de PT.
+
+        Sirve para documentar la topología en el propio diagrama: etiquetar una
+        subred, marcar un área OSPF, nombrar un enlace troncal. Devuelve el id
+        de la nota, con el que se la puede borrar después.
+
+        Las coordenadas son las mismas del canvas lógico que usan pt_add_device
+        y pt_move_device: routers ~y=100, switches ~y=250, hosts ~y=400.
+
+        Parámetros:
+        - x, y: posición en el canvas.
+        - text: contenido de la nota.
+        - size: tamaño de fuente (default 12).
+
+        Ejemplo: pt_add_note(x=300, y=100, text="LAN 192.168.0.0/24")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+        if not text.strip():
+            return json.dumps({"error": "La nota está vacía."}, ensure_ascii=False)
+
+        js = (
+            "try {"
+            "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+            f"  reportResult(String(__lw.addNote({int(x)}, {int(y)}, {float(size)}, "
+            f"{json.dumps(text)})));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        return json.dumps({
+            "id": raw.strip(),
+            "summary": f"✅ Nota agregada en ({x},{y}).",
+        }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_draw(
+        shape: str,
+        x: int,
+        y: int,
+        x2: int = 0,
+        y2: int = 0,
+        radius: float = 40.0,
+        width: float = 2.0,
+        color: str = "0,150,255,255",
+    ) -> str:
+        """
+        Dibuja una línea o un círculo sobre el canvas de PT.
+
+        Con pt_add_note permite entregar topologías anotadas: encerrar una VLAN
+        en un círculo, separar áreas con una línea, resaltar el camino de un
+        paquete.
+
+        Parámetros:
+        - shape: "line" | "circle".
+        - x, y: inicio de la línea, o CENTRO del círculo.
+        - x2, y2: fin de la línea (se ignoran en "circle").
+        - radius: radio del círculo (se ignora en "line").
+        - width: grosor de la línea (se ignora en "circle" — PT no lo acepta ahí).
+        - color: "r,g,b,a" con cada canal de 0 a 255. Default celeste opaco.
+
+        Ejemplo: encerrar un grupo de PCs:
+          pt_draw(shape="circle", x=400, y=400, radius=90, color="255,180,0,200")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        kind = shape.strip().lower()
+        if kind not in ("line", "circle"):
+            return json.dumps(
+                {"error": f"shape inválido: '{shape}'. Usá 'line' o 'circle'."},
+                ensure_ascii=False,
+            )
+        try:
+            parts = [int(c) for c in color.split(",")]
+            if len(parts) != 4:
+                raise ValueError("se esperaban 4 canales r,g,b,a")
+            r, g, b, a = parts
+            validate_color(r, g, b, a)
+        except ValueError as exc:
+            return json.dumps({"error": f"color inválido: {exc}"}, ensure_ascii=False)
+
+        if kind == "line":
+            call = (
+                f"__lw.drawLine({int(x)}, {int(y)}, {int(x2)}, {int(y2)}, "
+                f"{float(width)}, {r}, {g}, {b}, {a})"
+            )
+        else:
+            # drawCircle toma 7 argumentos y NO acepta grosor, a diferencia de
+            # drawLine que toma 9. Pasarle uno de más lo hace fallar.
+            call = f"__lw.drawCircle({int(x)}, {int(y)}, {float(radius)}, {r}, {g}, {b}, {a})"
+
+        js = (
+            "try {"
+            "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+            f"  reportResult(String({call}));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        return json.dumps({
+            "id": raw.strip(),
+            "shape": kind,
+            "summary": f"✅ {kind} dibujado.",
+        }, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_clear_annotations(kind: str = "all") -> str:
+        """
+        Borra las anotaciones del canvas (notas y dibujos).
+
+        NO toca dispositivos ni enlaces: solo los elementos gráficos que agregan
+        pt_add_note y pt_draw.
+
+        Parámetros:
+        - kind: "all" (default) borra todo lo dibujado; "notes" solo las notas.
+
+        Ejemplo: pt_clear_annotations()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        what = kind.strip().lower()
+        if what not in ("all", "notes"):
+            return json.dumps(
+                {"error": f"kind inválido: '{kind}'. Usá 'all' o 'notes'."},
+                ensure_ascii=False,
+            )
+        getter = "getCanvasNoteIds" if what == "notes" else "getCanvasItemIds"
+        js = (
+            "try {"
+            "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
+            f"  var __ids = __lw.{getter}();"
+            "  var __n = 0;"
+            "  if (__ids) {"
+            "    for (var __i = 0; __i < __ids.length; __i++) {"
+            "      try { if (__lw.removeCanvasItem(__ids[__i])) __n++; } catch (__re) {}"
+            "    }"
+            "  }"
+            "  reportResult(JSON.stringify({ removed: __n,"
+            f"    remaining: (__lw.{getter}() || []).length }}));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+        data["kind"] = what
+        data["summary"] = (
+            f"✅ {data['removed']} anotación(es) borrada(s)."
+            if data.get("removed")
+            else "No había anotaciones que borrar."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
     # BACKUP y METADATA del proyecto

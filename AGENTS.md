@@ -28,7 +28,7 @@ comments in Spanish or English following whatever the file already uses.
 | `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
 | `src/packet_tracer_mcp/application/` | Use cases: rules + generators, dependencies injected |
 | `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP + file bridges, device catalog |
-| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 58 MCP tools |
+| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 62 MCP tools |
 | `EXTENSION/script-engine/` | Script-engine side of the extension. `main.js` is ours (tracked); the rest are PTBuilder reference copies (gitignored) |
 | `EXTENSION/webview/` | The MCP Control Center webview (`index.html` + `interface.js`) |
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.0
+
+El servidor podía construir una red y leerla, pero no mostrarla. Esta versión
+cierra eso: el agente ahora entrega un diagrama, no una descripción.
+
+**58 → 62 tools · 319 → 348 tests.** Verificado contra Packet Tracer 9.0.0.0810.
+
+### Added
+
+- **`pt_screenshot`** — captura el canvas lógico a un archivo y devuelve su ruta.
+  No devuelve la imagen: son decenas de miles de bytes y llenarían el contexto
+  del modelo con datos que nadie puede mirar. PNG por defecto, porque comprime un
+  diagrama mucho mejor que JPG (33 KB contra 105 KB sobre el mismo canvas).
+- **`pt_add_note`** — escribe una nota sobre el canvas: etiquetar una subred,
+  marcar un área OSPF, nombrar un troncal.
+- **`pt_draw`** — dibuja una línea o un círculo para separar áreas, encerrar una
+  VLAN o resaltar un camino.
+- **`pt_clear_annotations`** — borra notas y dibujos. Nunca toca dispositivos ni
+  enlaces.
+
+Juntas permiten **topologías auto-documentadas**: construir con `pt_full_build`,
+etiquetar cada subred, encerrar las VLAN y capturar — un diagrama listo para una
+clase a partir de un solo prompt.
+
 ## 0.7.0
 
 Until now the server could build a network but not look at one. It planned,

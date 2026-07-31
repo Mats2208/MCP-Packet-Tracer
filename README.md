@@ -4,7 +4,7 @@
 
 **Tell your AI _"create a network with 3 routers, OSPF and DHCP"_ — it plans, validates, generates, and deploys the topology directly into Cisco Packet Tracer in real time.**
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue?style=flat-square)](https://github.com/Mats2208/MCP-Packet-Tracer/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Pydantic v2](https://img.shields.io/badge/pydantic-v2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 [![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>58 MCP Tools</strong></td>
+<td align="center"><strong>62 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -225,7 +225,7 @@ not a public issue. [SECURITY.md](SECURITY.md) documents the full threat model.
 
 ## What's new
 
-**v0.7.0** — the server can now read a live topology, not just build one:
+**v0.8.0** — the agent can now **show** the network, not just describe it: canvas screenshots plus notes and drawings, for topologies that document themselves. v0.7.0 made the server read a live topology, not just build one:
 security auditing, per-port inspection, packet tracing with Packet Tracer's own
 per-layer decision log, NetFlow, and config backup. It also fixes
 `pt_full_build(deploy=True)`, which used to report success while leaving the
