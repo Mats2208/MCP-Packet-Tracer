@@ -113,10 +113,22 @@ class TestPhase1Readers:
             assert f"typeof __p.{method} === 'function'" in src
 
     def test_power_control_is_feature_detected(self):
-        """Los hosts de PT no exponen setPower/getPower."""
+        """Guard defensivo: la superficie varía por build.
+
+        Medido en PT 9.0.0.0810 TODOS los dispositivos exponen setPower/getPower
+        —routers, switches, PC-PT y hasta el "Power Distribution Device"— así que
+        hoy esta rama no se toma. Se mantiene porque un método ausente lanza y
+        abre un modal que congela el bridge hasta que un humano lo cierre.
+        """
         src = self._src()
         assert "typeof __d.setPower !== 'function'" in src
         assert "supported: false" in src
+
+    def test_skipboot_is_guarded_separately_from_power(self):
+        """skipBoot/isBooting SÍ faltan en los hosts: PC-PT no los tiene."""
+        src = self._src()
+        assert "typeof __d.skipBoot === 'function'" in src
+        assert "typeof __d.isBooting === 'function'" in src
 
     def test_vlan_reader_guards_each_entry(self):
         src = self._src()

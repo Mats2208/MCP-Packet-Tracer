@@ -34,7 +34,10 @@ CAPABILITIES = {
                  "floating_routes", "ospf_multi_process", "eigrp_as_config",
                  "acl_standard", "acl_extended", "acl_apply_via_bridge",
                  "nat_static", "nat_dynamic", "nat_pat",
-                 "modules", "module_compat_check", "live_deploy", "raw_js"],
+                 "modules", "module_compat_check", "live_deploy", "raw_js",
+                 # Lectura del estado vivo: no consultan el plan, consultan el
+                 # dispositivo. Verificadas contra PT 9.0.0.0810.
+                 "security_audit", "port_inspect", "vlan_read", "device_power"],
     # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool
     # dedicada de alto nivel todavía — candidatos a futura expansión, NO "imposibles".
     "supported_via_cli": ["vlan", "trunk", "stp", "port_security", "qos", "ipv6"],

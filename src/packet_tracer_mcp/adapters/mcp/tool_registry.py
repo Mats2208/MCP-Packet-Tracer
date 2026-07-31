@@ -3598,9 +3598,11 @@ def register_tools(mcp: FastMCP) -> None:
         Útil para simular una caída de equipo y ver cómo reacciona el routing, o
         para reiniciar un router y que relea su startup-config.
 
-        Al encender se llama skipBoot() para no esperar el arranque completo.
-        Los hosts (PC/Server/Laptop) NO exponen control de energía en la API de
-        PT: sobre ellos la tool avisa en vez de fallar.
+        Medido contra PT 9.0.0.0810: TODOS los dispositivos exponen setPower y
+        getPower, incluidos los PCs y el "Power Distribution Device" que PT
+        agrega solo. Lo que no exponen los hosts es el arranque IOS, así que al
+        encenderlos `booting` vuelve null y no se llama skipBoot(); en un router
+        o switch sí se llama, para no esperar el boot completo.
 
         Parámetros:
         - device: nombre del dispositivo en PT.
@@ -3650,10 +3652,10 @@ def register_tools(mcp: FastMCP) -> None:
                 "Usá pt_query_topology para ver los nombres reales."
             )
         if not data.get("supported"):
-            return (
-                f"'{device}' no expone control de energía (los PCs, servidores y "
-                "laptops de PT no lo tienen)."
-            )
+            # No se observó ningún modelo sin setPower/getPower en PT 9.0.0.0810
+            # (ni siquiera los PCs), pero la superficie varía por build y un
+            # método ausente lanza y abre un modal que congela el bridge.
+            return f"'{device}' no expone control de energía en esta build de PT."
 
         verb = "encendido" if on else "apagado"
         if data["after"] == on:

@@ -13,7 +13,7 @@ fully cabled, configured and running topology.
 
 - :material-rocket-launch: **[Get started](installation.md)** — install the server and connect your MCP client in one command.
 - :material-lightning-bolt: **[Live deploy](live-deploy.md)** — stream commands straight into a running Packet Tracer.
-- :material-tools: **[Tool reference](tools.md)** — all 46 MCP tools, grouped and documented.
+- :material-tools: **[Tool reference](tools.md)** — all 50 MCP tools, grouped and documented.
 - :material-sitemap: **[Architecture](architecture.md)** — how the planner, generators and HTTP bridge fit together.
 
 </div>

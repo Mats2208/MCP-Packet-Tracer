@@ -117,10 +117,23 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
   duplicadas) y `pt_verify_connectivity(from_device, to_ip)` — ping REAL desde la
   consola del dispositivo, con el resultado parseado (llegó/no llegó).
 
+## Inspección del estado VIVO (no leen el plan, leen el dispositivo)
+- `pt_audit_security(device="")`: postura de seguridad real con severidad. Detecta
+  enable secret ausente, credenciales reversibles (type 7), service
+  password-encryption apagado, sin usuarios locales, sin banner y config-register
+  en 0x2142. Nunca devuelve contraseñas ni hashes, solo la etiqueta del algoritmo.
+- `pt_inspect_ports(device, only_linked)`: por puerto — line/protocol status, MAC,
+  IP, duplex, ancho de banda, MTU, delay, CDP, DHCP client, modo NAT y ACLs.
+  Marca "cable puesto pero puerto down" y "línea up con protocolo down".
+- `pt_read_vlans(switch)`: base de VLANs real del switch, separando las propias de
+  las de fábrica (1, 1002-1005).
+- `pt_device_power(device, on)`: apaga/enciende con lectura de verificación, para
+  simular caídas. Todos los modelos lo soportan; solo los IOS reportan `booting`.
+
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 46 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 50 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

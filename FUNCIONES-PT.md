@@ -72,9 +72,20 @@ configurePcIp(name, false, ip, mask, gateway)          // modo estático
   + AP auto-asociado por SSID default.
 - **Proyecto `.pkt`:** `pt_save_project` / `pt_open_project` — guardan/abren el archivo real de PT.
 - **Verificación:** `pt_diff`, `pt_health_check`, y `pt_verify_connectivity` (ping REAL parseado).
+- **Inspección del estado vivo:** `pt_audit_security` (postura de seguridad con severidad;
+  clasifica credenciales por prefijo — `$1$`=md5, hex=type7 reversible — y **nunca** devuelve
+  el valor), `pt_inspect_ports` (line/protocol, MAC, duplex, MTU, CDP, `getNatMode`: 0=none /
+  1=inside medido, 2=outside inferido), `pt_read_vlans` (`getProcess("VlanManager")`),
+  `pt_device_power` (`setPower`/`getPower` — los exponen TODOS los modelos, incluido PC-PT;
+  `skipBoot`/`isBooting` solo los IOS).
 
 ## Limitaciones que siguen abiertas
 - No se resuelven dinámicamente los puertos de módulos agregados (hay que conocer el naming).
+- **`VtyLine` no expone estado de contraseña** (`getPassword`/`isLoginLocal` no existen): es un
+  objeto de terminal. Auditar VTY requiere parsear `show running-config`.
+- **`Link.getOtherPort()` falla en links tipo Cable** (`Invalid arguments`) aunque la extensión
+  lo use; para resolver vecinos hay que ir por `getPort1`/`getPort2`.
+- `getUserEntryAt(i)` **lanza** `out of bound` en vez de devolver null, y devuelve un string.
 - **SSID/WPA2 custom de Access Points NO es configurable por la API de PT** (solo GUI) — las
   laptops WiFi usan el SSID default para auto-asociar.
 - IPv6 estático en hosts no es posible por la API (se usa SLAAC).

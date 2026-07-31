@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **46 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **50 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -101,6 +101,24 @@ All accept `dry_run=True` to preview the generated CLI without touching PT.
 | `pt_diff` | Compare a plan vs the live topology (missing/extra devices, IP mismatches). |
 | `pt_health_check` | Sweep the live topology: down links, cabled-without-IP, duplicate IPs. |
 | `pt_verify_connectivity` | Run a **real ping** from a device's console and parse the result (reachable or not). |
+
+## Live-state inspection
+
+These read the **device**, not the plan — useful to confirm a change landed, or to
+understand a topology you didn't build. Verified against PT 9.0.0.0810.
+
+| Tool | What it does |
+|------|--------------|
+| `pt_audit_security` | Security posture of every IOS device, graded high/medium/low: missing `enable secret`, reversibly-stored credentials (type 7), `service password-encryption` off, no local users, no MOTD banner, config-register left at `0x2142`. |
+| `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
+| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
+| `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+!!! warning "`pt_audit_security` never returns credentials"
+    Passwords and hashes do not leave the device. The reader classifies each
+    credential by its prefix and transmits only the algorithm label (`md5`,
+    `type7`, `scrypt`, …) — enough to audit, without putting a hash into the LLM's
+    context or the MCP client's logs.
 
 !!! tip "Build flags"
     `pt_plan_topology` / `pt_full_build` accept `vlans` (router-on-a-stick VLAN count),
