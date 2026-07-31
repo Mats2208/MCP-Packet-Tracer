@@ -174,15 +174,49 @@ Packet Tracer's Script Engine from JavaScript — thanks for the groundwork. �
 
 ## Security
 
-The live-deploy bridge requires a per-machine token as of **v0.6.0**. Earlier
-versions had an unauthenticated bridge — any web page open while Packet Tracer
-was running could execute code inside it. **Upgrade.**
+Driving Packet Tracer from outside means running a local HTTP bridge whose whole
+job is to hand JavaScript to PT's Script Engine — code that executes with PT's
+own privileges, including disk access. That makes the bridge a genuine attack
+surface, not an implementation detail, and it is hardened accordingly.
+
+**The attack this design exists to stop.** Binding to `127.0.0.1` is *not* a
+security control. A `POST` with `Content-Type: text/plain` is a CORS *simple
+request*: any web page open in your browser can send it to a loopback port
+without a preflight and without needing to read the response. An unauthenticated
+bridge therefore lets any website you visit — while Packet Tracer happens to be
+open — queue arbitrary code inside it. Injection never needed to read anything
+back, so same-origin policy alone never closed this.
+
+What actually closes it is a secret the attacking page cannot guess:
+
+| Control | Implementation |
+|---|---|
+| **Token on every endpoint** | Every route except `/ping` requires a shared token (`?t=` or `X-PT-Token`). Compared with `hmac.compare_digest` — constant time, no early-exit oracle. |
+| **`/ping` leaks nothing** | Deliberately unauthenticated so the server can tell *who owns the port* before trusting it — but it returns only a SHA-256 **fingerprint** of the token, never the token. |
+| **Foreign-bridge detection** | Before sending any payload, the server checks that `/ping` identity matches its own token fingerprint. If a stranger holds the port, it refuses to hand code to it instead of blindly trusting a `200`. |
+| **DNS-rebinding defense** | The `Host` header is validated against `127.0.0.1` / `localhost` / `[::1]` + the real port. A rebound request arrives as `Host: evil.com:<port>` and is rejected. |
+| **Loopback bind** | `ThreadingHTTPServer(("127.0.0.1", port))` — never `0.0.0.0`, so the bridge is not reachable from the LAN. |
+| **Token at rest** | `secrets.token_urlsafe(32)`, created with `O_EXCL` (race-safe when two servers start at once) at mode `0o600`, under `%LOCALAPPDATA%` on Windows — deliberately *not* roaming `%APPDATA%`, so a loopback secret never syncs to a file server. |
+| **Body size cap** | Oversized bodies are rejected with `413` and are **not** read into memory. |
+| **Silent failures** | Error responses carry no CORS headers, so a hostile page cannot even distinguish *why* it failed. |
+| **Tamper visibility** | Unauthorized attempts are counted and surfaced by `pt_bridge_status`, so a stale or rogue client is diagnosable instead of silent. |
+
+Regression coverage lives in [`tests/test_bridge_security.py`](tests/test_bridge_security.py)
+and [`tests/test_injection_regressions.py`](tests/test_injection_regressions.py);
+the full suite runs offline with `python -m pytest` — no Packet Tracer required.
+
+> **v0.6.0+ requires the V5 extension.** Versions before v0.6.0 shipped an
+> unauthenticated bridge and are vulnerable to exactly the attack above.
+> **Upgrade — there is no safe configuration of the old bridge.**
+
+**Deliberate, documented behaviour:** `pt_send_raw` executes arbitrary JavaScript
+inside Packet Tracer by design — it is the escape hatch for exploring the IPC
+API. It is reachable only by an MCP client you have already authorised, over the
+authenticated bridge. That is a capability, not a vulnerability.
 
 Found a vulnerability? Report it privately via
 [GitHub Security Advisories](https://github.com/Mats2208/MCP-Packet-Tracer/security/advisories/new),
-not a public issue. [SECURITY.md](SECURITY.md) also documents the threat model —
-worth reading before reporting, since some behaviour (like `pt_send_raw`
-executing arbitrary JavaScript) is deliberate.
+not a public issue. [SECURITY.md](SECURITY.md) documents the full threat model.
 
 ## Contributing
 
