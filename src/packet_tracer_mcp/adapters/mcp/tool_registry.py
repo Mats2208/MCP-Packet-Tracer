@@ -43,6 +43,7 @@ from ...application.use_cases.apply_interface_tuning import apply_interface_tuni
 from ...domain.models.interface_tuning import InterfaceTuning
 from ...domain.services.topology_diff import diff as topology_diff, health_check
 from ...domain.services.security_audit import audit_security
+from ...domain.services.port_inspect import nat_mode_label, summarize_ports
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -3378,3 +3379,292 @@ def register_tools(mcp: FastMCP) -> None:
                 f"{counts['low']} bajo(s) en {result['devices_audited']} dispositivo(s)."
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # INSPECCIÓN DE PUERTOS — estado físico y lógico leído del dispositivo
+    # ------------------------------------------------------------------
+
+    def _inspect_ports_js(device: str) -> str:
+        """Lector por puerto. `device` vacío = todos.
+
+        Cada getter va detrás de un typeof: la superficie de Port cambia por
+        modelo (un PC-PT no tiene getNatMode ni getAclInID) y una llamada a un
+        método inexistente lanza y abre un modal que congela el bridge.
+        """
+        want = json.dumps(device.strip())
+        return (
+            "try {"
+            f"  var __want = {want};"
+            "  var __net = ipc.network();"
+            "  var __out = [];"
+            "  var __n = __net.getDeviceCount();"
+            "  for (var __i = 0; __i < __n; __i++) {"
+            "    try {"
+            "      var __d = __net.getDeviceAt(__i);"
+            "      if (!__d) continue;"
+            "      var __dn = __d.getName();"
+            "      if (__want && __dn !== __want) continue;"
+            "      var __ports = [];"
+            "      var __pc = __d.getPortCount();"
+            "      for (var __j = 0; __j < __pc; __j++) {"
+            "        try {"
+            "          var __p = __d.getPortAt(__j);"
+            "          if (!__p) continue;"
+            "          __ports.push({"
+            "            name: __p.getName(),"
+            "            up: !!__p.isPortUp(),"
+            "            protocol_up: (typeof __p.isProtocolUp === 'function') ? !!__p.isProtocolUp() : null,"
+            "            linked: !!__p.getLink(),"
+            "            ip: __p.getIpAddress(),"
+            "            mask: __p.getSubnetMask(),"
+            "            mac: (typeof __p.getMacAddress === 'function') ? __p.getMacAddress() : null,"
+            "            description: (typeof __p.getDescription === 'function') ? __p.getDescription() : '',"
+            "            duplex_full: (typeof __p.isFullDuplex === 'function') ? !!__p.isFullDuplex() : null,"
+            "            bandwidth_kbps: (typeof __p.getBandwidth === 'function') ? __p.getBandwidth() : null,"
+            "            mtu: (typeof __p.getMtu === 'function') ? __p.getMtu() : null,"
+            "            delay: (typeof __p.getDelay === 'function') ? __p.getDelay() : null,"
+            "            cdp: (typeof __p.isCdpEnable === 'function') ? !!__p.isCdpEnable() : null,"
+            "            dhcp_client: (typeof __p.isDhcpClientOn === 'function') ? !!__p.isDhcpClientOn() : null,"
+            "            wireless: (typeof __p.isWirelessPort === 'function') ? !!__p.isWirelessPort() : null,"
+            "            nat_mode_raw: (typeof __p.getNatMode === 'function') ? __p.getNatMode() : null,"
+            "            acl_in: (typeof __p.getAclInID === 'function') ? __p.getAclInID() : '',"
+            "            acl_out: (typeof __p.getAclOutID === 'function') ? __p.getAclOutID() : ''"
+            "          });"
+            "        } catch (__pe) {}"
+            "      }"
+            "      __out.push({"
+            "        name: __dn,"
+            "        model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+            "        ports: __ports"
+            "      });"
+            "    } catch (__de) {}"
+            "  }"
+            "  reportResult(JSON.stringify({ devices: __out }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+    @mcp.tool()
+    def pt_inspect_ports(device: str = "", only_linked: bool = False) -> str:
+        """
+        Estado real de cada puerto de un dispositivo vivo en PT.
+
+        Lee del dispositivo, no del plan: line/protocol status, MAC, IP/máscara,
+        duplex, ancho de banda, MTU, delay, CDP, cliente DHCP, modo NAT y ACLs
+        aplicadas. Marca anomalías (cable puesto con el puerto down, línea up con
+        protocolo down).
+
+        Es la vista de DETALLE de un dispositivo; para el barrido de toda la
+        topología (links caídos, IPs duplicadas) usá pt_health_check.
+
+        Parámetros:
+        - device: nombre del dispositivo; vacío = todos (verboso en topologías grandes).
+        - only_linked: si True, devuelve solo puertos con cable conectado.
+
+        Ejemplo: ver por qué no levanta un enlace de R1:
+          pt_inspect_ports(device="R1", only_linked=True)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(_inspect_ports_js(device), timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            devices = json.loads(raw).get("devices", [])
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        wanted = device.strip()
+        if wanted and not devices:
+            return (
+                f"'{wanted}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+
+        for dev in devices:
+            ports = dev.get("ports", [])
+            if only_linked:
+                ports = [p for p in ports if p.get("linked")]
+            for port in ports:
+                port["nat_mode"] = nat_mode_label(port.pop("nat_mode_raw", None))
+            dev["ports"] = ports
+
+        result = summarize_ports(devices)
+        result["devices"] = devices
+        anomalies = result["anomalies"]
+        result["summary"] = (
+            f"✅ {result['ports_up']}/{result['ports_total']} puerto(s) up, "
+            f"{result['ports_linked']} cableado(s), sin anomalías."
+            if not anomalies
+            else f"⚠ {len(anomalies)} anomalía(s) en {result['ports_total']} puerto(s)."
+        )
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # VLANs — leídas del VlanManager del switch, no del plan
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_read_vlans(switch: str) -> str:
+        """
+        Lee la base de datos de VLANs REAL de un switch en PT.
+
+        Devuelve cada VLAN con su número, nombre y si es una de las que trae PT
+        de fábrica (1, 1002-1005). Sirve para confirmar que un pt_apply_vlan
+        quedó aplicado, o para descubrir qué hay en una topología que no armaste.
+
+        Parámetros:
+        - switch: nombre del switch en PT.
+
+        Ejemplo: pt_read_vlans(switch="SW1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        name = json.dumps(switch.strip())
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({name});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); } else {"
+            "    var __vm = (typeof __d.getProcess === 'function') ? __d.getProcess('VlanManager') : null;"
+            "    if (!__vm) { reportResult(JSON.stringify({ found: true, supported: false })); } else {"
+            "      var __vs = [];"
+            "      var __n = __vm.getVlanCount();"
+            "      for (var __i = 0; __i < __n; __i++) {"
+            "        try {"
+            "          var __v = __vm.getVlanAt(__i);"
+            "          if (!__v) continue;"
+            "          __vs.push({"
+            "            number: __v.getVlanNumber(),"
+            "            name: __v.getName(),"
+            "            is_default: !!__v.isDefault()"
+            "          });"
+            "        } catch (__ve) {}"
+            "      }"
+            "      reportResult(JSON.stringify({"
+            "        found: true, supported: true,"
+            "        max_vlans: __vm.getMaxVlans(),"
+            "        vlan_interfaces: __vm.getVlanIntCount(),"
+            "        vlans: __vs"
+            "      }));"
+            "    }"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{switch}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return (
+                f"'{switch}' no expone VlanManager: no es un switch o el modelo no "
+                "maneja VLANs. Usá pt_get_device_details para ver qué es."
+            )
+
+        vlans = data.get("vlans", [])
+        custom = [v for v in vlans if not v.get("is_default")]
+        data["summary"] = (
+            f"{len(vlans)} VLAN(s): {len(custom)} propia(s), "
+            f"{len(vlans) - len(custom)} de fábrica. "
+            f"Máximo del modelo: {data.get('max_vlans')}."
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # ENCENDIDO / APAGADO de dispositivos
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_device_power(device: str, on: bool = True) -> str:
+        """
+        Enciende o apaga un dispositivo en PT, con lectura de verificación.
+
+        Útil para simular una caída de equipo y ver cómo reacciona el routing, o
+        para reiniciar un router y que relea su startup-config.
+
+        Al encender se llama skipBoot() para no esperar el arranque completo.
+        Los hosts (PC/Server/Laptop) NO exponen control de energía en la API de
+        PT: sobre ellos la tool avisa en vez de fallar.
+
+        Parámetros:
+        - device: nombre del dispositivo en PT.
+        - on: True enciende (default), False apaga.
+
+        Ejemplo: simular la caída de R2:
+          pt_device_power(device="R2", on=False)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        name = json.dumps(device.strip())
+        want = "true" if on else "false"
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({name});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.setPower !== 'function' || typeof __d.getPower !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __before = !!__d.getPower();"
+            f"    __d.setPower({want});"
+            f"    if ({want} && typeof __d.skipBoot === 'function') {{ __d.skipBoot(); }}"
+            "    reportResult(JSON.stringify({"
+            "      found: true, supported: true,"
+            "      before: __before, after: !!__d.getPower(),"
+            "      booting: (typeof __d.isBooting === 'function') ? !!__d.isBooting() : null"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return (
+                f"'{device}' no expone control de energía (los PCs, servidores y "
+                "laptops de PT no lo tienen)."
+            )
+
+        verb = "encendido" if on else "apagado"
+        if data["after"] == on:
+            data["summary"] = (
+                f"✅ '{device}' {verb}."
+                if data["before"] != on
+                else f"'{device}' ya estaba {verb}; sin cambios."
+            )
+        else:
+            data["summary"] = (
+                f"⚠ Se pidió {verb} pero PT reporta power={data['after']}. "
+                "El modelo puede no soportar el cambio."
+            )
+        return json.dumps(data, indent=2, ensure_ascii=False)
