@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>55 MCP Tools</strong></td>
+<td align="center"><strong>58 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -77,6 +77,8 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | **Security audit** | `pt_audit_security` grades the **live** config: missing `enable secret`, reversible (type 7) credentials, `service password-encryption` off, `config-register 0x2142` | Reads the device, not the plan. Credentials never leave it — only the algorithm label |
 | **Live inspection** | `pt_inspect_ports`, `pt_read_vlans`, `pt_device_power` | Per-port protocol/duplex/NAT/ACL state, real VLAN database, power-cycle with read-back |
 | **Packet tracing** | `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` | Step the simulation and read **why** each packet did what it did — PT's own per-OSI-layer decision log, not just pass/fail |
+| **Telemetry** | `pt_apply_netflow` configures a NetFlow exporter directly and reads it back; `pt_read_qos` verifies class-maps and policy-maps | Collector address, UDP port, version, source interface |
+| **Backup** | `pt_backup_config`, `pt_project_metadata`, `pt_workspace_options` | Real startup-config + serial + config-register; project info; auto-cabling and real-network-access toggles |
 | **Deploy** | Real-time bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
 | **Two channels** | HTTP when the extension window is open, **file-bridge when it's closed** | PT keeps executing with the window minimized/closed |
 | **Projects** | Save / open the real `.pkt` (`pt_save_project` / `pt_open_project`) | Persist the running topology, not just the plan JSON |

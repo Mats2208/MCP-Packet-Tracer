@@ -3646,11 +3646,9 @@ def register_tools(mcp: FastMCP) -> None:
         Útil para simular una caída de equipo y ver cómo reacciona el routing, o
         para reiniciar un router y que relea su startup-config.
 
-        Medido contra PT 9.0.0.0810: TODOS los dispositivos exponen setPower y
-        getPower, incluidos los PCs y el "Power Distribution Device" que PT
-        agrega solo. Lo que no exponen los hosts es el arranque IOS, así que al
-        encenderlos `booting` vuelve null y no se llama skipBoot(); en un router
-        o switch sí se llama, para no esperar el boot completo.
+        Funciona en todos los modelos, incluidos los PCs. Los hosts no tienen
+        arranque IOS, así que al encenderlos `booting` vuelve null; en un router
+        o switch se saltea el boot para no esperar el arranque completo.
 
         Parámetros:
         - device: nombre del dispositivo en PT.
@@ -3978,6 +3976,261 @@ def register_tools(mcp: FastMCP) -> None:
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
+    # BACKUP y METADATA del proyecto
+    # ------------------------------------------------------------------
+
+    # La startup-config vuelve con las líneas separadas por COMAS, no por
+    # saltos. Reconstruirla es lo que la vuelve pegable en una CLI.
+    _MAX_BACKUP_XML = 200_000
+
+    @mcp.tool()
+    def pt_backup_config(device: str, include_xml: bool = False) -> str:
+        """
+        Respalda la configuración de arranque de un dispositivo de PT.
+
+        Devuelve la startup-config real (la que el equipo relee al reiniciar),
+        más su número de serie, config-register, imágenes de arranque y uptime.
+        Sirve para guardar un estado conocido antes de tocar algo, o para
+        comparar dos equipos.
+
+        Parámetros:
+        - device: nombre del router o switch en PT.
+        - include_xml: si True, agrega el volcado completo del dispositivo en XML
+          (topología + config + módulos). Son decenas de miles de caracteres:
+          útil para archivar, pesado para leer.
+
+        Ejemplo: pt_backup_config(device="R1")
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        dev = json.dumps(device.strip())
+        want_xml = "true" if include_xml else "false"
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({dev});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else if (typeof __d.getStartupFile !== 'function') {"
+            "    reportResult(JSON.stringify({ found: true, supported: false }));"
+            "  } else {"
+            "    var __out = { found: true, supported: true,"
+            "      startup: String(__d.getStartupFile() || ''),"
+            "      model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
+            "      hostname: (typeof __d.getHostName === 'function') ? __d.getHostName() : '',"
+            "      serial: (typeof __d.getSerialNumber === 'function') ? __d.getSerialNumber() : '',"
+            "      config_register: (typeof __d.getConfigRegister === 'function')"
+            "        ? __d.getConfigRegister() : null,"
+            "      uptime: (typeof __d.getUpTime === 'function') ? __d.getUpTime() : null,"
+            "      boot_systems: (typeof __d.getBootSystems === 'function')"
+            "        ? String(__d.getBootSystems() || '') : '' };"
+            f"    if ({want_xml} && typeof __d.serializeToXml === 'function') {{"
+            f"      __out.xml = String(__d.serializeToXml() || '').substring(0, {_MAX_BACKUP_XML});"
+            "    }"
+            "    reportResult(JSON.stringify(__out));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return f"'{device}' no tiene startup-config (los hosts de PT no la tienen)."
+
+        startup = data.pop("startup", "")
+        lines = [ln for ln in startup.split(",") if ln != ""]
+        data["startup_config"] = "\n".join(lines)
+        data["startup_lines"] = len(lines)
+        if not lines:
+            data["summary"] = (
+                f"'{device}' no tiene startup-config guardada. "
+                "Corré `write memory` en el equipo antes de respaldar."
+            )
+        else:
+            data["summary"] = (
+                f"{len(lines)} línea(s) de startup-config de '{device}' "
+                f"({data.get('model')}, serial {data.get('serial')})."
+            )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_project_metadata(description: str = "") -> str:
+        """
+        Lee (y opcionalmente escribe) los metadatos del proyecto abierto en PT.
+
+        Devuelve el archivo guardado, la versión de PT que lo escribió y la
+        descripción del proyecto, junto con el conteo de dispositivos y enlaces.
+        Útil para saber con qué se está trabajando antes de modificar algo.
+
+        Parámetros:
+        - description: si se indica, REEMPLAZA la descripción del proyecto.
+          Vacío = solo lectura.
+
+        Ejemplo: pt_project_metadata()
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        new_desc = description.strip()
+        setter = (
+            f"  if (typeof __f.setNetworkDescription === 'function') "
+            f"{{ __f.setNetworkDescription({json.dumps(new_desc)}); }}"
+            if new_desc else ""
+        )
+        js = (
+            "try {"
+            "  var __a = ipc.appWindow();"
+            "  var __f = __a.getActiveFile();"
+            "  if (!__f) { reportResult(JSON.stringify({ found: false })); } else {"
+            + setter +
+            "    var __n = ipc.network();"
+            "    reportResult(JSON.stringify({"
+            "      found: true,"
+            "      saved_filename: String(__f.getSavedFilename() || ''),"
+            "      pt_version: String(__f.getVersion() || ''),"
+            "      description: String(__f.getNetworkDescription() || ''),"
+            "      devices: __n.getDeviceCount(), links: __n.getLinkCount()"
+            "    }));"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return "PT no tiene ningún archivo de red activo."
+
+        data["updated_description"] = bool(new_desc)
+        saved = data.get("saved_filename") or ""
+        data["summary"] = (
+            f"{data['devices']} dispositivo(s), {data['links']} enlace(s). "
+            + (f"Archivo: {saved}." if saved
+               else "Proyecto SIN guardar — usá pt_save_project para persistirlo.")
+            + (" Descripción actualizada." if new_desc else "")
+        )
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    @mcp.tool()
+    def pt_workspace_options(
+        auto_cabling: int = -1,
+        external_network_access: int = -1,
+        show_port_labels: int = -1,
+        show_link_lights: int = -1,
+        show_device_labels: int = -1,
+    ) -> str:
+        """
+        Lee y ajusta opciones del workspace de PT que afectan cómo se comporta.
+
+        Sin argumentos es solo lectura. Los flags son tri-estado: 1 activa,
+        0 desactiva, -1 (default) no toca.
+
+        Parámetros:
+        - auto_cabling: el auto-cableado de PT elige el cable y el puerto por vos.
+          Apagalo antes de construir topologías por script si querés control
+          exacto de qué puerto se usa.
+        - external_network_access: permite que PT alcance la red REAL de la
+          máquina. Apagado por defecto; encenderlo saca tráfico del simulador.
+        - show_port_labels / show_link_lights / show_device_labels: qué se ve en
+          el canvas. Importa para que una captura sea legible.
+
+        Ejemplo: apagar auto-cabling antes de un deploy scripteado:
+          pt_workspace_options(auto_cabling=0)
+        """
+        err = _check_bridge()
+        if err:
+            return err
+
+        sets: list[str] = []
+        # OJO con la polaridad: PT expone estas dos en negativo
+        # (`setDisableAutoCabling`, `setHideDevLabel`), así que el flag amistoso
+        # va invertido. Verificado con round-trip contra PT 9.0.0.0810.
+        if auto_cabling in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setDisableAutoCabling === 'function')"
+                f" {{ __o.setDisableAutoCabling({'false' if auto_cabling == 1 else 'true'}); }}"
+            )
+        if show_device_labels in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setHideDevLabel === 'function')"
+                f" {{ __o.setHideDevLabel({'false' if show_device_labels == 1 else 'true'}); }}"
+            )
+        if external_network_access in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setEnableExternalNetworkAccess === 'function')"
+                f" {{ __o.setEnableExternalNetworkAccess({'true' if external_network_access == 1 else 'false'}); }}"
+            )
+        if show_port_labels in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setIsPortShown === 'function')"
+                f" {{ __o.setIsPortShown({'true' if show_port_labels == 1 else 'false'}); }}"
+            )
+        if show_link_lights in (0, 1):
+            sets.append(
+                f"    if (typeof __o.setIsLinkLightShown === 'function')"
+                f" {{ __o.setIsLinkLightShown({'true' if show_link_lights == 1 else 'false'}); }}"
+            )
+
+        js = (
+            "try {"
+            "  var __o = ipc.options();"
+            + "".join(sets) +
+            "  reportResult(JSON.stringify({"
+            "    auto_cabling: !__o.isAutoCablingDisabled(),"
+            "    external_network_access: !!__o.isExternalNetworkAccessEnabled(),"
+            "    show_port_labels: !!__o.isPortShown(),"
+            "    show_link_lights: !!__o.isLinkLightsShown(),"
+            "    show_device_labels: !__o.isHideDevLabel(),"
+            "    using_metric: !!__o.isUsingMetric(),"
+            "    language: String(__o.getCurrentLanguage() || ''),"
+            "    config_path: String(__o.getConfigFilePath() || '')"
+            "  }));"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        raw = _bridge_send_and_wait(js, timeout=10.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        data["changed"] = len(sets)
+        notes = []
+        if not data["auto_cabling"]:
+            notes.append("auto-cabling APAGADO (los puertos los elegís vos)")
+        if data["external_network_access"]:
+            notes.append("⚠ acceso a la red REAL habilitado")
+        data["summary"] = (
+            f"{len(sets)} opción(es) cambiada(s). " if sets else "Solo lectura. "
+        ) + ("; ".join(notes) if notes else "Configuración por defecto.")
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
     # NETFLOW — se configura por API nativa, no por CLI
     # ------------------------------------------------------------------
 
@@ -3996,10 +4249,9 @@ def register_tools(mcp: FastMCP) -> None:
         """
         Configura un exportador NetFlow en un dispositivo de PT.
 
-        A diferencia del resto de features avanzadas, NetFlow NO va por CLI: PT
-        expone `NFExporterManager` en su API nativa, así que el exportador se crea
-        como objeto y se relee para verificar. Si el nombre ya existe, se
-        reconfigura en vez de duplicarse.
+        A diferencia del resto de features avanzadas, NetFlow NO va por CLI: se
+        configura directamente y se relee para verificar que quedó aplicado. Si
+        el nombre ya existe, se reconfigura en vez de duplicarse.
 
         Parámetros:
         - device: router donde vive el exportador.
@@ -4148,9 +4400,8 @@ def register_tools(mcp: FastMCP) -> None:
         """
         Lee la configuración de QoS REAL de un dispositivo: class-maps y policy-maps.
 
-        Solo lectura. La API de PT expone `getClassMap`/`deleteClassMap` pero NO
-        tiene un `createClassMap`, y `PolicyMapManager` solo tiene getters — así
-        que para CONFIGURAR QoS hay que mandar el CLI IOS con pt_send_raw
+        Solo lectura: QoS no se puede crear programáticamente en PT, así que para
+        CONFIGURARLO hay que mandar el CLI IOS con pt_send_raw
         (`configureIosDevice`). Esta tool sirve para verificar que quedó aplicado.
 
         Devuelve, por class-map, su tipo de match y su representación CLI; por

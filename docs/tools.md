@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **55 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **58 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -113,6 +113,19 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810.
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
 | `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
+
+## Backup & workspace
+
+| Tool | What it does |
+|------|--------------|
+| `pt_backup_config` | The device's real startup-config — the one it rereads on reboot — plus serial, config-register, boot images and uptime. `include_xml=True` adds the full device dump. |
+| `pt_project_metadata` | The open project's saved filename, the PT version that wrote it, its description and the device/link count. Pass `description` to set it. |
+| `pt_workspace_options` | Read or toggle workspace behaviour: auto-cabling, access to the **real** network, and the canvas labels that decide whether a screenshot is readable. |
+
+!!! tip "Turn auto-cabling off before a scripted build"
+    With auto-cabling on, Packet Tracer picks the cable and the port for you. If
+    you want a link on an exact interface, `pt_workspace_options(auto_cabling=0)`
+    first.
 
 ## Telemetry & QoS
 
