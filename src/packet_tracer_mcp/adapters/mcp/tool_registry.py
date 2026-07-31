@@ -1824,6 +1824,9 @@ def register_tools(mcp: FastMCP) -> None:
         description: str = "",
         mac_address: str = "",
         power: int = -1,
+        zone_member: str = "",
+        proxy_arp: int = -1,
+        ike: int = -1,
     ) -> str:
         """
         Configura atributos low-level de un puerto en un dispositivo vivo en PT.
@@ -1842,6 +1845,13 @@ def register_tools(mcp: FastMCP) -> None:
         - description: texto descriptivo (vacío = no cambia)
         - mac_address: MAC en formato "AABB.CCDD.EEFF" (vacío = no cambia)
         - power: 1 enciende puerto, 0 lo apaga, -1 no cambia
+        - zone_member: nombre de la security zone del puerto, para Zone-Based
+          Firewall (vacío = no cambia). Solo en interfaces de router.
+        - proxy_arp: 1 activa Proxy ARP, 0 lo desactiva, -1 no cambia. Apagarlo
+          es hardening habitual: con Proxy ARP el router responde ARPs que no
+          son suyos y filtra información de la topología.
+        - ike: 1 habilita IKE en la interfaz (VPN IPsec), 0 lo deshabilita,
+          -1 no cambia.
 
         Devuelve qué atributos se aplicaron (los que tenían método disponible en
         la API del puerto). Si algún `setXxx` no existe en el modelo del device,
@@ -1890,6 +1900,24 @@ def register_tools(mcp: FastMCP) -> None:
             v = "true" if power == 1 else "false"
             parts.append(
                 f'if(typeof p.setPower==="function"){{p.setPower({v});applied.push("power={v}");}}'
+            )
+
+        # Zone-Based Firewall / Proxy ARP / IKE: solo existen en puertos de
+        # router, así que el typeof no es defensivo de más — en un switch o un
+        # host estos setters no están y llamarlos abriría un modal.
+        if zone_member:
+            parts.append(
+                f'if(typeof p.setZoneMemberName==="function"){{p.setZoneMemberName({json.dumps(zone_member)});applied.push("zone_member");}}'
+            )
+        if proxy_arp in (0, 1):
+            v = "true" if proxy_arp == 1 else "false"
+            parts.append(
+                f'if(typeof p.setProxyArpEnabled==="function"){{p.setProxyArpEnabled({v});applied.push("proxy_arp={v}");}}'
+            )
+        if ike in (0, 1):
+            v = "true" if ike == 1 else "false"
+            parts.append(
+                f'if(typeof p.setIkeEnabled==="function"){{p.setIkeEnabled({v});applied.push("ike={v}");}}'
             )
 
         parts.append('reportResult(JSON.stringify({success:true,applied:applied}));')
@@ -3171,6 +3199,10 @@ def register_tools(mcp: FastMCP) -> None:
         ospf_cost: int | None = None,
         ospf_priority: int | None = None,
         ospf_hello_interval: int | None = None,
+        ospf_dead_interval: int | None = None,
+        ospf_auth_key: str | None = None,
+        ospf_md5_key_id: int | None = None,
+        ospf_md5_key: str | None = None,
         delay: int | None = None,
         dry_run: bool = False,
     ) -> str:
@@ -3183,18 +3215,28 @@ def register_tools(mcp: FastMCP) -> None:
         - clock_rate: SOLO en interfaces Serial (extremo DCE). Ej 64000, 2000000.
           Aplicar clock_rate a una interfaz no-serial es un error de validación.
         - bandwidth: ancho de banda en kbps (`bandwidth N`).
-        - ospf_cost / ospf_priority / ospf_hello_interval: knobs OSPF por interfaz.
+        - ospf_cost / ospf_priority: knobs OSPF por interfaz.
+        - ospf_hello_interval / ospf_dead_interval: timers OSPF. Tienen que
+          coincidir con los del vecino o la adyacencia no forma; la convención
+          IOS es dead = 4 x hello, y dead <= hello se rechaza.
+        - ospf_md5_key + ospf_md5_key_id: autenticación OSPF message-digest
+          (recomendada). El id tiene que coincidir con el del vecino.
+        - ospf_auth_key: autenticación OSPF en texto plano. Funciona, pero la
+          clave viaja legible por la red — se emite un warning.
         - delay: delay de la interfaz (afecta métrica EIGRP), en decenas de microsegundos.
         - dry_run: si True, solo valida y devuelve el CLI/payload.
 
-        Ejemplo: clock rate DCE en el serial de R1:
-          pt_apply_interface_tuning(router="R1", interface="Serial0/0/0",
-                                    clock_rate=64000, dry_run=True)
+        Ejemplo: autenticar OSPF con MD5 entre R1 y su vecino:
+          pt_apply_interface_tuning(router="R1", interface="GigabitEthernet0/0",
+                                    ospf_md5_key_id=1, ospf_md5_key="s3cr3t")
         """
         cfg = InterfaceTuning(
             router=router, interface=interface, clock_rate=clock_rate,
             bandwidth=bandwidth, ospf_cost=ospf_cost, ospf_priority=ospf_priority,
-            ospf_hello_interval=ospf_hello_interval, delay=delay,
+            ospf_hello_interval=ospf_hello_interval,
+            ospf_dead_interval=ospf_dead_interval, ospf_auth_key=ospf_auth_key,
+            ospf_md5_key_id=ospf_md5_key_id, ospf_md5_key=ospf_md5_key,
+            delay=delay,
         )
         bridge_ok = _pick_channel() != ""
         result = apply_interface_tuning_uc(

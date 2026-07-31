@@ -32,6 +32,65 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
                 suggestion="Valores comunes: 64000, 128000, 1000000, 2000000.",
             ))
 
+    # --- Autenticación OSPF ---
+    for label, value in (("ospf_auth_key", cfg.ospf_auth_key),
+                         ("ospf_md5_key", cfg.ospf_md5_key)):
+        if value is None:
+            continue
+        if not value.strip():
+            errors.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+                message=f"{label} está vacía.",
+                suggestion="Pasá una clave o quitá el parámetro.",
+            ))
+        elif any(ch in value for ch in ("\n", "\r", " ")):
+            # La clave termina dentro de un payload IOS de una sola línea; un
+            # salto se convertiría en un comando no pedido.
+            errors.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+                message=f"{label} tiene espacios o saltos de línea.",
+                suggestion="IOS no acepta espacios en la clave: usá una sola palabra.",
+            ))
+
+    if cfg.ospf_md5_key is not None:
+        if cfg.ospf_md5_key_id is None:
+            errors.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+                message="ospf_md5_key necesita un ospf_md5_key_id.",
+                suggestion="Usá un id entre 1 y 255; tiene que coincidir con el del vecino.",
+            ))
+        elif not 1 <= cfg.ospf_md5_key_id <= 255:
+            errors.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+                message=f"ospf_md5_key_id {cfg.ospf_md5_key_id} fuera de rango (1-255).",
+                suggestion="Usá un id entre 1 y 255.",
+            ))
+        if cfg.ospf_auth_key is not None:
+            warnings.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+                message="Se pasaron auth_key y md5_key; se aplica solo MD5.",
+                suggestion="Quitá ospf_auth_key: message-digest es el modo recomendado.",
+            ))
+    elif cfg.ospf_auth_key is not None:
+        warnings.append(PlanError(
+            code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
+            message="La autenticación OSPF en texto plano viaja legible por la red.",
+            suggestion="Preferí ospf_md5_key + ospf_md5_key_id (message-digest).",
+        ))
+
+    # Los timers tienen que coincidir con los del vecino o la adyacencia no forma.
+    # El default de IOS es dead = 4 x hello.
+    if cfg.ospf_dead_interval is not None and cfg.ospf_hello_interval is not None:
+        if cfg.ospf_dead_interval <= cfg.ospf_hello_interval:
+            errors.append(PlanError(
+                code=ErrorCode.IFTUNE_INVALID_OSPF_TIMERS, device=cfg.router,
+                message=(
+                    f"dead-interval ({cfg.ospf_dead_interval}s) tiene que ser mayor "
+                    f"que hello-interval ({cfg.ospf_hello_interval}s)."
+                ),
+                suggestion="La convención IOS es dead = 4 x hello.",
+            ))
+
     return ValidationResult(errors=errors, warnings=warnings)
 
 

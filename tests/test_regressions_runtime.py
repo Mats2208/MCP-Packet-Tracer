@@ -151,3 +151,34 @@ def test_script_engine_defines_all_helpers():
     for fn in ("addModule", "lwAddDevice", "lwAddLink", "configurePcIp",
                "configurePcIpv6", "swapLaptopToWireless"):
         assert f"GLOBAL.{fn} = function" in js, f"falta el helper {fn} en installMcpHelpers"
+
+
+class TestSetPortSecurityKnobs:
+    """pt_set_port aplica zone-member, Proxy ARP e IKE por API nativa.
+
+    Viven acá y no en una tool aparte porque pt_set_port ya es el lugar donde se
+    aplican atributos low-level de puerto con feature-detection; duplicarlo en un
+    `pt_apply_interface_security` habría inflado el conteo de tools sin agregar
+    capacidad.
+    """
+
+    def _src(self) -> str:
+        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
+            encoding="utf-8"
+        )
+
+    def test_each_setter_is_feature_detected(self):
+        """Solo existen en puertos de router: en un switch o host lanzarían."""
+        src = self._src()
+        for method in ("setZoneMemberName", "setProxyArpEnabled", "setIkeEnabled"):
+            assert f'typeof p.{method}==="function"' in src
+
+    def test_zone_member_goes_through_json_dumps(self):
+        """Regla de AGENTS.md: nunca interpolar texto crudo en el JS."""
+        assert "p.setZoneMemberName({json.dumps(zone_member)})" in self._src()
+
+    def test_tristate_flags_ignore_the_sentinel(self):
+        """-1 significa 'no cambiar': no debe emitirse ninguna llamada."""
+        src = self._src()
+        assert "if proxy_arp in (0, 1):" in src
+        assert "if ike in (0, 1):" in src
