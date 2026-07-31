@@ -4147,11 +4147,25 @@ def register_tools(mcp: FastMCP) -> None:
             "      try { if (__lw.removeCanvasItem(__ids[__i])) __n++; } catch (__re) {}"
             "    }"
             "  }"
-            "  var __left = 0;"
+            # PT deja IDs de nota huérfanos: sin texto y con removeCanvasItem
+            # devolviendo false. Contarlos como "restantes" haría creer que la
+            # limpieza falló cuando el canvas quedó vacío, así que se separan.
+            "  var __left = 0, __stale = 0;"
             "  for (var __m = 0; __m < __gs.length; __m++) {"
-            "    try { __left += (__lw[__gs[__m]]() || []).length; } catch (__le) {}"
+            "    var __rest = null;"
+            "    try { __rest = __lw[__gs[__m]]() || []; } catch (__le) { continue; }"
+            "    for (var __q = 0; __q < __rest.length; __q++) {"
+            "      var __has = true;"
+            "      try {"
+            "        if (typeof __lw.getCanvasNoteText === 'function') {"
+            "          __has = String(__lw.getCanvasNoteText(__rest[__q]) || '') !== '';"
+            "        }"
+            "      } catch (__te) {}"
+            "      if (__has) { __left++; } else { __stale++; }"
+            "    }"
             "  }"
-            "  reportResult(JSON.stringify({ removed: __n, remaining: __left }));"
+            "  reportResult(JSON.stringify({ removed: __n, remaining: __left,"
+            "    stale_ids: __stale }));"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
         raw = _bridge_send_and_wait(js, timeout=20.0)
@@ -4164,10 +4178,14 @@ def register_tools(mcp: FastMCP) -> None:
         except Exception as exc:
             return f"Respuesta ilegible de PT: {exc}"
         data["kind"] = what
+        stale = data.get("stale_ids", 0)
+        # Los ids huérfanos no son un fallo: PT no los libera nunca y el canvas
+        # queda visualmente limpio igual. Se mencionan sin alarmar.
+        nota = f" ({stale} id(s) huérfano(s) que PT no libera)." if stale else "."
         data["summary"] = (
-            f"✅ {data['removed']} anotación(es) borrada(s)."
+            f"✅ {data['removed']} anotación(es) borrada(s){nota}"
             if data.get("removed")
-            else "No había anotaciones que borrar."
+            else f"No había anotaciones que borrar{nota}"
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 

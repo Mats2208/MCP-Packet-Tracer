@@ -159,4 +159,12 @@ class TestCanvasTools:
 
     def test_clear_counts_what_is_left_across_both_sets(self):
         src = self._src()
-        assert "__left += (__lw[__gs[__m]]() || []).length" in src
+        assert "__rest = __lw[__gs[__m]]() || []" in src
+
+    def test_stale_ids_are_not_reported_as_failures(self):
+        """PT deja ids de nota huerfanos: sin texto y que removeCanvasItem
+        rechaza. Contarlos como restantes hacia creer que la limpieza fallo
+        cuando el canvas quedaba vacio (medido: 14 huerfanos, canvas limpio)."""
+        src = self._src()
+        assert "stale_ids: __stale" in src
+        assert "getCanvasNoteText(__rest[__q])" in src
