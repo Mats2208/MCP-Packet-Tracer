@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>62 MCP Tools</strong></td>
+<td align="center"><strong>61 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>

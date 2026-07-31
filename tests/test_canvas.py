@@ -112,11 +112,24 @@ class TestCanvasTools:
             encoding="utf-8"
         )
 
-    def test_circle_takes_seven_args_and_line_nine(self):
-        """drawCircle NO acepta grosor; pasarle uno de más lo hace fallar."""
+    def test_no_draw_tool_is_shipped(self):
+        """drawCircle/drawLine no se exponen: el tercer argumento resulto ser el
+        z-order, no radio ni grosor, y los colores no se aplican como se pasan.
+
+        Medido en PT 9.0.0.0810: tres circulos con tercer argumento 60, 60 y 300
+        salieron del MISMO tamano diminuto, y una linea pedida en rojo salio azul.
+        Exponer parametros que no hacen lo que dicen es peor que no exponerlos.
+        """
         src = self._src()
-        assert "__lw.drawCircle({int(x)}, {int(y)}, {float(radius)}, {r}, {g}, {b}, {a})" in src
-        assert "__lw.drawLine({int(x)}, {int(y)}, {int(x2)}, {int(y2)}, " in src
+        assert "def pt_draw(" not in src
+        assert "drawCircle" not in src
+
+    def test_note_uses_the_z_order_getter_not_a_font_size(self):
+        """El tercer argumento de addNote es el z-order. Verificado pasando 12 y
+        14: las notas salen identicas."""
+        src = self._src()
+        assert "getIncNoteZOrder" in src
+        assert "size: float" not in src
 
     def test_note_text_goes_through_json_dumps(self):
         """Regla de AGENTS.md: nunca interpolar texto crudo en el JS."""
@@ -134,11 +147,16 @@ class TestCanvasTools:
         assert 'safe_name_component(filename, fallback="topology")' in src
         assert "resolve_within(base, f\"{safe}.{ext}\")" in src
 
-    def test_shape_is_validated_against_a_closed_list(self):
-        assert 'if kind not in ("line", "circle"):' in self._src()
+    def test_clear_sweeps_notes_AND_items(self):
+        """getCanvasItemIds NO incluye las notas: son conjuntos distintos.
 
-    def test_clear_only_touches_canvas_items(self):
-        """No debe borrar dispositivos ni enlaces."""
+        Barrer solo uno dejaba 18 notas en pantalla reportando remaining=0, que
+        es peor que no borrar: el usuario cree que quedo limpio.
+        """
         src = self._src()
+        assert '"getCanvasNoteIds", "getCanvasItemIds",' in src
         assert "removeCanvasItem(__ids[__i])" in src
-        assert "getCanvasItemIds" in src
+
+    def test_clear_counts_what_is_left_across_both_sets(self):
+        src = self._src()
+        assert "__left += (__lw[__gs[__m]]() || []).length" in src

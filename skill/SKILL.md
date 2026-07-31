@@ -53,7 +53,7 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (62)
+## Tool catalog (61)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -80,12 +80,13 @@ posture with severities; never returns passwords or hashes, only the algorithm l
 NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
 your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
 **Canvas (capture & annotate):** `pt_screenshot(filename, fmt, output_dir)` writes the image to disk
-and returns the **path** — never the bytes, they would flood the context. `pt_add_note(x, y, text, size)`
-and `pt_draw(shape, x, y, x2, y2, radius, width, color)` (`shape` is `line` or `circle`, `color` is
-`"r,g,b,a"`), `pt_clear_annotations(kind)` removes annotations only, never devices or links.
+and returns the **path** — never the bytes, they would flood the context. `pt_add_note(x, y, text)`
+writes a label; font size is not settable. `pt_clear_annotations(kind)` removes annotations only,
+never devices or links. There is **no drawing tool**: PT's line/circle calls take a stacking-order
+argument where a size would go, and ignore the colours passed, so they are not exposed.
 Canvas coordinates match `pt_add_device`: routers ~y=100, switches ~y=250, hosts ~y=400.
-Recipe for a diagram worth showing: `pt_full_build` → `pt_add_note` per subnet → `pt_draw` to ring
-each VLAN → `pt_screenshot`.
+Recipe for a diagram worth showing: `pt_full_build` → `pt_add_note` per subnet and link →
+`pt_screenshot`.
 **Backup / workspace:** `pt_backup_config(device, include_xml)` (real startup-config + serial,
 config-register, boot images), `pt_project_metadata(description="")` (saved filename, PT version,
 description, device/link count; pass `description` to set it), `pt_workspace_options(...)` — tri-state

@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **62 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **61 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -123,13 +123,20 @@ describing the network and starts showing it.
 |------|--------------|
 | `pt_screenshot` | Capture the logical canvas to an image file and return its path. |
 | `pt_add_note` | Write a text note on the canvas — label a subnet, name a trunk. |
-| `pt_draw` | Draw a line or a circle: separate areas, ring a VLAN, highlight a path. |
 | `pt_clear_annotations` | Remove notes and drawings. Never touches devices or links. |
 
 !!! tip "Self-documenting topologies"
-    Combine them: build with `pt_full_build`, label each subnet with
-    `pt_add_note`, ring the VLANs with `pt_draw`, then `pt_screenshot`. The
-    result is a diagram ready for a slide, produced from one prompt.
+    Combine them: build with `pt_full_build`, label each subnet and link with
+    `pt_add_note`, then `pt_screenshot`. The result is a diagram ready for a
+    slide, produced from one prompt.
+
+!!! warning "There is no drawing tool"
+    Packet Tracer can draw lines and circles on the canvas, but not usefully
+    from an extension: the size argument turned out to control stacking order
+    rather than radius or thickness — three circles asking for 60, 60 and 300
+    all came out the same tiny size — and the colour arguments do not produce
+    the colour requested. Rather than ship parameters that don't do what they
+    say, annotation is limited to text notes.
 
 !!! note "The screenshot returns a path, not the image"
     A capture runs to tens of thousands of bytes. Returning it inline would fill

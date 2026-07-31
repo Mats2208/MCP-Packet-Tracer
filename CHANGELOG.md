@@ -5,7 +5,7 @@
 El servidor podía construir una red y leerla, pero no mostrarla. Esta versión
 cierra eso: el agente ahora entrega un diagrama, no una descripción.
 
-**58 → 62 tools · 319 → 348 tests.** Verificado contra Packet Tracer 9.0.0.0810.
+**58 → 61 tools · 319 → 349 tests.** Verificado contra Packet Tracer 9.0.0.0810.
 
 ### Added
 
@@ -15,14 +15,22 @@ cierra eso: el agente ahora entrega un diagrama, no una descripción.
   diagrama mucho mejor que JPG (33 KB contra 105 KB sobre el mismo canvas).
 - **`pt_add_note`** — escribe una nota sobre el canvas: etiquetar una subred,
   marcar un área OSPF, nombrar un troncal.
-- **`pt_draw`** — dibuja una línea o un círculo para separar áreas, encerrar una
-  VLAN o resaltar un camino.
 - **`pt_clear_annotations`** — borra notas y dibujos. Nunca toca dispositivos ni
   enlaces.
 
 Juntas permiten **topologías auto-documentadas**: construir con `pt_full_build`,
-etiquetar cada subred, encerrar las VLAN y capturar — un diagrama listo para una
-clase a partir de un solo prompt.
+etiquetar cada subred y enlace, y capturar — un diagrama listo para una clase a
+partir de un solo prompt.
+
+### Limitación conocida
+
+**No hay tool de dibujo.** Packet Tracer dibuja líneas y círculos en el canvas,
+pero no de forma útil desde una extensión: el argumento donde iría el tamaño
+resultó controlar el orden de apilado —tres círculos pidiendo 60, 60 y 300
+salieron todos del mismo tamaño diminuto— y los colores no producen el color
+pedido. Antes que exponer parámetros que no hacen lo que dicen, la anotación
+queda limitada a notas de texto. El tamaño de fuente tampoco es configurable,
+por la misma razón.
 
 ## 0.7.0
 

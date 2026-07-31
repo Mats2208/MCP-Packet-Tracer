@@ -4056,7 +4056,7 @@ def register_tools(mcp: FastMCP) -> None:
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
-    def pt_add_note(x: int, y: int, text: str, size: float = 12.0) -> str:
+    def pt_add_note(x: int, y: int, text: str) -> str:
         """
         Escribe una nota de texto sobre el canvas de PT.
 
@@ -4067,10 +4067,12 @@ def register_tools(mcp: FastMCP) -> None:
         Las coordenadas son las mismas del canvas lógico que usan pt_add_device
         y pt_move_device: routers ~y=100, switches ~y=250, hosts ~y=400.
 
+        El tamaño de fuente NO es configurable: PT lo fija y usa ese parámetro
+        para el orden de apilado, que la tool calcula sola.
+
         Parámetros:
         - x, y: posición en el canvas.
         - text: contenido de la nota.
-        - size: tamaño de fuente (default 12).
 
         Ejemplo: pt_add_note(x=300, y=100, text="LAN 192.168.0.0/24")
         """
@@ -4080,10 +4082,15 @@ def register_tools(mcp: FastMCP) -> None:
         if not text.strip():
             return json.dumps({"error": "La nota está vacía."}, ensure_ascii=False)
 
+        # El tercer argumento de addNote es el Z-ORDER, no el tamaño de fuente:
+        # PT expone getIncNoteZOrder() justamente para obtener el siguiente. Se
+        # verificó pasando 12 y 14 — las notas salen del mismo tamaño.
         js = (
             "try {"
             "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
-            f"  reportResult(String(__lw.addNote({int(x)}, {int(y)}, {float(size)}, "
+            "  var __z = (typeof __lw.getIncNoteZOrder === 'function')"
+            "    ? __lw.getIncNoteZOrder() : 0;"
+            f"  reportResult(String(__lw.addNote({int(x)}, {int(y)}, __z, "
             f"{json.dumps(text)})));"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
@@ -4095,81 +4102,6 @@ def register_tools(mcp: FastMCP) -> None:
         return json.dumps({
             "id": raw.strip(),
             "summary": f"✅ Nota agregada en ({x},{y}).",
-        }, indent=2, ensure_ascii=False)
-
-    @mcp.tool()
-    def pt_draw(
-        shape: str,
-        x: int,
-        y: int,
-        x2: int = 0,
-        y2: int = 0,
-        radius: float = 40.0,
-        width: float = 2.0,
-        color: str = "0,150,255,255",
-    ) -> str:
-        """
-        Dibuja una línea o un círculo sobre el canvas de PT.
-
-        Con pt_add_note permite entregar topologías anotadas: encerrar una VLAN
-        en un círculo, separar áreas con una línea, resaltar el camino de un
-        paquete.
-
-        Parámetros:
-        - shape: "line" | "circle".
-        - x, y: inicio de la línea, o CENTRO del círculo.
-        - x2, y2: fin de la línea (se ignoran en "circle").
-        - radius: radio del círculo (se ignora en "line").
-        - width: grosor de la línea (se ignora en "circle" — PT no lo acepta ahí).
-        - color: "r,g,b,a" con cada canal de 0 a 255. Default celeste opaco.
-
-        Ejemplo: encerrar un grupo de PCs:
-          pt_draw(shape="circle", x=400, y=400, radius=90, color="255,180,0,200")
-        """
-        err = _check_bridge()
-        if err:
-            return err
-
-        kind = shape.strip().lower()
-        if kind not in ("line", "circle"):
-            return json.dumps(
-                {"error": f"shape inválido: '{shape}'. Usá 'line' o 'circle'."},
-                ensure_ascii=False,
-            )
-        try:
-            parts = [int(c) for c in color.split(",")]
-            if len(parts) != 4:
-                raise ValueError("se esperaban 4 canales r,g,b,a")
-            r, g, b, a = parts
-            validate_color(r, g, b, a)
-        except ValueError as exc:
-            return json.dumps({"error": f"color inválido: {exc}"}, ensure_ascii=False)
-
-        if kind == "line":
-            call = (
-                f"__lw.drawLine({int(x)}, {int(y)}, {int(x2)}, {int(y2)}, "
-                f"{float(width)}, {r}, {g}, {b}, {a})"
-            )
-        else:
-            # drawCircle toma 7 argumentos y NO acepta grosor, a diferencia de
-            # drawLine que toma 9. Pasarle uno de más lo hace fallar.
-            call = f"__lw.drawCircle({int(x)}, {int(y)}, {float(radius)}, {r}, {g}, {b}, {a})"
-
-        js = (
-            "try {"
-            "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
-            f"  reportResult(String({call}));"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
-        raw = _bridge_send_and_wait(js, timeout=10.0)
-        if raw is None:
-            return _TIMEOUT_MSG
-        if raw.startswith("ERROR:"):
-            return f"PT error: {raw}"
-        return json.dumps({
-            "id": raw.strip(),
-            "shape": kind,
-            "summary": f"✅ {kind} dibujado.",
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
@@ -4195,19 +4127,31 @@ def register_tools(mcp: FastMCP) -> None:
                 {"error": f"kind inválido: '{kind}'. Usá 'all' o 'notes'."},
                 ensure_ascii=False,
             )
-        getter = "getCanvasNoteIds" if what == "notes" else "getCanvasItemIds"
+        # getCanvasItemIds NO incluye las notas: son conjuntos distintos. Barrer
+        # solo uno dejaba notas en pantalla y encima reportaba remaining=0, que
+        # es peor que no borrar — el usuario cree que quedó limpio.
+        getters = ["getCanvasNoteIds"] if what == "notes" else [
+            "getCanvasNoteIds", "getCanvasItemIds",
+        ]
+        js_getters = ", ".join(json.dumps(g) for g in getters)
         js = (
             "try {"
             "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
-            f"  var __ids = __lw.{getter}();"
+            f"  var __gs = [{js_getters}];"
             "  var __n = 0;"
-            "  if (__ids) {"
+            "  for (var __k = 0; __k < __gs.length; __k++) {"
+            "    var __ids = null;"
+            "    try { __ids = __lw[__gs[__k]](); } catch (__ge) { continue; }"
+            "    if (!__ids) continue;"
             "    for (var __i = 0; __i < __ids.length; __i++) {"
             "      try { if (__lw.removeCanvasItem(__ids[__i])) __n++; } catch (__re) {}"
             "    }"
             "  }"
-            "  reportResult(JSON.stringify({ removed: __n,"
-            f"    remaining: (__lw.{getter}() || []).length }}));"
+            "  var __left = 0;"
+            "  for (var __m = 0; __m < __gs.length; __m++) {"
+            "    try { __left += (__lw[__gs[__m]]() || []).length; } catch (__le) {}"
+            "  }"
+            "  reportResult(JSON.stringify({ removed: __n, remaining: __left }));"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
         raw = _bridge_send_and_wait(js, timeout=20.0)
