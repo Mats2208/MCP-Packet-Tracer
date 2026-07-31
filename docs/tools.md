@@ -122,13 +122,11 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810.
 | `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
 
 !!! note "NetFlow is configured natively; QoS can only be read"
-    These two look symmetric but are not. `NFExporterManager` exposes
-    `createNFExporter` plus the full setter set and `isFullyConfigured()`, so
-    `pt_apply_netflow` drives PT's own objects and verifies the result — no CLI
-    involved. `ClassMapManager` has `getClassMap`, `classMapExist` and
-    `deleteClassMap` but **no create**, and `PolicyMapManager` is getters only.
-    So QoS is authored through IOS CLI (`pt_send_raw` → `configureIosDevice`) and
-    `pt_read_qos` is how you confirm it landed.
+    These two look symmetric but are not. `pt_apply_netflow` configures the
+    exporter directly and verifies the result — no CLI involved. QoS, by
+    contrast, can be **read** but not created programmatically, so class-maps and
+    policy-maps are authored through IOS CLI (`pt_send_raw` →
+    `configureIosDevice`) and `pt_read_qos` is how you confirm it landed.
 
 ## Simulation
 
@@ -151,16 +149,10 @@ them in real time, which is what makes a step-by-step trace possible.
           send an ARP request for that IP address and buffers this packet.
     ```
 
-!!! warning "There is no `pt_send_pdu` — the API can't originate a packet"
-    `Simulation.createFrameInstance(Device, TrafficType, int, QString)` does
-    succeed, and `finalizeFrameInstance` accepts the result, but the event list
-    stays empty. Per Cisco's own reference, `FrameInstance` "holds traffic
-    details" and pairs with `addDecision(...)` — it is how an **extension
-    implementing its own protocol reports its traffic** into the simulation
-    panel, not a way to push a PDU through a device's stack. The GUI's *Add
-    Simple PDU* is not exposed over IPC (`addSimplePdu` exists on no object).
-    Generate traffic the way a user would — `pt_verify_connectivity` runs a real
-    ping — and then read the trace.
+!!! warning "There is no `pt_send_pdu`"
+    Packet Tracer does not let an extension originate a packet the way the GUI's
+    *Add Simple PDU* button does. Generate traffic the way a user would —
+    `pt_verify_connectivity` runs a real ping — and then read the trace.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

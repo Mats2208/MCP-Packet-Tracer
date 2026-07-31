@@ -131,13 +131,12 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
   simular caídas. Todos los modelos lo soportan; solo los IOS reportan `booting`.
 
 ## Telemetría y QoS — NO son simétricas
-- `pt_apply_netflow(device, name, destination_ip, ...)`: NetFlow se configura por API
-  NATIVA (`NFExporterManager.createNFExporter` + setters), no por CLI, y se relee con
-  `isFullyConfigured()`. Si el nombre ya existe lo reconfigura en vez de duplicar.
-  Acepta `remove=True` y `dry_run=True`.
-- `pt_read_qos(device)`: SOLO LECTURA. `ClassMapManager` no tiene `createClassMap` y
-  `PolicyMapManager` solo tiene getters, así que para CONFIGURAR QoS hay que mandar
-  CLI IOS con `configureIosDevice`; esta tool sirve para verificar que quedó aplicado.
+- `pt_apply_netflow(device, name, destination_ip, ...)`: configura el exportador
+  directamente (no por CLI) y lo relee para confirmar. Si el nombre ya existe lo
+  reconfigura en vez de duplicar. Acepta `remove=True` y `dry_run=True`.
+- `pt_read_qos(device)`: SOLO LECTURA. QoS no se puede crear programáticamente, así
+  que para CONFIGURARLO hay que mandar CLI IOS con `configureIosDevice`; esta tool
+  sirve para verificar que quedó aplicado.
 
 ## Simulación paso a paso
 Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivity`)
@@ -146,8 +145,8 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
   de PT por capa OSI — el mismo texto del panel "PDU Details" de la GUI. Ahí está
   la causa real de un ping que falla ("The next-hop IP address is not in the ARP
   table..."), no solo el síntoma.
-- NO existe `pt_send_pdu`: `createFrameInstance` rechaza toda firma probada y esta
-  build de PT no expone `addSimplePdu`. Generá tráfico con un ping real.
+- NO existe `pt_send_pdu`: PT no permite originar un paquete desde una extensión
+  como sí lo hace el botón "Add Simple PDU" de la GUI. Generá tráfico con un ping real.
 
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).

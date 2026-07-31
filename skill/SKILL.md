@@ -77,22 +77,15 @@ posture with severities; never returns passwords or hashes, only the algorithm l
 NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
 your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
 **Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
-monitors, remove, dry_run)` configures a NetFlow exporter through PT's **native API** (not CLI) and
-reads it back via `isFullyConfigured()`. `pt_read_qos(device)` is **read-only** — `ClassMapManager`
-has no `createClassMap` and `PolicyMapManager` is getters only, so author QoS with IOS CLI and use
-this to verify.
+monitors, remove, dry_run)` configures a NetFlow exporter directly (not via CLI) and reads it back to
+confirm. `pt_read_qos(device)` is **read-only**: QoS cannot be created programmatically, so author
+class-maps and policy-maps with IOS CLI and use this to verify.
 **Simulation:** `pt_simulation_mode(on)` (Realtime ↔ Simulation), `pt_simulation_step(action, times)`
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
-There is **no `pt_send_pdu`**: `createFrameInstance(Device, TrafficType, int, QString)` builds an object
-but `finalizeFrameInstance` never puts it in the event list — that pair is how an extension *reports*
-its own protocol's traffic, not how you originate a PDU. Generate traffic with a real ping instead.
-
-**Looking up an API signature:** PT ships its full IpcAPI reference at
-`C:\Program Files\Cisco Packet Tracer 9.0.0\help\default\IpcAPI\` (2757 Doxygen pages, one per class,
-**with argument types**). Read it before probing — `for (var k in obj)` gives names but not arity, and
-PT's only error is `Invalid arguments for IPC call "X"`.
+There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
+*Add Simple PDU* button does. Generate traffic with a real ping instead.
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Advanced builds (verified live 2026-06-27)

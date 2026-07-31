@@ -51,13 +51,10 @@ tests**. If you write a helper worth testing, put it in `shared/utils.py`.
    returns `ValidationResult`, so the use case decides whether to proceed.
 5. **A bug fix needs a test that fails without it.** Write the failing test
    first; if it passes before your change, it isn't testing the bug.
-6. **Look up a PT API signature before probing for it.** Packet Tracer ships the
-   full IpcAPI reference at
-   `C:\Program Files\Cisco Packet Tracer 9.0.0\help\default\IpcAPI\` (2757
-   Doxygen pages, one class per file, with argument types). Enumerating an object
-   with `for (var k in obj)` gives you names but not arity or types, and PT only
-   answers `Invalid arguments for IPC call "X"` without saying what it wanted —
-   guessing signatures by trial is slow and unreliable. See FUNCIONES-PT.md.
+6. **Never guess a PT API signature.** If a method isn't already used somewhere
+   in this repo, confirm it against Cisco's reference before writing code on top
+   of it — PT answers a wrong call with a bare `Invalid arguments for IPC call
+   "X"`, so a guess fails without telling you why.
 
 ## Working with the bridge
 
