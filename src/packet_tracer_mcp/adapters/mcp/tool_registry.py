@@ -4107,13 +4107,16 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_clear_annotations(kind: str = "all") -> str:
         """
-        Borra las anotaciones del canvas (notas y dibujos).
+        Borra las anotaciones del canvas: notas de texto y dibujos.
 
-        NO toca dispositivos ni enlaces: solo los elementos gráficos que agregan
-        pt_add_note y pt_draw.
+        NO toca dispositivos ni enlaces, solo los elementos gráficos.
+
+        PT deja ids de nota huérfanos que no libera nunca — sin texto y que se
+        niega a borrar. No son un fallo: el canvas queda visualmente limpio
+        igual, y se reportan aparte como `stale_ids`.
 
         Parámetros:
-        - kind: "all" (default) borra todo lo dibujado; "notes" solo las notas.
+        - kind: "all" (default) borra notas y dibujos; "notes" solo las notas.
 
         Ejemplo: pt_clear_annotations()
         """
