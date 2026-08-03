@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+El bridge HTTP entregaba resultados a la operación equivocada. No fallaba: devolvía
+datos reales de Packet Tracer, del dispositivo de al lado.
+
+**350 → 369 tests.** Verificado contra Packet Tracer 9.0.1 por el canal HTTP.
+
+La comprobación en vivo salió del propio bug: `pt_add_module` sobre un 2911 tardó
+**15 s** —el power-cycle del router se pasa de largo— y el caller esperó sus 15 s
+enteros en vez de rendirse a los 9. El módulo se instaló (aparecieron `Serial0/0/0`
+y `Serial0/0/1`), o sea que el resultado llegó tarde y quedó huérfano; la llamada
+siguiente, un `pt_query_topology`, devolvió **su** topología y no ese resultado. Es
+el cruce que antes ocurría, esta vez con PT de verdad.
+
+### Fixed
+
+- **Los resultados del bridge HTTP se correlacionan por `rid`.** Eran una cola FIFO
+  global: quien pedía un resultado se llevaba el primero que hubiera, fuera suyo o no.
+  Bastaba que una operación se pasara de su ventana para que su resultado quedara
+  huérfano y lo consumiera la siguiente — y a partir de ahí, cada llamada devolvía la
+  anterior. Ahora cada operación genera su `rid`, que viaja dentro del JS inyectado y
+  PT devuelve al postear. **La extensión no cambia:** nunca construye la URL de
+  `/result`, solo ejecuta el JS que le llega, así que el `.pts` sigue siendo el mismo.
+
+- **El caller fija cuánto espera su resultado.** `GET /result` esperaba 9 segundos
+  fijos mientras los callers pedían hasta 45. De las 36 llamadas a
+  `_bridge_send_and_wait`, **26 pedían más de 9 s**: todas recibían un 204 prematuro y
+  se daban por fallidas aunque PT estuviera trabajando bien. El `wait` ahora viaja en
+  la petición, con un techo de 60 s para que una espera absurda no ate un thread.
+
+- **Bases de red inválidas explican qué pasó.** `base_network` llegaba cruda hasta
+  `IPPlanner`: una `/25` moría con `new prefix must be longer`, una `/24` con un
+  `StopIteration` desnudo al pedir la segunda LAN, y un texto cualquiera con
+  `AddressValueError`. Los tres salían como stacktrace. Ahora `TopologyRequest` rechaza
+  las bases que no dan ni una subred, y el agotamiento real —que depende de cuántas
+  LANs pida la topología, y por eso no se sabe hasta el planner— dice cuántas caben y
+  qué prefijo usar.
+
+### Removed
+
+- `PTCommandBridge.send()` y `.send_and_wait()`, que nadie llamaba: el adaptador habla
+  con el bridge por HTTP, no por métodos de la instancia. Llevaban una segunda copia
+  del mismo bug de correlación y un parámetro `timeout` que no se usaba.
+
 ## 0.8.0
 
 El servidor podía construir una red y leerla, pero no mostrarla. Esta versión

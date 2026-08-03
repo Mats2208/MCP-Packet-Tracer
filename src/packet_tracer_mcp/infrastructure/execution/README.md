@@ -83,23 +83,38 @@ Servidor HTTP local que permite comunicación bidireccional entre Python y Packe
 
 ```python
 class PTCommandBridge:
-    def __init__(port=54321)
+    def __init__(port=54321, token=None)
     def start() → None
-    def send(js_code) → bool
-    def send_and_wait(js_code, timeout) → str | None
-    def report_result_js(port, token) → str
+    def put_result(rid, body) → None          # lo llama el handler de POST /result
+    def take_result(rid, wait) → str | None   # espera el resultado de ESA operación
+    def drain_commands() → list[str]
     @property
     def is_connected → bool
+
+# funciones de módulo
+def next_rid() → str                          # id de operación, pid + contador
+def report_result_js(port, token, rid) → str  # el rid viaja dentro del JS
 ```
+
+El adaptador MCP habla con el bridge **por HTTP**, no llamando métodos de la
+instancia: el bridge puede haberlo arrancado otro proceso.
 
 **Endpoints HTTP:**
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/next` | PTBuilder polling — retorna siguiente comando JS de la cola |
-| `GET` | `/ping` | Health check básico |
+| `GET` | `/next` | PTBuilder polling — retorna el lote de comandos JS de la cola |
+| `GET` | `/ping` | Health check básico (sin token, no filtra el secreto) |
 | `GET` | `/status` | Estado detallado del bridge |
-| `POST` | `/result` | PTBuilder envía resultado de ejecución |
+| `GET` | `/result` | Recoge el resultado de `?rid=…`, esperando hasta `?wait=…` segundos |
+| `POST` | `/result` | PTBuilder envía el resultado de `?rid=…` |
 | `POST` | `/queue` | Encola un comando JS externamente |
+
+**Correlación por `rid`:** cada operación genera el suyo (`next_rid()`), viaja
+dentro del JS inyectado y PT lo devuelve al postear. Antes los resultados eran
+una cola FIFO global y el handler esperaba 9 s fijos, así que una operación
+lenta se daba por fallida *y* su resultado tardío quedaba huérfano para que se
+lo llevara la siguiente. La extensión nunca construye la URL de `/result` —solo
+ejecuta el JS que le llega—, por eso el cambio no tocó el `.pts`.
 
 **Diseño:**
 ```
