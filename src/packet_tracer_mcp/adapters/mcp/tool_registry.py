@@ -64,7 +64,7 @@ from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import (
-    PTCommandBridge, DEFAULT_PORT, report_result_js,
+    PTCommandBridge, DEFAULT_PORT, report_result_js, next_rid,
 )
 from ...infrastructure.execution.bridge_token import (
     get_bridge_token, token_fingerprint, token_was_rotated, token_is_ephemeral,
@@ -1299,11 +1299,24 @@ def register_tools(mcp: FastMCP) -> None:
             "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
         if ch == "http":
-            wrapped = report_result_js(_BRIDGE_PORT, get_bridge_token()) + ";" + guarded
+            # El rid correlaciona esta operación con SU resultado. Viaja dentro
+            # del JS inyectado, así que PT lo devuelve solo y la extensión no se
+            # entera. Sin él, un resultado que llegaba tarde se lo quedaba la
+            # operación siguiente.
+            rid = next_rid()
+            wrapped = (
+                report_result_js(_BRIDGE_PORT, get_bridge_token(), rid) + ";" + guarded
+            )
             status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
             if status_post != 200:
                 return None
-            status_get, body = _http_get(f"{_BRIDGE_URL}/result", timeout=timeout)
+            # El `wait` va al servidor: el que sabe cuánto tarda la operación es
+            # quien la pide. El timeout del socket va por encima para que gane
+            # el del servidor y un 204 signifique "no llegó", no "me colgué".
+            status_get, body = _http_get(
+                f"{_BRIDGE_URL}/result?rid={rid}&wait={timeout}",
+                timeout=timeout + 5.0,
+            )
             return body if status_get == 200 else None
         if ch == "file":
             return _file_bridge.send_and_wait(guarded, timeout=timeout)

@@ -27,14 +27,34 @@ class IPPlanner:
         lan_base: str = "192.168.0.0/16",
         link_base: str = "10.0.0.0/16",
     ):
+        self._lan_base = lan_base
+        self._link_base = link_base
         self._lan_subnets = ipaddress.IPv4Network(lan_base).subnets(new_prefix=24)
         self._link_subnets = ipaddress.IPv4Network(link_base).subnets(new_prefix=30)
 
+    # `TopologyRequest` ya valida que las bases den al menos una subred, pero el
+    # agotamiento depende de cuántas LANs pida la topología y eso no se sabe
+    # hasta acá. Un `StopIteration` crudo se veía como un fallo sin causa.
+
     def next_lan_subnet(self) -> ipaddress.IPv4Network:
-        return next(self._lan_subnets)
+        try:
+            return next(self._lan_subnets)
+        except StopIteration:
+            raise ValueError(
+                f"Se agotaron las subredes /24 de {self._lan_base}: la topología "
+                f"pide más LANs de las que caben. Usá un prefijo más corto "
+                f"(192.168.0.0/16 da 256)."
+            ) from None
 
     def next_link_subnet(self) -> ipaddress.IPv4Network:
-        return next(self._link_subnets)
+        try:
+            return next(self._link_subnets)
+        except StopIteration:
+            raise ValueError(
+                f"Se agotaron las subredes /30 de {self._link_base}: la topología "
+                f"pide más enlaces router↔router de los que caben. Usá un prefijo "
+                f"más corto (10.0.0.0/16 da 16384)."
+            ) from None
 
     def plan_addressing(
         self,

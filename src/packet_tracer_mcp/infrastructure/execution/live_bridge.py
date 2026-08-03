@@ -15,13 +15,22 @@ The extension gets the token by reading the token file through PT's Script
 Engine (ipc.systemFileManager), so there is nothing to pair and no window in
 which the secret is served over HTTP.
 
+Los comandos se encolan por HTTP y los resultados vuelven por `rid`: cada
+operación genera el suyo, viaja dentro del JS inyectado y PT lo devuelve al
+postear. Sin esa correlación —cuando los resultados eran una cola FIFO global—
+un resultado que llegaba tarde quedaba huérfano y lo consumía la operación
+SIGUIENTE, que recibía datos reales de PT pero de otro dispositivo. El canal por
+archivo ya correlacionaba por nombre; esto es el mismo patrón sobre HTTP.
+
 Usage:
     1. Start the bridge: bridge = PTCommandBridge(); bridge.start()
     2. Open the MCP Control Center in PT — it authenticates on its own
-    3. Send commands: bridge.send("addDevice('R1','2911',100,100)")
+    3. El adaptador MCP encola por POST /queue y recoge por GET /result?rid=…
 """
 
 import http.server
+import itertools
+import os
 import threading
 import time
 import json
@@ -40,6 +49,19 @@ MAX_BODY_BYTES = 1 << 20
 # Cola acotada: si PT se cuelga, la cola no puede crecer sin techo.
 MAX_QUEUE_ITEMS = 1000
 
+# Techo de espera de /result. Quien manda el timeout es el caller —tiene el
+# contexto de cuánto tarda su operación—, pero no puede pedir cualquier cosa:
+# cada espera ocupa un thread del ThreadingHTTPServer. Los callers reales piden
+# hasta 45 s.
+MAX_RESULT_WAIT_SECONDS = 60.0
+
+# Un resultado que nadie recoge se descarta pasado esto. Sin purga, la tabla de
+# resultados cambiaría el bug de correlación por una fuga de memoria.
+RESULT_TTL_SECONDS = 60.0
+
+# Techo duro de la tabla, por si llegan más resultados huérfanos que TTL.
+MAX_RESULT_ITEMS = 256
+
 # /next espera hasta este tiempo a que aparezca un comando en vez de contestar
 # vacío al instante. Baja la latencia (el comando sale apenas se encola, no en el
 # siguiente tick de 500 ms) y elimina el goteo de peticiones vacías.
@@ -52,12 +74,32 @@ MAX_BATCH_COMMANDS = 200
 
 
 
-def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
+_rid_counter = itertools.count(1)
+
+
+def next_rid() -> str:
+    """Id de operación, único por proceso.
+
+    Mismo esquema que `FileBridge._next_name`: el pid separa procesos MCP que
+    compartan el bridge y el contador separa operaciones dentro de uno.
+    Sale sin caracteres que haya que escapar, porque va en una query string.
+    """
+    return f"{os.getpid()}-{next(_rid_counter)}"
+
+
+def report_result_js(port: int = DEFAULT_PORT, token: str = "", rid: str = "") -> str:
     """JS que define reportResult() para devolver resultados al bridge.
 
     Se define inline con cada comando para compartir el scope de runCode.
     Enruta el resultado por el XMLHttpRequest del webview, porque el Script
     Engine de PT no tiene XMLHttpRequest propio.
+
+    El `rid` identifica la operación y viaja acá dentro, así que PT lo devuelve
+    solo: la extensión nunca construye esta URL, solo ejecuta el JS que le
+    llega. Por eso agregar la correlación no obligó a redistribuir el .pts.
+
+    El token va ANTES del rid a propósito — hay un test que espera encontrar
+    `/result?t=<token>` literal.
     """
     q = chr(39)   # '
     dq = chr(34)  # "
@@ -70,7 +112,7 @@ def report_result_js(port: int = DEFAULT_PORT, token: str = "") -> str:
         f".replace(/{bs}n/g,{q}{bs}{bs}n{q});"
         "window.webview.evaluateJavaScriptAsync("
         f"{q}var x=new XMLHttpRequest();"
-        f"x.open({bs}{q}POST{bs}{q},{bs}{q}http://127.0.0.1:{port}/result?t={token}{bs}{q},true);"
+        f"x.open({bs}{q}POST{bs}{q},{bs}{q}http://127.0.0.1:{port}/result?t={token}&rid={rid}{bs}{q},true);"
         f"x.setRequestHeader({bs}{q}Content-Type{bs}{q},{bs}{q}text/plain{bs}{q});"
         f"x.send({bs}{q}{q}+s+{q}{bs}{q});{q}"
         ")}"
@@ -86,7 +128,12 @@ class PTCommandBridge:
         self.token = token or get_bridge_token()
         self.token_id = token_fingerprint(self.token)
         self._queue: Queue[str] = Queue(maxsize=MAX_QUEUE_ITEMS)
-        self._results: Queue[str] = Queue(maxsize=MAX_QUEUE_ITEMS)
+        # {rid: (resultado, timestamp)}. Un dict y no una cola: con la cola, un
+        # resultado tardío que nadie recogía quedaba al frente y se lo llevaba
+        # la operación siguiente.
+        self._results: dict[str, tuple[str, float]] = {}
+        self._results_cv = threading.Condition()
+        self._result_ttl = RESULT_TTL_SECONDS
         self._server = None
         self._thread = None
         self._connected = False
@@ -128,6 +175,44 @@ class PTCommandBridge:
             "client_headers": dict(self._client_headers),
             "token_id": self.token_id,
         }
+
+    # -- resultados correlacionados -------------------------------------
+
+    def _purge_results_locked(self) -> None:
+        """Descarta resultados que nadie recogió. Llamar con el lock tomado."""
+        now = time.time()
+        for rid in [r for r, (_, ts) in self._results.items() if now - ts > self._result_ttl]:
+            del self._results[rid]
+        # Techo duro por si llegan más huérfanos de los que el TTL alcanza a
+        # limpiar: se van los más viejos primero.
+        if len(self._results) >= MAX_RESULT_ITEMS:
+            oldest = sorted(self._results.items(), key=lambda kv: kv[1][1])
+            for rid, _ in oldest[: len(self._results) - MAX_RESULT_ITEMS + 1]:
+                del self._results[rid]
+
+    def put_result(self, rid: str, body: str) -> None:
+        """Guarda el resultado de `rid` y despierta a quien lo espere."""
+        with self._results_cv:
+            self._purge_results_locked()
+            self._results[rid] = (body, time.time())
+            self._results_cv.notify_all()
+
+    def take_result(self, rid: str, wait: float) -> str | None:
+        """Espera y consume el resultado de `rid`. None si no llegó a tiempo.
+
+        Sin `rid` de por medio esto era `queue.get()`, que devolvía el primer
+        resultado que hubiera — de la operación que fuese.
+        """
+        deadline = time.time() + min(max(wait, 0.0), MAX_RESULT_WAIT_SECONDS)
+        with self._results_cv:
+            while True:
+                hit = self._results.pop(rid, None)
+                if hit is not None:
+                    return hit[0]
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return None
+                self._results_cv.wait(remaining)
 
     def drain_commands(self) -> list[str]:
         """Espera al primer comando y se lleva todos los que ya estén en cola.
@@ -271,11 +356,23 @@ class PTCommandBridge:
                 elif path == "/status":
                     self._respond(200, json.dumps(bridge.status_dict()))
                 elif path == "/result":
-                    try:
-                        result = bridge._results.get(timeout=9.0)
-                        self._respond(200, result)
-                    except Empty:
+                    # El caller fija la espera: él sabe cuánto tarda su
+                    # operación. Antes había un 9.0 fijo acá, así que todo lo
+                    # que pidiera más (26 de 36 llamadas, hasta 45 s) recibía
+                    # un 204 prematuro y se daba por fallido.
+                    rid = (qs.get("rid", [""])[0] or "").strip()
+                    if not rid:
                         self._respond(204, "")
+                        return
+                    try:
+                        wait = float(qs.get("wait", ["9"])[0])
+                    except ValueError:
+                        wait = 9.0
+                    result = bridge.take_result(rid, wait)
+                    if result is None:
+                        self._respond(204, "")
+                    else:
+                        self._respond(200, result)
                 else:
                     self._deny(404)
 
@@ -291,11 +388,14 @@ class PTCommandBridge:
                     return
 
                 if path == "/result":
-                    try:
-                        bridge._results.put_nowait(body)
-                    except Full:
-                        self._deny(503)
+                    # Un resultado sin rid no se le puede atribuir a ninguna
+                    # operación. Se descarta: guardarlo "por las dudas" es
+                    # exactamente cómo contaminaba antes a la siguiente.
+                    rid = (qs.get("rid", [""])[0] or "").strip()
+                    if not rid:
+                        self._respond(200, "discarded")
                         return
+                    bridge.put_result(rid, body)
                     self._respond(200, "ok")
                 elif path == "/queue":
                     if body:
@@ -347,29 +447,8 @@ class PTCommandBridge:
             self._server.server_close()
             self._server = None
 
-    # -- envío ----------------------------------------------------------
-
-    def send(self, js_code: str, timeout: float = 10.0) -> bool:
-        """Queue a JavaScript command for execution in PT."""
-        try:
-            self._queue.put_nowait(js_code)
-        except Full:
-            return False
-        return True
-
-    def send_and_wait(self, js_code: str, timeout: float = 10.0) -> str | None:
-        """Send a command and wait for result callback."""
-        wrapped = (
-            f"{report_result_js(self.port, self.token)};"
-            f"try {{ var __r = (function(){{ {js_code} }})(); "
-            f"reportResult(String(__r)); "
-            f"}} catch(__e) {{ reportResult('ERROR:' + __e); }}"
-        )
-        try:
-            self._queue.put_nowait(wrapped)
-        except Full:
-            return None
-        try:
-            return self._results.get(timeout=timeout)
-        except Empty:
-            return None
+    # No hay `send`/`send_and_wait` acá a propósito: el adaptador MCP habla con
+    # el bridge por HTTP (POST /queue, GET /result), no llamando métodos de esta
+    # instancia — el bridge puede haberlo arrancado otro proceso. Los dos
+    # métodos que existían eran código muerto con una copia del mismo bug de
+    # correlación; encolar y esperar se hace por los endpoints.
