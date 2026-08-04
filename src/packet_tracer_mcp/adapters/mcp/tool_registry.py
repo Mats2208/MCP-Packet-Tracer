@@ -71,11 +71,11 @@ from ...infrastructure.execution.bridge_token import (
 )
 from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.persistence.project_repository import ProjectRepository
-from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model
+from ...infrastructure.catalog.devices import ALL_MODELS, resolve_model, category_of_model
 from ...infrastructure.catalog.cables import CABLE_TYPES, CABLE_RULES, infer_cable
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
-from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module
+from ...infrastructure.catalog.modules import ALL_MODULES, resolve_module, ports_for_slot
 from ...shared.enums import RoutingProtocol, TopologyTemplate
 from ...shared.utils import (
     js_escape, safe_name_component, resolve_within, interpret_ping as _interpret_ping,
@@ -83,6 +83,37 @@ from ...shared.utils import (
 from ...domain.services.canvas import (
     CanvasImageError, decode_pt_image, normalize_format, validate_color,
 )
+
+
+# Opciones de workspace: flag del MCP → (método de PT, ¿va invertido?).
+#
+# PT expone dos de estas en NEGATIVO (`setDisableAutoCabling`,
+# `setHideDevLabel`) mientras que el flag del MCP dice "activar/mostrar". Si la
+# inversión se pierde, la tool hace exactamente lo contrario de lo que se le
+# pide, y en silencio.
+WORKSPACE_SETTERS: dict[str, tuple[str, bool]] = {
+    "auto_cabling":            ("setDisableAutoCabling", True),
+    "show_device_labels":      ("setHideDevLabel", True),
+    "external_network_access": ("setEnableExternalNetworkAccess", False),
+    "show_port_labels":        ("setIsPortShown", False),
+    "show_link_lights":        ("setIsLinkLightShown", False),
+}
+
+# Setters que PT declara con un segundo argumento OBLIGATORIO. Con uno solo
+# responde `Invalid arguments for IPC call "..."`. El valor del segundo no
+# cambia el resultado (probado con true y false contra PT 9.0.1), pero tiene
+# que estar.
+WORKSPACE_EXTRA_ARG: dict[str, str] = {
+    "setHideDevLabel": "true",
+}
+
+
+def workspace_setter_call(flag: str, value: int) -> tuple[str, str]:
+    """(método de PT, argumentos JS) para dejar `flag` en `value` (0 ó 1)."""
+    method, inverted = WORKSPACE_SETTERS[flag]
+    on = "true" if (value == 1) != inverted else "false"
+    extra = WORKSPACE_EXTRA_ARG.get(method)
+    return method, (f"{on}, {extra}" if extra else on)
 
 
 def register_tools(mcp: FastMCP) -> None:
@@ -1571,12 +1602,23 @@ def register_tools(mcp: FastMCP) -> None:
         if err:
             return err
 
+        if not new_name.strip():
+            return "Error: new_name no puede estar vacío."
+        if old_name == new_name:
+            return f"Device '{old_name}' ya se llama así — sin cambios."
+
         safe_old = _js_escape(old_name)
         safe_new = _js_escape(new_name)
         js = (
             "try {"
             f'  var dev = ipc.network().getDevice("{safe_old}");'
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
+            # PT deja poner un nombre repetido sin chistar, y ahí getDevice()
+            # solo puede devolver uno de los dos: el otro queda en el canvas
+            # pero inalcanzable por nombre, y toda tool que lo referencie
+            # trabaja en silencio sobre el equivocado.
+            f'  else if (ipc.network().getDevice("{safe_new}")) {{'
+            f"    reportResult('ERROR:DUPLICATE'); }}"
             "  else {"
             f'    dev.setName("{safe_new}");'
             f'    reportResult("OK:renamed to {safe_new}");'
@@ -1586,6 +1628,13 @@ def register_tools(mcp: FastMCP) -> None:
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
             return "No response from PT."
+        if result == "ERROR:DUPLICATE":
+            return (
+                f"Error: ya existe un dispositivo llamado '{new_name}'. "
+                "Dos dispositivos con el mismo nombre hacen que PT resuelva "
+                "siempre al mismo y el otro queda inalcanzable por nombre — "
+                "elegí otro o renombrá primero el que lo ocupa."
+            )
         if result.startswith("ERROR:"):
             return f"Error: {result[6:]}"
         return f"Device renamed: '{old_name}' → '{new_name}'"
@@ -1793,7 +1842,11 @@ def register_tools(mcp: FastMCP) -> None:
             "  if (p2.getLink() != null) {"
             f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
             "  }"
-            "  reportResult('PRE_OK:' + d1.getClassName() + '|' + d2.getClassName());"
+            # getModel() y NO getClassName(): la clase de PT no distingue un
+            # switch de un router (un 3560 dice "Router" porque es multicapa, y
+            # un 2960 dice "CiscoDevice"), así que ninguna categoría "switch"
+            # llegaba nunca a CABLE_RULES y un router↔switch salía cruzado.
+            "  reportResult('PRE_OK:' + d1.getModel() + '|' + d2.getModel());"
             "} catch(e) { if (e !== 'stop') reportResult('ERROR:' + e); }"
         )
         pre_result = _bridge_send_and_wait(js, timeout=10.0)
@@ -1806,9 +1859,11 @@ def register_tools(mcp: FastMCP) -> None:
 
         if not resolved_cable:
             parts = pre_result[7:].split("|")
-            cls1 = parts[0].lower() if len(parts) > 0 else ""
-            cls2 = parts[1].lower() if len(parts) > 1 else ""
-            resolved_cable = infer_cable(cls1, cls2)
+            model1 = parts[0].strip() if len(parts) > 0 else ""
+            model2 = parts[1].strip() if len(parts) > 1 else ""
+            resolved_cable = infer_cable(
+                category_of_model(model1), category_of_model(model2)
+            )
 
         js_link = (
             "try {"
@@ -2059,7 +2114,8 @@ def register_tools(mcp: FastMCP) -> None:
           pt_query_topology para listar nombres válidos.
         - slot: identificador del slot como STRING. El formato depende del
           tipo de slot del dispositivo:
-            * HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
+            * HWIC en 2911/2901 → "0/0".."0/3" · en 1941 SOLO "0/0" y "0/1"
+              (verificado contra PT 9.0.1: el 1941 tiene 2 slots, no 4)
               (chassis-slot/hwic-subslot)
             * NM en 2811/2620XM/Router-PT → "1"
             * NIM en ISR4321/4331   → "0/1", "0/2"  (chassis/subslot — NO "0"/"1")
@@ -2091,7 +2147,10 @@ def register_tools(mcp: FastMCP) -> None:
         safe_name = _js_escape(device_name)
         safe_module = _js_escape(spec.name)
         safe_slot = _js_escape(slot_s)
-        ports_added = ", ".join(spec.ports_added) if spec.ports_added else "(sin puertos)"
+        # Los puertos llevan el slot en el nombre, así que hay que calcularlos
+        # para ESTE slot: el catálogo los lista para el primero de la familia.
+        slot_ports = ports_for_slot(spec, slot_s)
+        ports_added = ", ".join(slot_ports) if slot_ports else "(sin puertos)"
 
         if dry_run:
             return json.dumps({
@@ -2100,7 +2159,7 @@ def register_tools(mcp: FastMCP) -> None:
                 "slot": slot_s,
                 "module": spec.name,
                 "description": spec.description,
-                "ports_added": list(spec.ports_added),
+                "ports_added": slot_ports,
                 "compatible_with": list(spec.compatible_with) if spec.compatible_with else "any",
                 "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
                 "sent": False,
@@ -2193,7 +2252,7 @@ def register_tools(mcp: FastMCP) -> None:
         - dry_run: si True, valida y devuelve el JS payload sin enviarlo.
 
         Reglas del slot (string):
-          HWIC en 1941/2901/2911 → "0/0", "0/1", "0/2", "0/3"
+          HWIC en 2911/2901 → "0/0".."0/3" · en 1941 SOLO "0/0" y "0/1"
           NIM en ISR4321/4331    → "0/1", "0/2"   (chassis/subslot — NO "0"/"1")
           NM en 2811/Router-PT    → "1"
           Cloud-PT / hosts        → "0".."7"
@@ -2233,7 +2292,9 @@ def register_tools(mcp: FastMCP) -> None:
             validated.append({
                 "device": dev, "slot": slot_s,
                 "module": spec.name,
-                "ports_added": list(spec.ports_added),
+                # Por slot, no del catálogo: dos HWIC-2T en "0/0" y "0/1" dan
+                # puertos distintos, y antes ambos se reportaban como 0/0.
+                "ports_added": ports_for_slot(spec, slot_s),
                 "compatible_with": list(spec.compatible_with) if spec.compatible_with else None,
             })
 
@@ -2269,11 +2330,20 @@ def register_tools(mcp: FastMCP) -> None:
             "if(hp&&was)d.setPower(false);"
             "saved.push({n:DEVS[i],hp:hp,was:was});"
             "}"
+            # addModule devuelve false cuando el slot no existe en ese modelo
+            # (un 1941 no tiene HWIC 0/2) y PT no lanza: falla en silencio. Sin
+            # mirar el retorno, la tool informaba puertos que nunca se crearon.
+            "var res=[];"
             "for(var j=0;j<MODS.length;j++){"
             "var m=MODS[j];var dd=ipc.network().getDevice(m[0]);"
-            "if(!dd)continue;"
-            "dd.addModule(m[1],allModuleTypes[m[2]],m[2]);"
+            "if(!dd){res.push(m[0]+'|'+m[1]+'|nodev');continue;}"
+            "var ok=false;"
+            "try{ok=dd.addModule(m[1],allModuleTypes[m[2]],m[2]);}catch(e){ok=false;}"
+            "res.push(m[0]+'|'+m[1]+'|'+(ok?'ok':'fail'));"
             "}"
+            # Se reporta ANTES del power-on a propósito: encender es lo que
+            # tarda, y esperarlo era la razón de que esto fuera fire-and-forget.
+            "reportResult(res.join(';'));"
             "for(var k=0;k<saved.length;k++){"
             "var s=saved[k];if(!s.hp||!s.was)continue;"
             "var dx=ipc.network().getDevice(s.n);if(!dx)continue;"
@@ -2315,12 +2385,47 @@ def register_tools(mcp: FastMCP) -> None:
                             f"Compatible con: {', '.join(v['compatible_with'])}"
                         )
 
-        # Fire-and-forget — el batch hace todo en un runCode, no necesitamos esperar.
-        # Esperar puede dar timeout porque el power-on al final tarda en estabilizar.
-        if not _bridge_send_payload(js):
-            return "Error al enviar batch al bridge."
+        # Se espera el resultado: el JS reporta antes de encender, así que el
+        # power-on —lo que antes obligaba a fire-and-forget— ya no cuenta.
+        raw = _bridge_send_and_wait(js, timeout=20.0)
+        if raw is None:
+            summary["sent"] = True
+            summary["verified"] = False
+            summary["summary"] = (
+                f"Batch enviado ({len(validated)} módulo(s)) pero PT no confirmó a tiempo.\n"
+                "Verificá con pt_query_topology cuáles quedaron instalados."
+            )
+            return json.dumps(summary, indent=2, ensure_ascii=False)
+
+        # "R1|0/0|ok;R1|0/2|fail" — un slot inexistente para el modelo devuelve
+        # false sin lanzar, así que sin esto se informaban puertos fantasma.
+        status: dict[tuple[str, str], str] = {}
+        for chunk in raw.split(";"):
+            parts = chunk.split("|")
+            if len(parts) == 3:
+                status[(parts[0], parts[1])] = parts[2]
+
+        failed = []
+        for v in validated:
+            state = status.get((v["device"], v["slot"]), "unknown")
+            v["installed"] = state == "ok"
+            if state != "ok":
+                v["ports_added"] = []
+                failed.append(f"{v['device']} slot {v['slot']} ({v['module']})")
 
         summary["sent"] = True
+        summary["verified"] = True
+        summary["installed_count"] = sum(1 for v in validated if v.get("installed"))
+        if failed:
+            summary["failed"] = failed
+            summary["summary"] = (
+                f"{summary['installed_count']}/{len(validated)} módulo(s) instalado(s). "
+                f"PT rechazó: {', '.join(failed)}.\n"
+                "Ese slot no existe en ese modelo — revisá pt_list_modules y el "
+                "slot correcto para la familia del router."
+            )
+            return json.dumps(summary, indent=2, ensure_ascii=False)
+
         summary["summary"] = (
             f"Batch enviado: {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s).\n"
             f"PT está apagando, instalando y reencendiendo en un solo paso. "
@@ -4392,41 +4497,42 @@ def register_tools(mcp: FastMCP) -> None:
         if err:
             return err
 
+        def _opt_set(method: str, args: str) -> str:
+            """Un setter aislado: si PT lo rechaza, cae solo y se reporta.
+
+            Cada uno va en su propio try/catch a propósito. Antes iban todos
+            bajo el mismo, así que un setter que fallara —`setHideDevLabel` con
+            la aridad equivocada— abortaba la tanda entera y devolvía un error
+            crudo, pero los anteriores YA se habían aplicado: el usuario veía
+            "falló" con la mitad de los cambios puestos.
+            """
+            return (
+                f"    try {{ if (typeof __o.{method} === 'function')"
+                f" {{ __o.{method}({args}); __applied.push('{method}'); }}"
+                f" else {{ __failed.push('{method}: no existe'); }} }}"
+                f" catch (__se) {{ __failed.push('{method}: ' + __se); }}"
+            )
+
+        # La polaridad y la aridad viven en WORKSPACE_SETTERS /
+        # WORKSPACE_EXTRA_ARG (nivel de módulo) para poder testearlas sin PT.
         sets: list[str] = []
-        # OJO con la polaridad: PT expone estas dos en negativo
-        # (`setDisableAutoCabling`, `setHideDevLabel`), así que el flag amistoso
-        # va invertido. Verificado con round-trip contra PT 9.0.0.0810.
-        if auto_cabling in (0, 1):
-            sets.append(
-                f"    if (typeof __o.setDisableAutoCabling === 'function')"
-                f" {{ __o.setDisableAutoCabling({'false' if auto_cabling == 1 else 'true'}); }}"
-            )
-        if show_device_labels in (0, 1):
-            sets.append(
-                f"    if (typeof __o.setHideDevLabel === 'function')"
-                f" {{ __o.setHideDevLabel({'false' if show_device_labels == 1 else 'true'}); }}"
-            )
-        if external_network_access in (0, 1):
-            sets.append(
-                f"    if (typeof __o.setEnableExternalNetworkAccess === 'function')"
-                f" {{ __o.setEnableExternalNetworkAccess({'true' if external_network_access == 1 else 'false'}); }}"
-            )
-        if show_port_labels in (0, 1):
-            sets.append(
-                f"    if (typeof __o.setIsPortShown === 'function')"
-                f" {{ __o.setIsPortShown({'true' if show_port_labels == 1 else 'false'}); }}"
-            )
-        if show_link_lights in (0, 1):
-            sets.append(
-                f"    if (typeof __o.setIsLinkLightShown === 'function')"
-                f" {{ __o.setIsLinkLightShown({'true' if show_link_lights == 1 else 'false'}); }}"
-            )
+        for flag, value in (
+            ("auto_cabling", auto_cabling),
+            ("show_device_labels", show_device_labels),
+            ("external_network_access", external_network_access),
+            ("show_port_labels", show_port_labels),
+            ("show_link_lights", show_link_lights),
+        ):
+            if value in (0, 1):
+                sets.append(_opt_set(*workspace_setter_call(flag, value)))
 
         js = (
             "try {"
             "  var __o = ipc.options();"
+            "  var __applied = []; var __failed = [];"
             + "".join(sets) +
             "  reportResult(JSON.stringify({"
+            "    applied: __applied, failed: __failed,"
             "    auto_cabling: !__o.isAutoCablingDisabled(),"
             "    external_network_access: !!__o.isExternalNetworkAccessEnabled(),"
             "    show_port_labels: !!__o.isPortShown(),"
@@ -4449,14 +4555,20 @@ def register_tools(mcp: FastMCP) -> None:
         except Exception as exc:
             return f"Respuesta ilegible de PT: {exc}"
 
-        data["changed"] = len(sets)
+        # Lo que PT aceptó de verdad, no lo que se intentó: contar los intentos
+        # daba "5 opciones cambiadas" aunque una hubiera sido rechazada.
+        applied = data.get("applied") or []
+        failed = data.get("failed") or []
+        data["changed"] = len(applied)
         notes = []
         if not data["auto_cabling"]:
             notes.append("auto-cabling APAGADO (los puertos los elegís vos)")
         if data["external_network_access"]:
             notes.append("⚠ acceso a la red REAL habilitado")
+        if failed:
+            notes.append(f"⚠ {len(failed)} opción(es) rechazada(s) por PT: {'; '.join(failed)}")
         data["summary"] = (
-            f"{len(sets)} opción(es) cambiada(s). " if sets else "Solo lectura. "
+            f"{len(applied)} opción(es) cambiada(s). " if sets else "Solo lectura. "
         ) + ("; ".join(notes) if notes else "Configuración por defecto.")
         return json.dumps(data, indent=2, ensure_ascii=False)
 
