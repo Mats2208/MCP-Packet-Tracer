@@ -222,6 +222,27 @@ power-cycle the device and can exceed the wait window (and often report a timeou
   embedded `errors[]` — always check `plan.errors` before deploying.
 - A harmless phantom `Power Distribution Device` can appear after deploy (off-canvas).
 
+### ☠️ Never iterate a native PT object with `for...in`
+
+```js
+var d = lw.getEllipseItemData(id);
+for (var k in d) { ... }   // ← CRASHES Packet Tracer. The whole app dies.
+```
+
+`try/catch` does **not** save you: this is not a JS exception, it is the script engine
+blowing up and taking the process with it. Verified the hard way against PT 9.0.1 — the
+app closed with "Cisco Packet Tracer quit unexpectedly".
+
+Inspect native objects by calling **known getters** and stringifying the result, never by
+enumerating keys. If you don't know the shape, probe one accessor at a time.
+
+### Drawing IS possible — `drawCircle` takes SEVEN arguments
+
+`lw.drawCircle(a,b,c,d,e,f,g)` returns an ellipse id and really draws. With 3–6 arguments it
+throws, which is why it was believed unusable. Same failure mode as `setHideDevLabel` (which
+needs 2, not 1): the call was fine, the arity was wrong. Read back the ids with
+`lw.getCanvasEllipseIds()`.
+
 ### Verified against PT 9.0.1 (audit round 2)
 
 - **The bridge starts lazily.** After the MCP server restarts (a `/mcp` reconnect), nothing is
