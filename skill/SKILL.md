@@ -176,7 +176,8 @@ free insurance and keeps results clean.)
 - **Cables (15)**: `straight, cross, roll, serial, fiber, console, phone, cable, coaxial, auto, wireless,
   octal, cellular, usb, custom_io`. Omit `cable_type` in `pt_add_link` to infer (router↔router &
   switch↔switch → `cross`; router↔switch, switch↔host → `straight`).
-- **Exact ports**: 2911/2901/1941 `GigabitEthernet0/0..0/2`; ISR4321/4331 `GigabitEthernet0/0/0..`;
+- **Exact ports**: 2911 `GigabitEthernet0/0..0/2` but 1941/2901 only `0/0..0/1`;
+  ISR4321/4331 `GigabitEthernet0/0/0..`;
   2960/3560 `FastEthernet0/1..0/24` + `GigabitEthernet0/1..0/2`; PC/Laptop/Server `FastEthernet0`;
   HWIC-2T in `"0/x"` → `Serial0/x/0`,`Serial0/x/1`.
 - **IP plan** (`pt_plan_topology`): LANs `/24` from `192.168.0.0`, gateway `.1`, hosts from `.2`;
@@ -192,7 +193,8 @@ incompatible module up front** when the module declares `compatible_with` (HWIC/
 
 | Router family | Module type | Slot (string) | Ports added | Status |
 |---|---|---|---|---|
-| ISR G2 — 1941/2901/2911 | HWIC (`HWIC-2T`, `HWIC-1GE-SFP`) | `"0/0".."0/3"` | `Serial0/x/0`,`Serial0/x/1` | ✅ verified 2911 & 1941 |
+| ISR G2 — 2911/2901 | HWIC (`HWIC-2T`, `HWIC-1GE-SFP`) | `"0/0".."0/3"` | `Serial0/x/0`,`Serial0/x/1` | ✅ verified 2911 |
+| ISR G2 — **1941** | HWIC | **only `"0/0"`, `"0/1"`** — it has 2 slots, not 4 | `Serial0/x/0`,`Serial0/x/1` | ✅ verified 1941 (PT 9.0.1) |
 | ISR 4000 — ISR4321/4331 | NIM (`NIM-2T`, `NIM-ES2-4`) | **`"0/1"`, `"0/2"`** | `Serial0/1/0`,`Serial0/1/1` | ✅ verified ISR4321 & ISR4331 |
 | 2811 / 2620XM / 2621XM | NM (`NM-4A/S`, `NM-2FE2W`,…) | **`"1"`** | `Serial1/0..1/3` | ✅ verified 2811 |
 | Router-PT (generic) | NM (`NM-*`, `PT-ROUTER-NM-*`) | `"1"` | ⚠️ non-standard ids (e.g. `Serial2/0`) | installs, odd port names |
@@ -210,6 +212,7 @@ power-cycle the device and can exceed the wait window (and often report a timeou
 - **Module compatibility is enforced for modules that declare `compatible_with`** (HWIC/NIM/built-ins
   reject a wrong model); generic `PT-*` modules carry no constraint, so still pick sensibly.
 - **`pt_add_module` (single) can report a timeout but still succeed** — verify ports, don't blindly retry.
+  (`pt_install_modules_batch` no longer guesses: it reports `installed` per module, see round 2 below.)
 - **`three_router_triangle` now closes the ring (R3↔R1)** and `hub_spoke` wires R1→every spoke — the
   orchestrator honors the template shape (was a flat chain before).
 - **`pt://capabilities` is derived from the live tool registry** (`supported_live.nat/acl/modules/…`) — it
@@ -218,6 +221,22 @@ power-cycle the device and can exceed the wait window (and often report a timeou
 - **Invalid `routing=` raises a raw exception**; invalid `router_model` returns a degenerate plan with an
   embedded `errors[]` — always check `plan.errors` before deploying.
 - A harmless phantom `Power Distribution Device` can appear after deploy (off-canvas).
+
+### Verified against PT 9.0.1 (audit round 2)
+
+- **The bridge starts lazily.** After the MCP server restarts (a `/mcp` reconnect), nothing is
+  listening on `:54321` until the first `pt_*` call — importing the server deliberately opens no
+  socket. So "not connected" right after a reconnect usually means *nobody has called a tool yet*,
+  **not** that the extension died: just call `pt_bridge_status` and PT resumes polling in seconds.
+  Don't ask the user to reopen MCP BUILDER before trying that.
+- **`getClassName()` is useless for telling a switch from a router.** PT classifies by behaviour:
+  a 3560 answers `"Router"` (it is multilayer) and a 2960 answers `"CiscoDevice"` — neither ever
+  says "switch". Use `getModel()` and resolve it against the catalog.
+- **`addModule()` returns `false` instead of throwing** when the slot does not exist on that model.
+  Check the return value; a silent `false` used to be reported as a successful install. `pt_add_module`
+  and `pt_install_modules_batch` now verify it and report `installed` / `failed` per module.
+- **Renaming to a name that is already taken used to be allowed** and left two devices sharing it,
+  with `getDevice(name)` resolving only to one — the other became unreachable by name. Now rejected.
 
 ## Recipes
 
