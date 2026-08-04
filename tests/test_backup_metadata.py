@@ -63,18 +63,45 @@ class TestProjectMetadata:
 
 
 class TestWorkspaceOptions:
+    """Estos ejecutan la lógica en vez de leer el fuente: la polaridad es
+    justo la clase de regla que un refactor puede invertir sin que ningún
+    `assert "..." in src` se entere."""
+
     def test_negative_polarity_setters_are_inverted(self):
         """PT expone dos de estas en negativo (`setDisableAutoCabling`,
         `setHideDevLabel`). Si el flag amistoso no se invierte, la tool hace
         exactamente lo contrario de lo que pide el usuario y en silencio."""
-        src = _src()
-        assert "setDisableAutoCabling({'false' if auto_cabling == 1 else 'true'})" in src
-        assert "setHideDevLabel({'false' if show_device_labels == 1 else 'true'})" in src
+        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+            workspace_setter_call,
+        )
+
+        # activar auto-cabling => DESactivar el "disable"
+        assert workspace_setter_call("auto_cabling", 1) == ("setDisableAutoCabling", "false")
+        assert workspace_setter_call("auto_cabling", 0) == ("setDisableAutoCabling", "true")
+        # mostrar etiquetas => NO ocultarlas (y con el 2º argumento obligatorio)
+        assert workspace_setter_call("show_device_labels", 1) == ("setHideDevLabel", "false, true")
+        assert workspace_setter_call("show_device_labels", 0) == ("setHideDevLabel", "true, true")
 
     def test_positive_polarity_setters_are_not_inverted(self):
-        src = _src()
-        assert "setIsPortShown({'true' if show_port_labels == 1 else 'false'})" in src
-        assert "setIsLinkLightShown({'true' if show_link_lights == 1 else 'false'})" in src
+        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+            workspace_setter_call,
+        )
+
+        assert workspace_setter_call("show_port_labels", 1) == ("setIsPortShown", "true")
+        assert workspace_setter_call("show_port_labels", 0) == ("setIsPortShown", "false")
+        assert workspace_setter_call("show_link_lights", 1) == ("setIsLinkLightShown", "true")
+        assert workspace_setter_call("external_network_access", 0) == (
+            "setEnableExternalNetworkAccess", "false")
+
+    def test_hide_dev_label_carries_its_second_argument(self):
+        """PT rechaza `setHideDevLabel(x)` con un solo argumento:
+        `Invalid arguments for IPC call`. Verificado contra PT 9.0.1."""
+        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+            workspace_setter_call,
+        )
+
+        _, args = workspace_setter_call("show_device_labels", 1)
+        assert args.count(",") == 1, f"setHideDevLabel necesita 2 argumentos, salió: {args}"
 
     def test_readback_undoes_the_inversion(self):
         """Lo que se devuelve tiene que estar en la misma polaridad que el input."""

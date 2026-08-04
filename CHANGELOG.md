@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased (2)
+
+Seis defectos encontrados manejando el MCP contra Packet Tracer 9.0.1 sobre una
+topología de 36 dispositivos. Cuatro salieron de la primera pasada; dos más
+aparecieron al verificar los arreglos **contra el dispositivo** en vez de creerle
+al reporte de la tool.
+
+**369 → 392 tests.**
+
+### Fixed
+
+- **`pt_install_modules_batch` informaba puertos que nunca se crearon.** Dos cosas
+  a la vez: los nombres no llevaban el slot (dos HWIC-2T en `"0/0"` y `"0/1"`
+  reportaban los mismos `Serial0/0/x`), y sobre todo el envío era
+  *fire-and-forget*, así que nadie miraba el retorno de `addModule` — que devuelve
+  `false` sin lanzar cuando el slot no existe en ese modelo. Ahora `ports_for_slot()`
+  calcula los nombres reales y el JS reporta el resultado de cada módulo **antes**
+  del power-on, que era lo único que justificaba no esperar. Devuelve `installed`,
+  `installed_count` y `failed`.
+
+- **`pt_add_link` cableaba cruzado todo router↔switch.** Infería la categoría con
+  `getClassName()` de PT, que clasifica por comportamiento y no por rol de red: un
+  3560 responde `"Router"` (es multicapa) y un 2960 responde `"CiscoDevice"`. La
+  categoría `"switch"` no llegaba nunca a las reglas de cableado. Ahora sale del
+  modelo vía `category_of_model()`. No rompía la conectividad —el auto-MDIX de PT
+  compensa— pero en un simulador educativo enseñaba el cable equivocado.
+
+- **`pt_rename_device` dejaba renombrar a un nombre ya ocupado.** PT lo acepta sin
+  chistar y a partir de ahí `getDevice(nombre)` solo resuelve a uno: el otro queda
+  en el canvas pero inalcanzable por nombre, y cualquier tool que lo referencie
+  trabaja en silencio sobre el equivocado. `pt_add_device` sí validaba; faltaba en
+  la otra vía de entrada.
+
+- **`pt_workspace_options` fallaba siempre en `show_device_labels`.**
+  `setHideDevLabel` toma **dos** argumentos, no uno. Además cada setter va ahora en
+  su propio try/catch: antes uno que fallara abortaba la tanda dejando aplicados los
+  anteriores y devolviendo error, o sea "falló" con la mitad de los cambios puestos.
+  Se reportan `applied` y `failed`, y el contador refleja lo que PT aceptó.
+
+- **`pt_fix_plan` dejaba el plan internamente inconsistente.** Corregía el puerto en
+  el enlace pero no en `device.interfaces`, así que la IP se quedaba en una interfaz
+  que ya no usaba ningún enlace. Ahora la migra, IPv4 e IPv6.
+
+### Changed
+
+- Documentación de slots corregida: el **1941 tiene 2 slots HWIC** (`"0/0"`,`"0/1"`),
+  no 4. El 2911 sí acepta `"0/0".."0/3"`. Medido contra PT 9.0.1; decía `0/0..0/3`
+  para ambos en el docstring, en `settings.py` y en la skill.
+- `WORKSPACE_SETTERS` / `workspace_setter_call()` salen del closure a nivel de
+  módulo. La polaridad (PT expone dos opciones en negativo) es justo la clase de
+  regla que un refactor puede invertir sin que ningún `assert "..." in src` se
+  entere, así que sus tests ahora ejecutan la lógica en vez de leer el fuente.
+
 ## Unreleased
 
 El bridge HTTP entregaba resultados a la operación equivocada. No fallaba: devolvía

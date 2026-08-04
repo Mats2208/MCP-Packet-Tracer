@@ -9,6 +9,7 @@ y uno o más puertos que agrega al dispositivo.
 """
 
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 
 
@@ -1026,3 +1027,35 @@ def get_serial_module(router_model: str) -> ModuleSpec | None:
 def resolve_module(name: str) -> ModuleSpec | None:
     """Resuelve un nombre de módulo."""
     return ALL_MODULES.get(name) or ALL_MODULES.get(name.upper())
+
+
+# Nombre de puerto tipo `Serial0/0/1`: prefijo alfabético + chassis/subslot/índice.
+_SLOTTED_PORT = re.compile(r"^([A-Za-z]+)(\d+)/(\d+)/(\d+)$")
+
+
+def ports_for_slot(spec: ModuleSpec, slot: str) -> list[str]:
+    """Puertos que agrega `spec` instalado en `slot`.
+
+    `ModuleSpec.ports_added` los lista para el PRIMER slot de la familia
+    (un HWIC-2T dice `Serial0/0/0`, `Serial0/0/1`), pero el nombre real
+    lleva el slot adentro: el mismo módulo en `"0/1"` da `Serial0/1/0` y
+    `Serial0/1/1`. Devolver la lista del catálogo tal cual hacía que un
+    batch informara puertos que no existen, y cablear a ese nombre falla.
+
+    Solo se reescriben los puertos con forma `Tipo<chassis>/<subslot>/<idx>`
+    y solo si el slot viene como `"chassis/subslot"` (HWIC, NIM). Un slot NM
+    (`"1"`) no lleva subslot y sus puertos ya vienen bien del catálogo.
+    """
+    slot_s = str(slot).strip()
+    if "/" not in slot_s:
+        return list(spec.ports_added)
+
+    chassis, _, subslot = slot_s.partition("/")
+    if not (chassis.isdigit() and subslot.isdigit()):
+        return list(spec.ports_added)
+
+    out: list[str] = []
+    for port in spec.ports_added:
+        m = _SLOTTED_PORT.match(port)
+        out.append(f"{m.group(1)}{chassis}/{subslot}/{m.group(4)}" if m else port)
+    return out

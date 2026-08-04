@@ -120,6 +120,13 @@ def _fix_invalid_ports(plan: TopologyPlan) -> list[str]:
                         old_port = port
                         setattr(link, attr_port, p.full_name)
                         used_ports[dev_name].add(p.full_name)
+                        # La IP viaja con el puerto. Sin esto el enlace pasaba
+                        # a la interfaz nueva pero el direccionamiento se
+                        # quedaba en la vieja —que ya no usa ningún enlace—,
+                        # así que el plan salía "arreglado" e inconsistente.
+                        for ifaces in (dev.interfaces, dev.interfaces_v6):
+                            if old_port in ifaces:
+                                ifaces[p.full_name] = ifaces.pop(old_port)
                         fixes.append(
                             f"Puerto corregido: {dev_name} de '{old_port}' a '{p.full_name}'"
                         )

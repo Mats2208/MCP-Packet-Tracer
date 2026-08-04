@@ -50,7 +50,8 @@ PT compara el slot con `===` contra su mapa interno. Pasar `0` (int) NO coincide
 
 | Tipo de slot               | Formato del slot           | Ejemplo                              |
 |----------------------------|----------------------------|--------------------------------------|
-| HWIC en 1941/2901/2911     | "0/0", "0/1", "0/2", "0/3" | pt_add_module("R1","0/0","HWIC-2T")  |
+| HWIC en 2911/2901          | "0/0".."0/3"               | pt_add_module("R1","0/0","HWIC-2T")  |
+| HWIC en 1941               | SOLO "0/0" y "0/1"         | el 1941 tiene 2 slots, no 4          |
 | NIM en ISR4321/ISR4331     | "0/1", "0/2"               | pt_add_module("R1","0/1","NIM-2T")   |
 | NM en 2811/2620XM/Router-PT| "1"                        | pt_add_module("R1","1","NM-4A/S")    |
 | Cloud-PT / hosts           | "0", "1", … "7"            | pt_add_module("Cloud","0","PT-CLOUD-NM-1S") |

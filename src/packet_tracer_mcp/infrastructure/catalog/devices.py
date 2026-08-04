@@ -545,3 +545,17 @@ def get_valid_ports(model_name: str) -> set[str]:
     if not model:
         return set()
     return {p.full_name for p in model.ports}
+
+
+def category_of_model(model_name: str) -> str:
+    """Categoría del catálogo para un modelo. Cadena vacía si no se conoce.
+
+    Existe para traducir lo que PT devuelve en `getModel()` a la clave que
+    usan las reglas de cableado. NO usar `getClassName()` para esto: PT
+    clasifica por comportamiento, no por rol de red, así que un 3560 (switch
+    multicapa) responde "Router" y un 2960 responde "CiscoDevice" — con eso
+    la categoría "switch" no aparecía nunca y todo router↔switch se cableaba
+    cruzado.
+    """
+    model = resolve_model(model_name)
+    return model.category if model else ""
