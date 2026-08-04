@@ -82,11 +82,12 @@ your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle w
 **Canvas (capture & annotate):** `pt_screenshot(filename, fmt, output_dir)` writes the image to disk
 and returns the **path** — never the bytes, they would flood the context. `pt_add_note(x, y, text)`
 writes a label; font size is not settable. `pt_clear_annotations(kind)` removes annotations only,
-never devices or links. There is **no drawing tool**: PT's line/circle calls take a stacking-order
-argument where a size would go, and ignore the colours passed, so they are not exposed.
+never devices or links (drawings included — redraw circles after clearing notes).
+There is no drawing *tool*, but PT's `drawCircle` **does** work from raw JS once you pass all
+seven arguments — see "Drawing IS possible" below. Colours still don't take.
 Canvas coordinates match `pt_add_device`: routers ~y=100, switches ~y=250, hosts ~y=400.
 Recipe for a diagram worth showing: `pt_full_build` → `pt_add_note` per subnet and link →
-`pt_screenshot`.
+`drawCircle` per LAN → `pt_screenshot` → adjust and repeat.
 **Backup / workspace:** `pt_backup_config(device, include_xml)` (real startup-config + serial,
 config-register, boot images), `pt_project_metadata(description="")` (saved filename, PT version,
 description, device/link count; pass `description` to set it), `pt_workspace_options(...)` — tri-state
@@ -238,10 +239,22 @@ enumerating keys. If you don't know the shape, probe one accessor at a time.
 
 ### Drawing IS possible — `drawCircle` takes SEVEN arguments
 
-`lw.drawCircle(a,b,c,d,e,f,g)` returns an ellipse id and really draws. With 3–6 arguments it
-throws, which is why it was believed unusable. Same failure mode as `setHideDevLabel` (which
-needs 2, not 1): the call was fine, the arity was wrong. Read back the ids with
-`lw.getCanvasEllipseIds()`.
+```js
+lw.drawCircle(x, y, ignored, diameter, 0, 0, 0)   // x,y = TOP-LEFT corner
+```
+
+Returns an ellipse id and really draws. With 3–6 arguments it throws, which is why it was
+believed unusable — same failure mode as `setHideDevLabel` (needs 2, not 1): the call was
+fine, the **arity** was wrong. The old note that "the size argument controls stacking order"
+came from passing the size in slot 3; **slot 4 is the diameter** and slot 3 is ignored.
+
+Calibrated on PT 9.0.1 at default zoom: the drawn diameter is roughly **0.71 ×** the argument,
+so to circle a LAN centred at `cx` use `drawCircle(cx - 173, y, 0, 480, 0,0,0)`. Don't compute
+it blind — draw, `pt_screenshot`, adjust. Clear with `pt_clear_annotations` (it removes
+drawings too, so redraw circles after clearing notes).
+
+Colours still don't work: the last three arguments accept values but the ellipse comes out
+with the default outline.
 
 ### Verified against PT 9.0.1 (audit round 2)
 
