@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2FMats2208%2FMCP-Packet-Tracer.svg)](https://mcptoplist.com/server/glama%2FMats2208%2FMCP-Packet-Tracer)
+
 <div align="center">
 
 <img src="demo/banner.png" alt="Packet Tracer MCP — AI-powered Cisco Packet Tracer automation: generate, validate and deploy network topologies from natural-language prompts" width="100%"/>
