@@ -164,6 +164,32 @@ own **MCP Control Center** extension once — the `.pts` from
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 
+## Clients
+
+Any MCP client drives this server — Claude Code, Cursor, Claude Desktop, VS Code with
+Copilot, Codex. Nothing in it is client-specific.
+
+There is also one built **on** it: **[PacketSmith](https://github.com/Mats2208/packetsmith)**,
+a terminal app that runs these 61 tools with the network drawn beside the conversation — a
+fabric tree and a canvas plan derived from the `pt_*` results themselves, so a device the
+model *says* it created but did not never shows up.
+
+| | This server alone | This server + PacketSmith |
+|---|---|---|
+| Where you talk | the MCP client you already use | a terminal app built for this one job |
+| What you see | a chat log, plus PT in another window | split screen: reply left, live topology right |
+| Topology | read out of the tool output | fabric tree and canvas plan, drawn for you |
+| Tools loaded | every MCP server you have configured | this one only — measurably faster to start |
+| Engine | whatever your client speaks | Claude, or ~150 providers |
+
+**You need this server either way** — PacketSmith runs it underneath, and its setup installs
+it for you. If you already live in Claude Code, you are done here; the client is for when you
+want the topology in front of you instead of buried in a scrollback.
+
+```bash
+npm i -g packetsmith    # beta · MIT
+```
+
 ## Credits & Acknowledgements
 
 Live deploy runs through **our own Packet Tracer extension** — the **MCP Control
@@ -243,6 +269,8 @@ Released under the **[MIT License](LICENSE)** — © 2026 Mateo ([@Mats2208](htt
 <div align="center">
 
 **Built with [MCP](https://modelcontextprotocol.io) · Powered by [Pydantic](https://docs.pydantic.dev) · Deploys to [Cisco Packet Tracer](https://www.netacad.com/) · Script-engine logic inspired by [PTBuilder](https://github.com/kimmknight/PTBuilder)**
+
+**Terminal client built on this server → [PacketSmith](https://github.com/Mats2208/packetsmith)**
 
 If this project is useful to you, star it ⭐ and share it with the community.
 
