@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Un salto de línea en un campo de texto ya no se cuela como comando IOS.**
+  `configureIosDevice()` parte el payload por `\n` y manda cada trozo al
+  dispositivo, así que un `\n` en un nombre se convertía en configuración que
+  nadie pidió (por ejemplo, un `username ... privilege 15`). Ahora se rechazan en
+  la validación: nombre de VLAN, remark de ACL, hostname de dispositivo y pool
+  DHCP (#20, gracias @daniel-baf), más el nombre de una ACL nombrada, el pool y
+  el `acl_number` de NAT, y todos los campos de `pt_remove_acl` / `pt_remove_nat`,
+  que antes mandaban al bridge sin validar nada.
+- **Un solo chequeo para todos.** Las seis copias del helper pasan a
+  `domain/rules/text_rules.py`, que además rechaza U+2028/U+2029 (terminan una
+  línea en JS igual que `\n`; antes solo lo hacía NetFlow).
+
 ## 0.9.0
 
 Varias pasadas manejando el MCP contra Packet Tracer 9.0.1, sobre topologías de

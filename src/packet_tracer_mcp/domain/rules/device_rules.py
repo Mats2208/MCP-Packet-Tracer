@@ -4,6 +4,7 @@ from __future__ import annotations
 from ..models.plans import TopologyPlan
 from ..models.errors import PlanError, ErrorCode, ValidationResult
 from ...infrastructure.catalog.devices import resolve_model
+from .text_rules import has_control_chars
 
 
 def validate_devices(plan: TopologyPlan) -> list[PlanError]:
@@ -12,6 +13,14 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
     names_seen: set[str] = set()
 
     for dev in plan.devices:
+        if has_control_chars(dev.name):
+            errors.append(PlanError(
+                code=ErrorCode.DEVICE_INVALID_NAME,
+                device=dev.name,
+                message=f"El nombre del dispositivo '{dev.name}' contiene un salto de línea.",
+                suggestion="Usa un nombre de dispositivo de una sola línea.",
+            ))
+
         if dev.name in names_seen:
             errors.append(PlanError(
                 code=ErrorCode.DUPLICATE_DEVICE_NAME,

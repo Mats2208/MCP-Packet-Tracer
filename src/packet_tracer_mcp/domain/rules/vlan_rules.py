@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..models.vlans import VLANPlan
 from ..models.errors import PlanError, ErrorCode, ValidationResult
+from .text_rules import has_control_chars
 
 
 def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
@@ -19,6 +20,13 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
                 device=plan.switch or plan.router,
                 message=f"VLAN id {v.vlan_id} fuera de rango (1-4094).",
                 suggestion="Usa un id entre 1 y 4094 (evita 1002-1005 reservadas).",
+            ))
+        if v.name and has_control_chars(v.name):
+            errors.append(PlanError(
+                code=ErrorCode.VLAN_INVALID_NAME,
+                device=plan.switch or plan.router,
+                message=f"El nombre de la VLAN {v.vlan_id} contiene un salto de línea.",
+                suggestion="Usa un nombre de VLAN de una sola línea.",
             ))
         if v.vlan_id in seen:
             errors.append(PlanError(

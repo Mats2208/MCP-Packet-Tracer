@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 from ..models.plans import TopologyPlan
 from ..models.errors import PlanError, ErrorCode
+from .text_rules import has_control_chars
 
 
 def validate_ips(plan: TopologyPlan) -> list[PlanError]:
@@ -44,6 +45,14 @@ def validate_dhcp(plan: TopologyPlan) -> list[PlanError]:
     errors: list[PlanError] = []
 
     for pool in plan.dhcp_pools:
+        if has_control_chars(pool.pool_name):
+            errors.append(PlanError(
+                code=ErrorCode.DHCP_INVALID_POOL_NAME,
+                device=pool.router,
+                message=f"El nombre del pool DHCP '{pool.pool_name}' contiene un salto de línea.",
+                suggestion="Usa un nombre de pool de una sola línea.",
+            ))
+
         router = plan.device_by_name(pool.router)
         if router is None:
             errors.append(PlanError(

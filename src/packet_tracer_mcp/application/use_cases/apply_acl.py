@@ -17,6 +17,7 @@ from typing import Callable
 from ...domain.models.acls import ACLPlan, ACLEntry, ACLBinding
 from ...domain.models.errors import PlanError, ErrorCode, ValidationResult
 from ...domain.rules.acl_rules import validate_acl_plan, validate_acl_binding
+from ...domain.rules.text_rules import has_control_chars
 from ...infrastructure.generator.acl_cli_generator import (
     build_configure_payload,
     build_remove_payload,
@@ -166,14 +167,33 @@ def remove_acl_uc(
     dry_run: bool = False,
 ) -> dict:
     """Construye y envía comandos para eliminar una ACL aplicada."""
+    # Sin ACLPlan no pasa por validate_acl_plan, pero los mismos campos
+    # terminan crudos en el CLI (`no access-list {name}`, `interface {iface}`).
+    errors = [
+        PlanError(
+            code=ErrorCode.ACL_INVALID_NAME,
+            device=router,
+            message=f"{label} contiene un salto de línea.",
+            suggestion=f"Usa un valor de una sola línea en {label}.",
+        )
+        for label, value in (
+            ("name_or_number", str(name_or_number)),
+            ("binding_interface", binding_interface),
+            ("direction", direction),
+        )
+        if has_control_chars(value)
+    ]
+
     payload = build_remove_payload(router, str(name_or_number), binding_interface, direction)
     js_call = _build_js_call(router, payload)
 
     sent = False
-    if not dry_run and bridge_send is not None:
+    if not errors and not dry_run and bridge_send is not None:
         sent = bool(bridge_send(js_call))
 
     return {
+        "valid": not errors,
+        "errors": [e.to_dict() for e in errors],
         "router": router,
         "acl_id": str(name_or_number),
         "js_payload": js_call,

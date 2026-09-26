@@ -2916,7 +2916,9 @@ def register_tools(mcp: FastMCP) -> None:
         )
 
         summary = []
-        if dry_run:
+        if not result["valid"]:
+            summary.append("❌ Rechazado: " + "; ".join(e["message"] for e in result["errors"]))
+        elif dry_run:
             summary.append(f"Modo dry_run — payload generado para eliminar ACL '{name_or_number}' en '{router}'.")
         elif result["sent"]:
             summary.append(f"📤 ACL '{name_or_number}' eliminada en '{router}' vía bridge.")
@@ -2927,6 +2929,8 @@ def register_tools(mcp: FastMCP) -> None:
 
         return json.dumps({
             "summary": "\n".join(summary),
+            "valid": result["valid"],
+            "errors": result["errors"],
             "router": result["router"],
             "acl_id": result["acl_id"],
             "js_payload": result["js_payload"],
@@ -3110,7 +3114,9 @@ def register_tools(mcp: FastMCP) -> None:
         )
 
         summary = []
-        if dry_run:
+        if not result["valid"]:
+            summary.append("❌ Rechazado: " + "; ".join(e["message"] for e in result["errors"]))
+        elif dry_run:
             summary.append(f"Modo dry_run — payload generado para eliminar NAT '{mode}' en '{router}'.")
         elif result["sent"]:
             summary.append(f"📤 NAT '{mode}' eliminado en '{router}' vía bridge.")
@@ -3121,6 +3127,8 @@ def register_tools(mcp: FastMCP) -> None:
 
         return json.dumps({
             "summary": "\n".join(summary),
+            "valid": result["valid"],
+            "errors": result["errors"],
             "router": result["router"],
             "mode": result["mode"],
             "js_payload": result["js_payload"],

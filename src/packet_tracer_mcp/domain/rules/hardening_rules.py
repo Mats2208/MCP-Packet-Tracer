@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..models.hardening import HardeningConfig
 from ..models.errors import PlanError, ErrorCode, ValidationResult
+from .text_rules import has_control_chars
 
 
 def _check_no_newlines(
@@ -15,7 +16,7 @@ def _check_no_newlines(
     "\\n" y manda cada trozo al dispositivo. Un \\n en `hostname` o `secret` no
     rompe el JS: se convierte en configuración que nadie pidió.
     """
-    if value and ("\n" in value or "\r" in value):
+    if has_control_chars(value):
         errors.append(PlanError(
             code=ErrorCode.HARDENING_INVALID_CHARS,
             device=device,

@@ -10,6 +10,7 @@ import ipaddress
 
 from ..models.nat import NATConfig, NATPool, NATStaticMapping
 from ..models.errors import PlanError, ErrorCode, ValidationResult
+from .text_rules import has_control_chars
 
 
 def validate_nat_config(config: NATConfig) -> ValidationResult:
@@ -18,6 +19,7 @@ def validate_nat_config(config: NATConfig) -> ValidationResult:
     warnings: list[PlanError] = []
 
     _validate_interfaces(config, errors)
+    _validate_text_fields(config, errors)
 
     if config.mode == "static":
         _validate_static(config, errors)
@@ -81,6 +83,26 @@ def _validate_interfaces(config: NATConfig, errors: list[PlanError]) -> None:
             message="inside_interface y outside_interface no pueden ser la misma interfaz.",
             suggestion="La interfaz 'inside' conecta a la LAN y la 'outside' a la WAN/Internet.",
         ))
+
+
+def _validate_text_fields(config: NATConfig, errors: list[PlanError]) -> None:
+    """acl_number, el pool y las interfaces se interpolan crudos en el CLI
+    (`ip nat pool {name}`, `ip nat inside source list {acl} ...`)."""
+    fields = [
+        ("acl_number", config.acl_number),
+        ("inside_interface", config.inside_interface),
+        ("outside_interface", config.outside_interface),
+    ]
+    if config.pool is not None:
+        fields.append(("pool_name", config.pool.name))
+    for label, value in fields:
+        if has_control_chars(value):
+            errors.append(PlanError(
+                code=ErrorCode.NAT_INVALID_NAME,
+                device=config.router,
+                message=f"{label} contiene un salto de línea.",
+                suggestion=f"Usa un valor de una sola línea en {label}.",
+            ))
 
 
 def _validate_static(config: NATConfig, errors: list[PlanError]) -> None:

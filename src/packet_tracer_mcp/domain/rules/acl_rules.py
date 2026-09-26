@@ -10,6 +10,7 @@ import ipaddress
 
 from ..models.acls import ACLPlan, ACLBinding, ACLEntry
 from ..models.errors import PlanError, ErrorCode, ValidationResult
+from .text_rules import has_control_chars
 
 
 # Rangos numéricos de IOS:
@@ -68,6 +69,15 @@ def validate_acl_binding(binding: ACLBinding, plan: ACLPlan) -> ValidationResult
 
 def _validate_number_or_name(plan: ACLPlan, errors: list[PlanError]) -> None:
     """Si name_or_number es numérico, debe estar en rango coherente con acl_type."""
+    if has_control_chars(plan.name_or_number):
+        errors.append(PlanError(
+            code=ErrorCode.ACL_INVALID_NAME,
+            device=plan.router,
+            message="El nombre de la ACL contiene un salto de línea.",
+            suggestion="Usa un nombre de ACL de una sola línea.",
+        ))
+        return
+
     nn = plan.name_or_number.strip()
     if not nn.isdigit():
         # Nombre alfanumérico — IOS lo acepta para named ACLs
@@ -105,6 +115,14 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
 
     for idx, entry in enumerate(plan.entries):
         label = f"ACL '{plan.name_or_number}' regla #{idx + 1}"
+
+        if entry.remark and has_control_chars(entry.remark):
+            errors.append(PlanError(
+                code=ErrorCode.ACL_INVALID_REMARK,
+                device=plan.router,
+                message=f"{label}: el remark contiene un salto de línea.",
+                suggestion="Usa un remark de una sola línea.",
+            ))
 
         # Sequence duplicada
         if entry.sequence is not None:

@@ -6,6 +6,7 @@ import ipaddress
 
 from ..models.errors import ErrorCode, PlanError, ValidationResult
 from ..models.netflow import NetflowExporter
+from .text_rules import has_control_chars
 
 # PT implementa v5 (formato fijo) y v9 (basado en templates). Cualquier otro
 # número lo acepta el setter pero no produce un exportador funcional.
@@ -20,15 +21,6 @@ def _is_ipv4(value: str) -> bool:
         return False
 
 
-def _has_control_chars(value: str) -> bool:
-    """El nombre y la interfaz viajan dentro de un literal JS.
-
-    Un salto de línea rompería el payload de una sola línea que exige PT, así que
-    se rechaza acá en vez de escaparse — igual que en hardening_rules.
-    """
-    return any(ch in value for ch in ("\n", "\r", " ", " "))
-
-
 def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
@@ -39,7 +31,7 @@ def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
             message="El exportador necesita un nombre.",
             suggestion="Pasá un nombre corto, por ejemplo 'COLLECTOR-1'.",
         ))
-    elif _has_control_chars(cfg.name):
+    elif has_control_chars(cfg.name):
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
             message="El nombre del exportador tiene saltos de línea.",
@@ -67,7 +59,7 @@ def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
             suggestion="Usá 9 (templates, recomendada) o 5 (formato fijo).",
         ))
 
-    if _has_control_chars(cfg.source_port):
+    if has_control_chars(cfg.source_port):
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
             message="La interfaz de origen tiene saltos de línea.",
@@ -75,7 +67,7 @@ def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
         ))
 
     for monitor in cfg.monitors:
-        if _has_control_chars(monitor) or not monitor.strip():
+        if has_control_chars(monitor) or not monitor.strip():
             errors.append(PlanError(
                 code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
                 message=f"Nombre de monitor inválido: '{monitor}'.",

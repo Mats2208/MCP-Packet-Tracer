@@ -14,6 +14,7 @@ from typing import Callable
 from ...domain.models.nat import NATConfig, NATPool, NATStaticMapping
 from ...domain.models.errors import PlanError, ErrorCode, ValidationResult
 from ...domain.rules.nat_rules import validate_nat_config, validate_nat_against_topology
+from ...domain.rules.text_rules import has_control_chars
 from ...infrastructure.generator.nat_cli_generator import (
     build_nat_configure_payload,
     build_nat_remove_payload,
@@ -134,6 +135,28 @@ def remove_nat_uc(
     dry_run: bool = False,
 ) -> dict:
     """Construye y envía comandos para eliminar NAT/PAT de un router."""
+    # Sin NATConfig no pasa por validate_nat_config, pero los mismos campos
+    # terminan crudos en el CLI (`no ip nat pool {pool_name}`, ...).
+    fields = [
+        ("mode", mode),
+        ("inside_interface", inside_interface),
+        ("outside_interface", outside_interface),
+        ("acl_number", acl_number),
+        ("pool_name", pool_name),
+    ]
+    for i, m in enumerate(static_mappings or []):
+        fields.extend((f"static_mappings[{i}].{k}", str(v)) for k, v in m.items())
+    errors = [
+        PlanError(
+            code=ErrorCode.NAT_INVALID_NAME,
+            device=router,
+            message=f"{label} contiene un salto de línea.",
+            suggestion=f"Usa un valor de una sola línea en {label}.",
+        )
+        for label, value in fields
+        if has_control_chars(value)
+    ]
+
     payload = build_nat_remove_payload(
         router=router,
         mode=mode,
@@ -146,10 +169,12 @@ def remove_nat_uc(
     js_call = build_nat_js_call(router, payload)
 
     sent = False
-    if not dry_run and bridge_send is not None:
+    if not errors and not dry_run and bridge_send is not None:
         sent = bool(bridge_send(js_call))
 
     return {
+        "valid": not errors,
+        "errors": [e.to_dict() for e in errors],
         "router": router,
         "mode": mode,
         "js_payload": js_call,
