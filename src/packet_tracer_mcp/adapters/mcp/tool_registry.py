@@ -61,6 +61,7 @@ from ...infrastructure.generator.cli_config_generator import (
     generate_pc_config,
 )
 from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
+from ...infrastructure.generator.host_js import add_module_js
 from .device_panel_tools import register_device_panel_tools
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
@@ -2233,12 +2234,10 @@ def register_tools(mcp: FastMCP) -> None:
                         f"Compatible con: {', '.join(spec.compatible_with)}"
                     )
 
-        # Enviar al bridge — el patch runtime maneja el power cycle automáticamente.
-        # Esperamos respuesta para confirmar éxito (la instalación toma unos segundos).
-        js = (
-            f'var __ok = addModule("{safe_name}", "{safe_slot}", "{safe_module}"); '
-            f'return JSON.stringify({{success: __ok === true, returned: __ok}});'
-        )
+        # Enviar al bridge — el helper de la extensión maneja el power cycle.
+        # El JS tiene que REPORTAR el resultado: antes lo devolvía con un return
+        # y la tool siempre terminaba en timeout aunque el módulo se instalara.
+        js = add_module_js(device_name, slot_s, spec.name)
         result = _bridge_send_and_wait(js, timeout=15.0)
 
         if result is None:
