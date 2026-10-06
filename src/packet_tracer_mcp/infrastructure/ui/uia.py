@@ -1,19 +1,19 @@
-"""UI Automation sobre la GUI de Packet Tracer (comtypes).
+"""UI Automation over Packet Tracer's GUI (comtypes).
 
-PT es Qt y expone toda su interfaz a UIA: cada widget aparece con
-AutomationId = su ruta de objectName (ej. `...m_physicalTab.qt_tabwidget_tabbar`)
-y con los patrones de un control real (las pestañas soportan SelectionItem,
-los botones Invoke, las barras de desplazamiento RangeValue). Con eso se elige
-una pestaña o se abre una app del Desktop sin mover el mouse ni teclear.
+PT is Qt and exposes its whole interface to UIA: each widget shows up with
+AutomationId = its objectName path (e.g. `...m_physicalTab.qt_tabwidget_tabbar`)
+and with a real control's patterns (tabs support SelectionItem, buttons Invoke,
+scrollbars RangeValue). That is enough to pick a tab or open a Desktop app
+without moving the mouse or typing.
 
-Requiere `comtypes` (extra opcional: `pip install packet-tracer-mcp[ui]`).
+Requires `comtypes` (optional extra: `pip install packet-tracer-mcp[ui]`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-_UIA = None  # módulo generado UIAutomationClient
+_UIA = None  # generated UIAutomationClient module
 _AUTOMATION = None
 
 
@@ -26,12 +26,12 @@ def _init():
     try:
         import comtypes
         import comtypes.client
-    except ImportError as exc:  # pragma: no cover - depende del entorno
+    except ImportError as exc:  # pragma: no cover - depends on the environment
         raise UiaUnavailable(
-            "Falta 'comtypes' para manejar la GUI de PT. Instalalo con "
-            "`pip install packet-tracer-mcp[ui]` (o `pip install comtypes`)."
+            "'comtypes' is needed to drive PT's GUI. Install it with "
+            "`pip install packet-tracer-mcp[ui]` (or `pip install comtypes`)."
         ) from exc
-    # Cada hilo que toca COM tiene que inicializarlo; repetirlo es inocuo.
+    # Every thread that touches COM must initialise it; repeating it is harmless.
     try:
         comtypes.CoInitializeEx(comtypes.COINIT_APARTMENTTHREADED)
     except OSError:
@@ -59,12 +59,12 @@ class Element:
 
 
 class Uia:
-    """Operaciones mínimas que necesita el presentador."""
+    """The minimal operations the presenter needs."""
 
     def __init__(self):
         self.m, self.a = _init()
 
-    # -- búsqueda ---------------------------------------------------------
+    # -- search -----------------------------------------------------------
     def _wrap(self, e) -> Element:
         return Element(
             raw=e,
@@ -87,12 +87,12 @@ class Uia:
         arr = root.FindAll(self.m.TreeScope_Descendants, cond)
         return [self._wrap(arr.GetElement(i)) for i in range(arr.Length)]
 
-    # -- patrones ---------------------------------------------------------
+    # -- patterns ---------------------------------------------------------
     def _pattern(self, el: Element, pattern: str, iface: str):
         pid = getattr(self.m, f"UIA_{pattern}PatternId")
         unk = el.raw.GetCurrentPattern(pid)
         if not unk:
-            raise UiaUnavailable(f"'{el.name}' no soporta el patrón {pattern}")
+            raise UiaUnavailable(f"'{el.name}' does not support the {pattern} pattern")
         return unk.QueryInterface(getattr(self.m, iface))
 
     def select(self, el: Element) -> None:
@@ -102,14 +102,14 @@ class Uia:
         self._pattern(el, "Invoke", "IUIAutomationInvokePattern").Invoke()
 
     def toggle_state(self, el: Element) -> int:
-        """0 = off, 1 = on, 2 = indeterminado."""
+        """0 = off, 1 = on, 2 = indeterminate."""
         return int(self._pattern(el, "Toggle", "IUIAutomationTogglePattern").CurrentToggleState)
 
     def range_value(self, el: Element) -> float:
         return float(self._pattern(el, "RangeValue", "IUIAutomationRangeValuePattern").CurrentValue)
 
     def set_value(self, el: Element, text: str) -> None:
-        """Escribe en un campo (ValuePattern): no usa el teclado."""
+        """Write into a field (ValuePattern): does not use the keyboard."""
         self._pattern(el, "Value", "IUIAutomationValuePattern").SetValue(text)
 
     def scroll_to_end(self, el: Element) -> None:

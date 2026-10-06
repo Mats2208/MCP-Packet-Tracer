@@ -1,2 +1,2 @@
-"""Presentación en la GUI de Packet Tracer (abrir el diálogo de un dispositivo,
-elegir pestaña/app, capturarlo). Solo Windows; se importa bajo demanda."""
+"""Presentation in Packet Tracer's GUI (open a device's dialog, pick a tab/app,
+capture it). Windows only; imported on demand."""

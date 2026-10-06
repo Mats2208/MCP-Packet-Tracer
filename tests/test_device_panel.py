@@ -164,7 +164,7 @@ class TestOpenApp:
 
     def test_email_already_open(self):
         u = FakeDesktopUia([_MAIL, _MAIL_CFG])
-        assert "ya abierta" in self._open(u, "email")
+        assert "already open" in self._open(u, "email")
         assert u.invoked == []
 
     def test_reopen_closes_and_opens_again(self):
@@ -335,12 +335,12 @@ class TestTools:
         p = FakePresenter()
         call, _, _ = _tools(tmp_path, p)
         out = call("pt_cli", device="R1", commands=["show clock"], capture=True)
-        assert p.opened and p.captured and "Captura:" in out
+        assert p.opened and p.captured and "Capture:" in out
 
     def test_gui_failure_does_not_lose_the_work(self, tmp_path):
         call, _, _ = _tools(tmp_path, FakePresenter(fail=True), mode="ui")
         out = call("pt_cli", device="R1", commands=["show clock"])
-        assert "now" in out and "no se pudo mostrar" in out
+        assert "now" in out and "could not show it" in out
 
     def test_invalid_commands_are_rejected_before_pt(self, tmp_path):
         call, sent, _ = _tools(tmp_path, FakePresenter())
@@ -351,7 +351,7 @@ class TestTools:
         call, _, store = _tools(tmp_path, FakePresenter())
         call("pt_ui_mode", mode="gui")
         assert store.get() == "ui"
-        assert "Modo actual: ui" in call("pt_ui_mode")
+        assert "Current mode: ui" in call("pt_ui_mode")
 
     def test_ip_config_presents_after_applying_and_reopens(self, tmp_path):
         p = FakePresenter()

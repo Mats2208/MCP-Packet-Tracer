@@ -1,8 +1,8 @@
-"""Modelos de ACL — reglas, planes y bindings.
+"""ACL models — rules, plans and bindings.
 
-Los ACL se aplican post-deploy a un router existente vía configureIosDevice
-a través del bridge. No forman parte del TopologyPlan principal porque son
-modificaciones discretas a una topología ya desplegada.
+ACLs are applied post-deploy to an existing router via configureIosDevice
+through the bridge. They are not part of the main TopologyPlan because they
+are discrete changes to an already deployed topology.
 """
 
 from __future__ import annotations
@@ -18,56 +18,56 @@ ACLType = Literal["standard", "extended"]
 
 
 class ACLEntry(BaseModel):
-    """Una regla individual de ACL.
+    """A single ACL rule.
 
-    En IOS, las ACL standard solo filtran por source. Las extended
-    permiten source + destination + protocolo + puertos + flags.
+    In IOS, standard ACLs only filter by source. Extended ones
+    allow source + destination + protocol + ports + flags.
     """
-    sequence: int | None = None  # Auto-asignado si es None (10, 20, 30, ...)
+    sequence: int | None = None  # Auto-assigned if None (10, 20, 30, ...)
     action: ACLAction
     protocol: ACLProtocol = "ip"
 
-    # Source (siempre requerido). Formatos:
+    # Source (always required). Formats:
     #   "any"
-    #   "host 1.2.3.4"  (un host)
+    #   "host 1.2.3.4"  (one host)
     #   "1.2.3.0 0.0.0.255"  (network + wildcard)
     source: str
 
-    # Destination (solo extended). Mismos formatos que source.
+    # Destination (extended only). Same formats as source.
     destination: str = ""
 
     # Source port (solo TCP/UDP). port_op y port van juntos.
     source_port_op: PortOp | None = None
     source_port: int | None = None
-    source_port_end: int | None = None  # solo si port_op == "range"
+    source_port_end: int | None = None  # only if port_op == "range"
 
     # Destination port (solo TCP/UDP).
     dest_port_op: PortOp | None = None
     dest_port: int | None = None
     dest_port_end: int | None = None
 
-    # ICMP type (solo ICMP). Ej: "echo", "echo-reply", "host-unreachable".
+    # ICMP type (ICMP only). E.g. "echo", "echo-reply", "host-unreachable".
     icmp_type: str = ""
 
-    # TCP flags (solo TCP). Ej: ["established"], ["syn", "ack"].
+    # TCP flags (TCP only). E.g. ["established"], ["syn", "ack"].
     tcp_flags: list[str] = Field(default_factory=list)
 
-    # Logging y comentarios opcionales.
+    # Optional logging and comments.
     log: bool = False
     remark: str = ""
 
 
 class ACLPlan(BaseModel):
-    """Plan completo de una ACL para un router específico."""
-    router: str  # nombre del dispositivo en PT
+    """Complete plan of an ACL for a specific router."""
+    router: str  # device name in PT
     name_or_number: str  # "101", "BLOCK_HTTP", etc.
     acl_type: ACLType
     entries: list[ACLEntry] = Field(default_factory=list)
 
 
 class ACLBinding(BaseModel):
-    """Aplicación de una ACL a una interfaz de router."""
+    """Applying an ACL to a router interface."""
     router: str
-    interface: str  # ej: "GigabitEthernet0/0"
-    acl_id: str  # debe coincidir con name_or_number de un ACLPlan
+    interface: str  # e.g. "GigabitEthernet0/0"
+    acl_id: str  # must match the name_or_number of an ACLPlan
     direction: Direction

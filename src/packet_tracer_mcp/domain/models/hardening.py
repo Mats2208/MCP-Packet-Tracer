@@ -1,4 +1,4 @@
-"""Modelo de endurecimiento (hardening) de dispositivos."""
+"""Device hardening model."""
 
 from __future__ import annotations
 from pydantic import BaseModel, Field
@@ -18,7 +18,7 @@ class SSHConfig(BaseModel):
 
 
 class HardeningConfig(BaseModel):
-    """Config de hardening para un router/switch (todo opcional)."""
+    """Hardening config for a router/switch (all optional)."""
     device: str
     hostname: str = ""
     banner_motd: str = ""

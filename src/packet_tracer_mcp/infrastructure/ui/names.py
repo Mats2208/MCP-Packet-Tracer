@@ -1,17 +1,17 @@
-"""Nombres de pestañas y apps del diálogo de un dispositivo.
+"""Names of the tabs and apps in a device's dialog.
 
-Los objectName de los botones del Desktop salen de la documentación de
-`DeviceDialog::setWidgetVisible` (help/default/IpcAPI de PT 9.0.1) y se
-verificaron por UI Automation contra un PC-PT real: la AutomationId de cada
-botón termina en ese objectName (ej. `...CommandPromptBtn`). "MIBBroswerBtn"
-va con la errata de Cisco a propósito.
+The Desktop buttons' objectNames come from the documentation of
+`DeviceDialog::setWidgetVisible` (PT 9.0.1's help/default/IpcAPI) and were
+verified through UI Automation against a real PC-PT: each button's
+AutomationId ends in that objectName (e.g. `...CommandPromptBtn`).
+"MIBBroswerBtn" keeps Cisco's typo on purpose.
 """
 
 from __future__ import annotations
 
 import re
 
-# alias normalizado → objectName del botón en Desktop
+# normalised alias → objectName of the Desktop button
 DESKTOP_APPS: dict[str, str] = {
     "ipconfiguration": "IPConfigBtn", "ipconfig": "IPConfigBtn",
     "dialup": "DialupBtn",
@@ -40,9 +40,9 @@ DESKTOP_APPS: dict[str, str] = {
     "supervisoryworkstation": "Supervisory Workstation_btn",
 }
 
-# Pestañas conocidas (el nombre visible). Cada tipo de dispositivo muestra un
-# subconjunto: PC = Physical/Config/Desktop/Programming/Attributes, router =
-# Physical/Config/CLI/Attributes, Server-PT suma Services.
+# Known tabs (the visible name). Each device type shows a subset:
+# PC = Physical/Config/Desktop/Programming/Attributes, router =
+# Physical/Config/CLI/Attributes, Server-PT adds Services.
 TABS = ("Physical", "Config", "CLI", "Desktop", "Services", "GUI", "Programming", "Attributes")
 
 
@@ -51,13 +51,13 @@ def normalize(name: str | None) -> str:
 
 
 def desktop_app_object_name(app: str | None) -> str | None:
-    """objectName del botón para una app ('Command Prompt', 'cmd', 'web_browser'...)."""
+    """objectName of the button for an app ('Command Prompt', 'cmd', 'web_browser'...)."""
     key = normalize(app)
     if not key:
         return None
     if key in DESKTOP_APPS:
         return DESKTOP_APPS[key]
-    # También se acepta el objectName tal cual ("CommandPromptBtn").
+    # The objectName itself is accepted too ("CommandPromptBtn").
     for obj in DESKTOP_APPS.values():
         if normalize(obj) == key:
             return obj

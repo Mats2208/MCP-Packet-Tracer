@@ -41,7 +41,7 @@ class TestBackupConfig:
 
     def test_empty_startup_tells_the_user_what_to_do(self):
         """Un equipo sin `write memory` no tiene startup-config: no es un error."""
-        assert "write memory` en el equipo antes de respaldar" in _src()
+        assert "write memory` on the device before backing it up" in _src()
 
 
 class TestProjectMetadata:
@@ -56,7 +56,7 @@ class TestProjectMetadata:
 
     def test_unsaved_project_is_flagged(self):
         """Un proyecto sin guardar se pierde al cerrar PT; hay que decirlo."""
-        assert "Proyecto SIN guardar" in _src()
+        assert "Project NOT saved" in _src()
 
     def test_setter_is_feature_detected(self):
         assert "typeof __f.setNetworkDescription === 'function'" in _src()
@@ -117,4 +117,4 @@ class TestWorkspaceOptions:
 
     def test_external_network_access_is_called_out(self):
         """Sacar tráfico del simulador a la red real merece un aviso."""
-        assert "acceso a la red REAL habilitado" in _src()
+        assert "access to the REAL network enabled" in _src()

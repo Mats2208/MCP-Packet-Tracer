@@ -1,15 +1,15 @@
-"""JS para las apps del Desktop y los servicios de Server-PT.
+"""JS for the Desktop apps and the Server-PT services.
 
-Métodos tomados de la referencia IPC de PT 9.0.1 (help/default/IpcAPI) y
-probados contra PT 9.0.1:
-- HttpClient.go(url) es asíncrono; la página llega a getLastPageContent().
-- DhcpServerMain.getDhcpServerProcessByPortName(port) devuelve el proceso por
-  interfaz, con pools editables (DhcpPool.set*) y addNewPool(...). Es lo que
-  faltaba en el issue #23 ("DhcpServerMain no expone pools").
+Methods taken from PT 9.0.1's IPC reference (help/default/IpcAPI) and tested
+against PT 9.0.1:
+- HttpClient.go(url) is asynchronous; the page arrives in getLastPageContent().
+- DhcpServerMain.getDhcpServerProcessByPortName(port) returns the per-interface
+  process, with editable pools (DhcpPool.set*) and addNewPool(...). That is what
+  issue #23 was missing ("DhcpServerMain does not expose pools").
 - DnsServer.addARecordToNameServerDb / addCNAMEToNameServerDb + setEnable.
 - HttpServer.setPageContents(url, html) / getPage(url).
 
-Mismas reglas que host_js: IIFE y un único objeto `json.dumps` con los datos.
+Same rules as host_js: an IIFE and a single `json.dumps` object with the data.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ _TAIL = "})();"
 
 
 def _proc(name: str, var: str = "s") -> str:
-    """Obtiene un proceso por nombre o corta con error 'no_<name>'."""
+    """Get a process by name, or stop with error 'no_<name>'."""
     return (
         f"var {var}=null;try{{{var}=d.getProcess({json.dumps(name)});}}catch(e){{}}"
         f"if(!{var}){{reportResult(JSON.stringify({{ok:false,error:{json.dumps('no_' + name)}}}));return;}}"
@@ -88,7 +88,7 @@ def server_dhcp_js(
     remove_pool: str = "",
     exclude: list[tuple[str, str]] | None = None,
 ) -> str:
-    """Services > DHCP: crea o edita un pool, lo activa, excluye rangos, borra pools."""
+    """Services > DHCP: create or edit a pool, switch it on, exclude ranges, delete pools."""
     cfg = {
         "device": device, "port": port, "pool": pool, "gateway": gateway, "dns": dns,
         "start": start_ip, "mask": mask, "max": int(max_users or 0), "tftp": tftp, "wlc": wlc,
@@ -100,21 +100,21 @@ def server_dhcp_js(
         "var dp=null;try{dp=dm.getDhcpServerProcessByPortName(pn);}catch(e){}"
         "if(!dp){reportResult(JSON.stringify({ok:false,error:'port_not_found',ports:String(names.join(','))}));return;}"
         "var done=[];"
-        "if(c.remove){if(dp.getPool(c.remove)){dp.removePool(c.remove);done.push('pool '+c.remove+' borrado');}"
-        "else{done.push('pool '+c.remove+' no existía');}}"
+        "if(c.remove){if(dp.getPool(c.remove)){dp.removePool(c.remove);done.push('pool '+c.remove+' deleted');}"
+        "else{done.push('pool '+c.remove+' did not exist');}}"
         "if(c.pool){var p=dp.getPool(c.pool);"
         "if(!p){dp.addNewPool(c.pool,c.gateway||'0.0.0.0',c.dns||'0.0.0.0',c.start||'0.0.0.0',"
         "c.mask||'0.0.0.0',c.max||256,c.tftp||'0.0.0.0',c.wlc||'0.0.0.0');p=dp.getPool(c.pool);"
-        "done.push('pool '+c.pool+' creado');}"
+        "done.push('pool '+c.pool+' created');}"
         "else{if(c.start&&c.mask){p.setNetworkMask(c.start,c.mask);}"
         "if(c.start){p.setStartIp(c.start);}"
         "if(c.gateway){p.setDefaultRouter(c.gateway);}"
         "if(c.dns){p.setDnsServerIp(c.dns);}"
         "if(c.max){p.setMaxUsers(c.max);}"
-        "done.push('pool '+c.pool+' actualizado');}}"
+        "done.push('pool '+c.pool+' updated');}}"
         "for(var k=0;k<c.exclude.length;k++){dp.addExcludedAddress(c.exclude[k][0],c.exclude[k][1]);"
-        "done.push('excluido '+c.exclude[k][0]+'-'+c.exclude[k][1]);}"
-        "if(c.enable!==null){dp.setEnable(!!c.enable);done.push(c.enable?'servicio On':'servicio Off');}"
+        "done.push('excluded '+c.exclude[k][0]+'-'+c.exclude[k][1]);}"
+        "if(c.enable!==null){dp.setEnable(!!c.enable);done.push(c.enable?'service On':'service Off');}"
         "reportResult(JSON.stringify({ok:true,port:pn,done:done,enabled:!!dp.isEnable(),pools:__pools(dp),"
         "excluded:dp.getExcludedAddressCount()}));"
         + _TAIL
@@ -140,14 +140,14 @@ def server_dns_js(
         "for(var i=0;i<c.remove.length;i++){var r=c.remove[i];var ok=false;"
         "if(String(r.type).toUpperCase()==='CNAME'){ok=s.removeCNAMEFromNameServerDb(r.name,r.value);}"
         "else{ok=s.removeARecordFromNameServerDb(r.name,r.value);}"
-        "done.push((ok?'borrado ':'no estaba ')+r.name);}"
+        "done.push((ok?'removed ':'not present ')+r.name);}"
         "for(var j=0;j<c.records.length;j++){var a=c.records[j];var ok2=false;"
         "if(String(a.type).toUpperCase()==='CNAME'){ok2=s.addCNAMEToNameServerDb(a.name,a.value);}"
         "else{ok2=s.addARecordToNameServerDb(a.name,a.value);}"
-        "done.push((ok2?'agregado ':'rechazado ')+a.type+' '+a.name+' -> '+a.value);}"
-        "if(c.enable!==null){s.setEnable(!!c.enable);done.push(c.enable?'servicio On':'servicio Off');}"
-        # getIpAddOfDomain/isDomainNameExisted leen otra tabla (dan 0.0.0.0/false
-        # para registros que nslookup sí resuelve): se busca el registro guardado.
+        "done.push((ok2?'added ':'rejected ')+a.type+' '+a.name+' -> '+a.value);}"
+        "if(c.enable!==null){s.setEnable(!!c.enable);done.push(c.enable?'service On':'service Off');}"
+        # getIpAddOfDomain/isDomainNameExisted read another table (they give
+        # 0.0.0.0/false for records nslookup does resolve): look up the stored record.
         "var check={};for(var k=0;k<c.records.length;k++){var q=c.records[k];var rr=null;"
         "try{rr=String(q.type).toUpperCase()==='CNAME'?s.getCNameRecordWithHostname(q.name,q.value)"
         ":s.getARecordWithAddress(q.name,q.value);}catch(e){}check[q.name]=!!rr;}"
@@ -168,13 +168,13 @@ def server_http_js(
     enable: bool | None = None,
     https_enable: bool | None = None,
 ) -> str:
-    """Services > HTTP: activa HTTP/HTTPS y reemplaza el contenido de páginas."""
+    """Services > HTTP: switch HTTP/HTTPS on/off and replace page contents."""
     cfg = {"device": device, "pages": pages or {}, "enable": enable, "https": https_enable}
     return (
         _head(cfg) + _proc("HttpServer") +
         "var done=[];var sizes={};"
         "for(var k in c.pages){if(Object.prototype.hasOwnProperty.call(c.pages,k)){"
-        "s.setPageContents(k,c.pages[k]);sizes[k]=String(s.getPage(k)).length;done.push('página '+k);}}"
+        "s.setPageContents(k,c.pages[k]);sizes[k]=String(s.getPage(k)).length;done.push('page '+k);}}"
         "if(c.enable!==null){s.setEnable(!!c.enable);done.push(c.enable?'HTTP On':'HTTP Off');}"
         "var hs=null;try{hs=d.getProcess('HttpsServer');}catch(e){}"
         "if(c.https!==null&&hs&&typeof hs.setEnable==='function'){hs.setEnable(!!c.https);"
@@ -191,7 +191,7 @@ def server_http_js(
 # ---------------------------------------------------------------------------
 
 SIMPLE_SERVICES = {
-    # nombre → (proceso, setter de enable, getter de enable)
+    # name → (process, enable setter, enable getter)
     "tftp": ("TftpServer", "setEnabled", "isEnabled"),
     "ftp": ("FtpServer", "setEnabled", "isEnabled"),
     "syslog": ("SyslogServer", "setEnable", "isEnabled"),
@@ -206,9 +206,9 @@ def server_service_js(
     enable: bool | None = None,
     users: list[dict] | None = None,
 ) -> str:
-    """Toggle de TFTP/FTP/SYSLOG y cuentas de FTP/EMAIL.
+    """Toggle TFTP/FTP/SYSLOG, and FTP/EMAIL accounts.
 
-    users: [{"username": "...", "password": "...", "permissions": "RWDNL"}] (permisos solo FTP).
+    users: [{"username": "...", "password": "...", "permissions": "RWDNL"}] (permissions: FTP only).
     """
     proc, setter, getter = SIMPLE_SERVICES[service]
     cfg = {"device": device, "service": service, "enable": enable, "users": users or [],
@@ -217,14 +217,14 @@ def server_service_js(
         _head(cfg) + _proc(proc) +
         "var done=[];"
         "if(c.enable!==null&&c.setter&&typeof s[c.setter]==='function'){s[c.setter](!!c.enable);"
-        "done.push(c.enable?'servicio On':'servicio Off');}"
+        "done.push(c.enable?'service On':'service Off');}"
         "if(c.users.length&&c.service==='ftp'){var m=s.getFtpUserAccountManager();"
         "for(var i=0;i<c.users.length;i++){var u=c.users[i];"
         "if(m.isExistingUser(u.username)){m.removeFtpUser(u.username);}"
-        "m.addFtpUser(u.username,u.password,u.permissions||'RWDNL');done.push('usuario ftp '+u.username);}}"
+        "m.addFtpUser(u.username,u.password,u.permissions||'RWDNL');done.push('ftp user '+u.username);}}"
         "if(c.users.length&&c.service==='email'){for(var j=0;j<c.users.length;j++){var e=c.users[j];"
         "var ok=s.addUser(e.username,e.password);if(!ok){s.changePassword(e.username,e.password);}"
-        "done.push('cuenta '+e.username);}}"
+        "done.push('account '+e.username);}}"
         "var info={ok:true,service:c.service,done:done,"
         "enabled:(c.getter&&typeof s[c.getter]==='function')?!!s[c.getter]():null};"
         "if(c.service==='ftp'){var mm=s.getFtpUserAccountManager();info.users=[];"
@@ -254,7 +254,7 @@ def email_client_js(
     subject: str = "",
     body: str = "",
 ) -> str:
-    """Desktop > Email: configurar la cuenta, enviar (SMTP) o pedir correo (POP3)."""
+    """Desktop > Email: configure the account, send (SMTP) or fetch mail (POP3)."""
     cfg = {"device": device, "action": action, "name": name, "address": address,
            "username": username, "password": password, "smtp": smtp_server, "pop3": pop3_server,
            "to": to, "subject": subject, "body": body}
@@ -264,10 +264,10 @@ def email_client_js(
         "if(c.action==='configure'){"
         "if(c.name){u.setName(c.name);}if(c.address){u.setMailId(c.address);}"
         "if(c.username){u.setUser(c.username);}if(c.password){u.setPassword(c.password);}"
-        "if(c.smtp){u.setSmtpServer(c.smtp);}if(c.pop3){u.setPop3Server(c.pop3);}done.push('cuenta configurada');}"
+        "if(c.smtp){u.setSmtpServer(c.smtp);}if(c.pop3){u.setPop3Server(c.pop3);}done.push('account configured');}"
         "else if(c.action==='send'){var sent=s.getSmtpClient().sendMail(u.getMailId(),c.to,c.subject,c.body,"
-        "u.getPassword(),u.getSmtpServer());done.push(sent?'enviado a '+c.to:'SMTP rechazó el envío');}"
-        "else if(c.action==='receive'){s.getPop3Client().getMailIpc();done.push('pedido de correo POP3 enviado');}"
+        "u.getPassword(),u.getSmtpServer());done.push(sent?'sent to '+c.to:'SMTP refused to send');}"
+        "else if(c.action==='receive'){s.getPop3Client().getMailIpc();done.push('POP3 mail request sent');}"
         "reportResult(JSON.stringify({ok:true,done:done,account:{name:String(u.getName()),"
         "address:String(u.getMailId()),username:String(u.getUser()),smtp:String(u.getSmtpServer()),"
         "pop3:String(u.getPop3Server())}}));"
@@ -276,7 +276,7 @@ def email_client_js(
 
 
 # ---------------------------------------------------------------------------
-# Firewall de host, Terminal
+# Host firewall, Terminal
 # ---------------------------------------------------------------------------
 
 def host_firewall_js(device: str, *, port: str = "", ipv4: bool | None = None,
@@ -298,17 +298,17 @@ def host_firewall_js(device: str, *, port: str = "", ipv4: bool | None = None,
     )
 
 
-# PC Wireless NO tiene tool: en PT 9.0.1 WirelessClientProcess.addProfile,
-# setCurrentProfile y setCurrentProfileStringIPs lanzan "invalid vector subscript"
-# con cualquier combinación de argumentos (probado 2026-10-07). Se abre a mano con
+# PC Wireless has NO tool: in PT 9.0.1 WirelessClientProcess.addProfile,
+# setCurrentProfile and setCurrentProfileStringIPs throw "invalid vector subscript"
+# with every combination of arguments (tested 2026-10-07). Open it by hand with
 # pt_ui_open(host, app="pc_wireless").
 
 
 def console_peer_js(device: str) -> str:
-    """¿A qué dispositivo llega el cable de consola que sale del RS 232 de este host?
+    """Which device does the console cable leaving this host's RS 232 reach?
 
-    Usa getLinkAt/getPort1/getPort2/getOwnerDevice, los mismos que
-    pt_export_topology ya usa para listar enlaces.
+    Uses getLinkAt/getPort1/getPort2/getOwnerDevice, the same calls
+    pt_export_topology already uses to list links.
     """
     return (
         _head({"device": device}) +

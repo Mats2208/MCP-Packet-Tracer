@@ -76,7 +76,7 @@ class TestFullBuildLiveDeploy:
 
     def test_deploy_branches_on_live_channel(self):
         src = self._src()
-        deploy_block = src.split("DESPLIEGUE EN PACKET TRACER", 1)[1][:1600]
+        deploy_block = src.split("DEPLOYMENT TO PACKET TRACER", 1)[1][:1600]
         # Decide por canal antes de caer al portapapeles.
         assert '_pick_channel() != ""' in deploy_block
         # Y con canal vivo delega en la ruta de deploy real (con reconcile).
@@ -84,14 +84,14 @@ class TestFullBuildLiveDeploy:
 
     def test_clipboard_is_the_fallback_not_the_default(self):
         src = self._src()
-        deploy_block = src.split("DESPLIEGUE EN PACKET TRACER", 1)[1][:1600]
+        deploy_block = src.split("DEPLOYMENT TO PACKET TRACER", 1)[1][:1600]
         live_at = deploy_block.index('_pick_channel() != ""')
-        clip_at = deploy_block.index("SCRIPT COPIADO AL PORTAPAPELES")
+        clip_at = deploy_block.index("SCRIPT COPIED TO THE CLIPBOARD")
         # El portapapeles vive en el `else`, después de la comprobación de canal.
         assert live_at < clip_at
 
     def test_files_still_exported_when_deploying_live(self):
         src = self._src()
-        deploy_block = src.split("DESPLIEGUE EN PACKET TRACER", 1)[1][:1600]
+        deploy_block = src.split("DEPLOYMENT TO PACKET TRACER", 1)[1][:1600]
         # Desplegar en vivo no debe perder el proyecto en disco.
         assert "ManualExecutor(output_dir=\"projects\")" in deploy_block

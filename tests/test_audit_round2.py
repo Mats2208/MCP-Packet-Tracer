@@ -135,7 +135,7 @@ class TestRenameRejectsDuplicates:
 
     def test_duplicate_is_reported_with_a_reason(self):
         block = self._src().split("def pt_rename_device", 1)[1][:3000]
-        assert "ya existe un dispositivo llamado" in block
+        assert "a device named" in block
 
 
 def test_fix_plan_moves_the_ip_to_the_corrected_port():

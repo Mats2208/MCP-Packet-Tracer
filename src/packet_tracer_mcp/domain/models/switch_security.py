@@ -1,4 +1,4 @@
-"""Modelos de seguridad de switch: STP y port-security."""
+"""Switch security models: STP and port-security."""
 
 from __future__ import annotations
 from typing import Literal
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class PortSecurityConfig(BaseModel):
-    """Port-security en un puerto access de switch."""
+    """Port-security on a switch access port."""
     switch: str
     port: str
     max_mac: int = 1
@@ -16,7 +16,7 @@ class PortSecurityConfig(BaseModel):
 
 
 class STPConfig(BaseModel):
-    """Spanning-tree en un switch."""
+    """Spanning-tree on a switch."""
     switch: str
     mode: Literal["pvst", "rapid-pvst"] = "rapid-pvst"
     root_primary_vlans: list[int] = Field(default_factory=list)

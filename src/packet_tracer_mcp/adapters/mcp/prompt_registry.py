@@ -1,8 +1,8 @@
-"""MCP prompts: atajos listos para el usuario.
+"""MCP prompts: ready-made shortcuts for the user.
 
-Un cliente MCP los muestra como comandos (en Claude Code: `/mcp__packet-tracer__ui_on`).
-Sirven para que el usuario le diga al asistente "mostrá todo en las ventanas
-de PT" o "volvé a trabajar en segundo plano" sin tener que redactarlo.
+An MCP client shows them as commands (in Claude Code: `/mcp__packet-tracer__ui_on`).
+They let the user tell the assistant "show everything in PT's windows" or "go
+back to working in the background" without having to write it out.
 """
 
 from __future__ import annotations

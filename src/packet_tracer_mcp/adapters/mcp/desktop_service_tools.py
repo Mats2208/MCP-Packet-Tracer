@@ -1,10 +1,10 @@
-"""Tools de las apps del Desktop y de los servicios de Server-PT.
+"""Tools for the Desktop apps and the Server-PT services.
 
-Web Browser, Email, Firewall, Terminal; Services > DHCP, DNS,
-HTTP, TFTP, FTP, SYSLOG, EMAIL. Igual que el resto del panel: el trabajo va
-por la API del Script Engine y, si se pidió verlo, después se muestra la
-página correspondiente de la ventana del dispositivo (releída, porque esas
-páginas no se refrescan solas).
+Web Browser, Email, Firewall, Terminal; Services > DHCP, DNS, HTTP, TFTP, FTP,
+SYSLOG, EMAIL. Same as the rest of the panel: the work goes through the Script
+Engine API and, if showing it was asked for, the matching page of the device's
+window is shown afterwards (re-read, because those pages don't refresh on
+their own).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ _TEXT_CAP = 6000
 
 
 def html_to_text(page: str) -> str:
-    """Texto legible de una página: lo que vería la persona en el Web Browser."""
+    """Readable text of a page: what the person would see in the Web Browser."""
     t = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", page or "")
     t = re.sub(r"(?i)<br\s*/?>|</(p|div|h[1-6]|li|tr|title)>", "\n", t)
     t = re.sub(r"<[^>]+>", "", t)
@@ -55,11 +55,11 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Desktop > Web Browser de un host: abre una URL (http://IP, http://nombre
-        con DNS, https://...) y devuelve el texto de la página que recibió.
+        A host's Desktop > Web Browser: opens a URL (http://IP, http://name
+        with DNS, https://...) and returns the text of the page it received.
 
-        En modo UI (o show=True) la navegación la hace el propio navegador de
-        la ventana, así la captura muestra la página renderizada.
+        In UI mode (or show=True) the window's own browser does the
+        navigation, so the capture shows the rendered page.
         """
         v = validate_texts(device, url=url)
         if not v.is_valid:
@@ -83,13 +83,13 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
                 try:
                     navigated_by_gui = ps.presenter.fill_and_go(hwnd, "m_urlEdit", target, "m_goButton")
                 except Exception as exc:
-                    notes.append(f"GUI: no pude escribir la URL ({exc}); navego por la API.")
+                    notes.append(f"GUI: couldn't type the URL ({exc}); navigating through the API.")
         if not navigated_by_gui:
             started, error = ps.call(web_go_js(device, target), device)
             if error:
                 return error
             if not started.get("started"):
-                return f"El navegador de {device} rechazó la URL '{target}'."
+                return f"{device}'s browser rejected the URL '{target}'."
         content = previous
         deadline = time.monotonic() + timeout
         stable_since = None
@@ -101,27 +101,27 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
             content = data.get("content", "")
             if content and content != previous:
                 break
-            # Misma página que antes (se pidió dos veces la misma URL): esperar
-            # un poco por si cambia y quedarse con lo que hay.
+            # Same page as before (the same URL was requested twice): wait a
+            # little in case it changes, then keep what is there.
             stable_since = stable_since or time.monotonic()
             if content and time.monotonic() - stable_since > 3.0:
-                notes.append("La página es idéntica a la última cargada en este navegador.")
+                notes.append("The page is identical to the last one loaded in this browser.")
                 break
         if hwnd and capture:
             time.sleep(0.6)
             notes += ps.capture(device, "browser", output_dir)
         if not content:
             return with_notes(
-                f"{device} → {target}: sin respuesta en {timeout:.0f}s "
-                "(¿IP/DNS correctos? ¿HTTP activo en el servidor? ¿hay ruta?).", notes)
+                f"{device} → {target}: no answer within {timeout:.0f}s "
+                "(right IP/DNS? HTTP on at the server? is there a route?).", notes)
         text = html_to_text(content)
         cut = len(text) > _TEXT_CAP
         out = {
             "device": device, "url": target, "html_bytes": len(content),
-            "text": text[:_TEXT_CAP] + ("\n…(recortado)" if cut else ""),
+            "text": text[:_TEXT_CAP] + ("\n…(cut)" if cut else ""),
         }
         if re.search(r"Request Timeout|Host Name Unresolved|Server Reset Connection", text, re.I):
-            out["warning"] = "El navegador de PT mostró una página de error."
+            out["warning"] = "PT's browser showed an error page."
         return with_notes(out, notes)
 
     # ------------------------------------------------------------------
@@ -147,17 +147,17 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Services > DHCP de un Server-PT: crea o edita un pool y lo activa.
+        A Server-PT's Services > DHCP: creates or edits a pool and switches it on.
 
-        - pool: nombre ("serverPool" es el que trae de fábrica: editarlo es lo
-          más común). Si no existe se crea con los valores dados.
-        - gateway, dns, start_ip, mask ("255.255.255.0" o "24"), max_users,
-          tftp, wlc: vacío/0 = no tocar.
-        - enable: True = Service On (default), False = Off, None = no tocar.
-        - remove_pool: borra ese pool.
-        - exclude: rangos a excluir, ["192.168.1.1-192.168.1.9"].
-        - interface: puerto del servidor (default: el primero).
-        Los hosts lo usan con pt_host_ip_config(mode="dhcp").
+        - pool: name ("serverPool" is the factory one: editing it is the most
+          common case). If it doesn't exist it is created with the given values.
+        - gateway, dns, start_ip, mask ("255.255.255.0" or "24"), max_users,
+          tftp, wlc: empty/0 = leave alone.
+        - enable: True = Service On (default), False = Off, None = leave alone.
+        - remove_pool: deletes that pool.
+        - exclude: ranges to exclude, ["192.168.1.1-192.168.1.9"].
+        - interface: the server's port (default: the first one).
+        Hosts use it with pt_host_ip_config(mode="dhcp").
         """
         ex = list(exclude or [])
         v = validate_dhcp(device, pool=pool, gateway=gateway, dns=dns, start_ip=start_ip,
@@ -192,13 +192,14 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Services > DNS de un Server-PT: agrega/borra registros y activa el servicio.
+        A Server-PT's Services > DNS: adds/removes records and switches the service on.
 
         - records: [{"name": "www.lab.com", "type": "A", "value": "192.168.1.20"},
                     {"name": "web.lab.com", "type": "CNAME", "value": "www.lab.com"}]
-        - remove: misma forma, para borrar.
-        - enable: True = On (default), False = Off, None = no tocar.
-        Comprobalo con pt_host_command(host, "nslookup www.lab.com").
+        - remove: same shape, to delete.
+        - enable: True = On (default), False = Off, None = leave alone.
+        The reply's `stored` says whether each added record is in the server's
+        database. Check resolution with pt_host_command(host, "nslookup www.lab.com").
         """
         recs = [dict(r) for r in (records or [])]
         rem = [dict(r) for r in (remove or [])]
@@ -228,12 +229,12 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Services > HTTP de un Server-PT: activa HTTP/HTTPS y edita páginas.
+        A Server-PT's Services > HTTP: switches HTTP/HTTPS and edits pages.
 
         - pages: {"index.html": "<html>...</html>", "about.html": "..."}
-          (reemplaza el contenido; crea la página si no existía).
-        - enable / https_enable: True/False/None (None = no tocar).
-        Comprobalo con pt_web_browser(host, "http://<ip del server>").
+          (replaces the content; creates the page if it didn't exist).
+        - enable / https_enable: True/False/None (None = leave alone).
+        Check it with pt_web_browser(host, "http://<server ip>").
         """
         pg = {str(k): str(v) for k, v in (pages or {}).items()}
         v = validate_texts(device, **{f"page {k}": k for k in pg})
@@ -261,14 +262,14 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Services > TFTP / FTP / SYSLOG / EMAIL de un Server-PT.
+        A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.
 
         - service: "tftp" | "ftp" | "syslog" | "email"
-        - enable: True/False (None = no tocar). EMAIL no tiene interruptor por API.
-        - users: cuentas para ftp/email:
+        - enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.
+        - users: accounts for ftp/email:
           [{"username": "alice", "password": "secret", "permissions": "RWDNL"}]
-          (permissions solo FTP: Read Write Delete reName List).
-        SYSLOG devuelve además cuántos mensajes recibió.
+          (permissions FTP only: Read Write Delete reName List).
+        SYSLOG also returns how many messages it received.
         """
         svc = (service or "").strip().lower()
         us = [dict(u) for u in (users or [])]
@@ -307,27 +308,27 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Desktop > Email de un host.
+        A host's Desktop > Email.
 
         - action="configure": name, address (alice@lab.com), username, password,
-          smtp_server, pop3_server (IP o nombre del Server con EMAIL).
-        - action="send": to, subject, body (usa la cuenta configurada).
-        - action="receive": pide el correo al POP3 (se ve en la ventana; PT no
-          expone el buzón por API).
-        Las cuentas del servidor se crean con pt_server_service(service="email").
-        El "Domain Name" del servicio EMAIL no tiene API: configuralo en la
-        ventana del servidor (pt_ui_open(server, tab="Services", section="EMAIL")).
+          smtp_server, pop3_server (IP or name of the Server running EMAIL).
+        - action="send": to, subject, body (uses the configured account).
+        - action="receive": asks the POP3 server for mail (it shows in the
+          window; PT does not expose the mailbox through the API).
+        Server accounts are created with pt_server_service(service="email").
+        The EMAIL service's "Domain Name" has no API: set it in the server's
+        window (pt_ui_open(server, tab="Services", section="EMAIL")).
         """
         act = (action or "").strip().lower()
         if act not in EMAIL_ACTIONS:
-            return f"action inválida: '{action}'. Usá: {', '.join(EMAIL_ACTIONS)}."
+            return f"Invalid action: '{action}'. Use: {', '.join(EMAIL_ACTIONS)}."
         v = validate_texts(device, name=name, address=address, username=username,
                            password=password, smtp_server=smtp_server, pop3_server=pop3_server,
                            to=to, subject=subject, body=body)
         if not v.is_valid:
             return errors_text(v)
         if act == "send" and not to:
-            return "Para enviar falta 'to'."
+            return "To send, 'to' is missing."
         err = ps.check_bridge()
         if err:
             return err
@@ -355,13 +356,13 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Desktop > Firewall / IPv6 Firewall de un host: enciende o apaga el
-        firewall de entrada (True/False; None = no tocar). Las reglas
-        individuales no tienen API en PT; se editan en la ventana
+        A host's Desktop > Firewall / IPv6 Firewall: switches the inbound
+        firewall on or off (True/False; None = leave alone). Individual rules
+        have no API in PT; edit them in the window
         (pt_ui_open(host, app="firewall")).
         """
         if ipv4 is None and ipv6 is None:
-            return "Pasá ipv4=True/False y/o ipv6=True/False."
+            return "Pass ipv4=True/False and/or ipv6=True/False."
         err = ps.check_bridge()
         if err:
             return err
@@ -384,15 +385,14 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Desktop > Terminal de una PC conectada por cable de CONSOLA (RS 232) a
-        un router/switch: teclea en la consola de ese equipo, como desde la
-        Terminal de la PC. Es lo que se usa para configurar un equipo "por
-        consola" en los labs.
+        Desktop > Terminal of a PC connected by a CONSOLE cable (RS 232) to a
+        router/switch: types on that device's console, as from the PC's
+        Terminal. This is how labs configure a device "over the console".
 
-        - device: la PC (o Laptop) que tiene el cable de consola.
-        - commands, timeout, auto_confirm: como en pt_cli.
-        - show/capture: muestra la app Terminal de la PC (se acepta su ventana
-          de parámetros 9600 8N1 sola).
+        - device: the PC (or Laptop) that has the console cable.
+        - commands, timeout, auto_confirm: as in pt_cli.
+        - show/capture: shows the PC's Terminal app (its 9600 8N1 settings
+          window is accepted automatically).
         """
         err = ps.check_bridge()
         if err:
@@ -402,9 +402,9 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
             return error
         peer = data.get("peer")
         if not peer:
-            return (f"{device} no tiene cable de consola en '{data.get('rs232')}'. Conectalo con "
+            return (f"{device} has no console cable on '{data.get('rs232')}'. Connect it with "
                     f"pt_add_link({device!r}, 'RS 232', '<router>', 'Console', cable_type='console').")
-        prefix = f"Terminal de {device} → consola de {peer} ({data.get('peer_port')})\n"
+        prefix = f"{device}'s Terminal → console of {peer} ({data.get('peer_port')})\n"
         if ps.visible(show, capture):
             notes, hwnd = ps.present(device, tab="Desktop", app="terminal")
             if hwnd:

@@ -1,7 +1,7 @@
 """
-Registro de MCP Tools.
+MCP tool registry.
 
-Define todas las herramientas que el LLM puede invocar.
+Defines every tool the LLM can call.
 """
 
 from __future__ import annotations
@@ -88,12 +88,12 @@ from ...domain.services.canvas import (
 )
 
 
-# Opciones de workspace: flag del MCP → (método de PT, ¿va invertido?).
+# Workspace options: MCP flag → (PT method, is it inverted?).
 #
-# PT expone dos de estas en NEGATIVO (`setDisableAutoCabling`,
-# `setHideDevLabel`) mientras que el flag del MCP dice "activar/mostrar". Si la
-# inversión se pierde, la tool hace exactamente lo contrario de lo que se le
-# pide, y en silencio.
+# PT exposes two of these in the NEGATIVE (`setDisableAutoCabling`,
+# `setHideDevLabel`) while the MCP flag says "enable/show". If the
+# inversion is lost, the tool does exactly the opposite of what it is
+# asked, silently.
 WORKSPACE_SETTERS: dict[str, tuple[str, bool]] = {
     "auto_cabling":            ("setDisableAutoCabling", True),
     "show_device_labels":      ("setHideDevLabel", True),
@@ -102,48 +102,48 @@ WORKSPACE_SETTERS: dict[str, tuple[str, bool]] = {
     "show_link_lights":        ("setIsLinkLightShown", False),
 }
 
-# Setters que PT declara con un segundo argumento OBLIGATORIO. Con uno solo
-# responde `Invalid arguments for IPC call "..."`. El valor del segundo no
-# cambia el resultado (probado con true y false contra PT 9.0.1), pero tiene
-# que estar.
+# Setters that PT declares with a MANDATORY second argument. With only one
+# it answers `Invalid arguments for IPC call "..."`. The second value does
+# not change the result (tested with true and false against PT 9.0.1), but it
+# has to be there.
 WORKSPACE_EXTRA_ARG: dict[str, str] = {
     "setHideDevLabel": "true",
 }
 
 
-# --- Consola de dispositivo (ping real) --------------------------------------
+# --- Device console (real ping) ----------------------------------------------
 #
-# `getCommandPrompt()` SOLO existe en hosts (PC/Server/Laptop). Contra un router
-# revienta con `TypeError: Property 'getCommandPrompt' of object is not a
-# function`, asi que el ping desde IOS nunca funciono pese a estar documentado.
-# Verificado contra PT 9.0.1: los routers exponen `getCommandLine()` y los PCs
-# exponen las DOS, asi que getCommandLine sirve para ambos mundos.
+# `getCommandPrompt()` ONLY exists on hosts (PC/Server/Laptop). Against a router
+# it blows up with `TypeError: Property 'getCommandPrompt' of object is not a
+# function`, so pinging from IOS never worked despite being documented.
+# Verified against PT 9.0.1: routers expose `getCommandLine()` and PCs
+# expose BOTH, so getCommandLine works for both worlds.
 #
-# Ademas hay que cebar la consola. Un router recien desplegado por el MCP nunca
-# fue tocado por consola, asi que sigue parado en "Would you like to enter the
-# initial configuration dialog? [yes/no]:". Ahi el `ping` se consume como
-# respuesta al yes/no y no se ejecuta nunca.
+# The console also has to be primed. A router just deployed by the MCP was never
+# touched through its console, so it is still parked at "Would you like to enter the
+# initial configuration dialog? [yes/no]:". There the `ping` is consumed as the
+# answer to the yes/no and never runs.
 _CONSOLE_PRIME_JS = (
     "var p=String(cl.getPrompt()||'');"
     "if(p.indexOf('[yes/no]')>=0){cl.enterCommand('no');}"
     "cl.enterCommand('');"
 )
 
-# Marcadores de bloque de estadistica, en los dos formatos de PT.
+# Statistics block markers, in PT's two formats.
 _PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
 
 
 def console_ping_arm_js(device: str, target: str) -> str:
-    """JS que deja la consola usable, cuenta los bloques previos y dispara el ping.
+    """JS that makes the console usable, counts the existing blocks and fires the ping.
 
-    Devuelve 'BASE:<n>' con cuantos bloques de estadistica ya habia: la consola
-    conserva historico, asi que se cuentan marcadores en vez de fiarse del largo.
+    Returns 'BASE:<n>' with how many statistics blocks there already were: the
+    console keeps history, so markers are counted instead of trusting the length.
     """
     dev = json.dumps(device)
     cmd = json.dumps("ping " + target.strip())
     return (
         f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
-        "if(!cl){reportResult('ERR:device sin consola');}"
+        "if(!cl){reportResult('ERR:device has no console');}"
         "else{"
         f"{_CONSOLE_PRIME_JS}"
         "var o=String(cl.getOutput());"
@@ -155,26 +155,26 @@ def console_ping_arm_js(device: str, target: str) -> str:
 
 
 def console_ping_poll_js(device: str, base: int) -> str:
-    """JS que sondea la consola hasta ver un bloque de estadistica NUEVO."""
+    """JS that polls the console until it sees a NEW statistics block."""
     dev = json.dumps(device)
     return (
         f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
-        "if(!cl){reportResult('ERR:device sin consola');}"
+        "if(!cl){reportResult('ERR:device has no console');}"
         "else{"
         "var o=String(cl.getOutput());"
         f"var m=o.match({_PING_STAT_MARKERS});"
         "var cur=m?m.length:0;"
         f"if(cur>{int(base)}){{"
-        # raw: los \d y el \n pertenecen al regex de JS, no son escapes de Python.
+        # raw: the \d and \n belong to the JS regex, they are not Python escapes.
         r"var stat=o.match(/Packets: Sent = \d+, Received = (\d+), Lost = (\d+)[^\n]*"
         r"|Success rate is (\d+) percent \((\d+)\/(\d+)\)/g);"
-        "reportResult('DONE:'+(stat?stat[stat.length-1]:'sin stats'));"
+        "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
         "}else{reportResult('WAIT');}}"
     )
 
 
 def workspace_setter_call(flag: str, value: int) -> tuple[str, str]:
-    """(método de PT, argumentos JS) para dejar `flag` en `value` (0 ó 1)."""
+    """(PT method, JS arguments) to set `flag` to `value` (0 or 1)."""
     method, inverted = WORKSPACE_SETTERS[flag]
     on = "true" if (value == 1) != inverted else "false"
     extra = WORKSPACE_EXTRA_ARG.get(method)
@@ -182,24 +182,24 @@ def workspace_setter_call(flag: str, value: int) -> tuple[str, str]:
 
 
 def register_tools(mcp: FastMCP) -> None:
-    """Registra todas las tools en el servidor MCP."""
+    """Register every tool on the MCP server."""
 
     # ------------------------------------------------------------------
-    # CONSULTA
+    # QUERY
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_list_devices() -> str:
         """
-        Lista todos los dispositivos disponibles en Packet Tracer con sus puertos.
-        Usa esto para saber qué modelos, puertos y cables puedes usar.
+        Lists every device available in Packet Tracer with its ports.
+        Use this to know which models, ports and cables you can use.
         """
         lines = []
         for name, model in ALL_MODELS.items():
             ports = ", ".join(p.full_name for p in model.ports)
             lines.append(f"**{model.display_name}** (type: `{name}`, category: {model.category})")
-            lines.append(f"  Puertos: {ports}")
+            lines.append(f"  Ports: {ports}")
             lines.append("")
-        lines.append("**Alias disponibles:**")
+        lines.append("**Available aliases:**")
         for alias, target in MODEL_ALIASES.items():
             lines.append(f"  {alias} → {target}")
         return "\n".join(lines)
@@ -207,7 +207,7 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_list_templates() -> str:
         """
-        Lista todas las plantillas de topología disponibles con sus descripciones.
+        Lists every available topology template with its description.
         """
         templates = list_templates()
         lines = []
@@ -215,7 +215,7 @@ def register_tools(mcp: FastMCP) -> None:
             lines.append(f"**{t.name}** (key: `{t.key.value}`)")
             lines.append(f"  {t.description}")
             lines.append(f"  Routers: {t.min_routers}-{t.max_routers} (default: {t.default_routers})")
-            lines.append(f"  PCs/LAN: {t.default_pcs_per_lan}  |  WAN: {'sí' if t.requires_wan else 'no'}")
+            lines.append(f"  PCs/LAN: {t.default_pcs_per_lan}  |  WAN: {'yes' if t.requires_wan else 'no'}")
             lines.append(f"  Routing: {t.default_routing.value}")
             lines.append(f"  Tags: {', '.join(t.tags)}")
             lines.append("")
@@ -224,17 +224,17 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_get_device_details(model_name: str) -> str:
         """
-        Muestra detalles de un modelo de dispositivo específico.
+        Shows the details of a specific device model.
 
-        Acepta tanto el nombre exacto del modelo (ej: '2911', '2960-24TT')
-        como un alias del catálogo (ej: 'router', 'switch', 'firewall').
+        Accepts either the exact model name (e.g. '2911', '2960-24TT')
+        or a catalog alias (e.g. 'router', 'switch', 'firewall').
 
-        Parámetros:
-        - model_name: nombre del modelo o alias
+        Parameters:
+        - model_name: model name or alias
         """
         model = resolve_model(model_name)
         if not model:
-            return f"Modelo '{model_name}' no encontrado. Usa pt_list_devices para ver modelos."
+            return f"Model '{model_name}' not found. Use pt_list_devices to see the models."
         info = {
             "display_name": model.display_name,
             "category": model.category,
@@ -247,7 +247,7 @@ def register_tools(mcp: FastMCP) -> None:
         return json.dumps(info, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # ESTIMACIÓN (dry-run)
+    # ESTIMATION (dry-run)
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_estimate_plan(
@@ -262,18 +262,18 @@ def register_tools(mcp: FastMCP) -> None:
         routing: str = "static",
     ) -> str:
         """
-        Estimación rápida (dry-run) sin generar plan completo.
-        Muestra cuántos dispositivos, enlaces y subredes se crearán.
+        Quick estimate (dry-run) without generating a full plan.
+        Shows how many devices, links and subnets will be created.
 
-        Parámetros:
-        - routers: Número de routers (1-20)
-        - pcs_per_lan: PCs por LAN
-        - laptops_per_lan: Laptops por LAN (Laptop-PT)
-        - switches_per_router: Switches por router
-        - servers: Servidores
+        Parameters:
+        - routers: Number of routers (1-20)
+        - pcs_per_lan: PCs per LAN
+        - laptops_per_lan: Laptops per LAN (Laptop-PT)
+        - switches_per_router: Switches per router
+        - servers: Servers
         - access_points: Access Points (AccessPoint-PT)
-        - has_wan: Incluir WAN
-        - dhcp: Configurar DHCP
+        - has_wan: Include WAN
+        - dhcp: Configure DHCP
         - routing: static, ospf, eigrp, rip, none
         """
         request = TopologyRequest(
@@ -291,7 +291,7 @@ def register_tools(mcp: FastMCP) -> None:
         return json.dumps(est, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # PLANIFICACIÓN
+    # PLANNING
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_plan_topology(
@@ -316,33 +316,33 @@ def register_tools(mcp: FastMCP) -> None:
         wireless_laptops: bool = False,
     ) -> str:
         """
-        Genera un plan completo de topología de red para Packet Tracer.
+        Generates a complete network topology plan for Packet Tracer.
 
-        Parámetros:
-        - routers: Número de routers (1-20)
-        - pcs_per_lan: PCs por cada LAN
-        - laptops_per_lan: Laptops por cada LAN (Laptop-PT)
-        - switches_per_router: Switches por router (0-4)
-        - servers: Número de servidores
-        - access_points: Número de Access Points (AccessPoint-PT), uno por LAN
-        - has_wan: Incluir conexión WAN (Cloud)
-        - dhcp: Configurar DHCP automáticamente
-        - routing: Protocolo de enrutamiento (static, ospf, eigrp, rip, none)
-        - router_model: Modelo de router (1941, 2901, 2911, ISR4321)
-        - switch_model: Modelo de switch (2960-24TT, 3560-24PS)
-        - template: Plantilla (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
+        Parameters:
+        - routers: Number of routers (1-20)
+        - pcs_per_lan: PCs per LAN
+        - laptops_per_lan: Laptops per LAN (Laptop-PT)
+        - switches_per_router: Switches per router (0-4)
+        - servers: Number of servers
+        - access_points: Number of Access Points (AccessPoint-PT), one per LAN
+        - has_wan: Include a WAN connection (Cloud)
+        - dhcp: Configure DHCP automatically
+        - routing: Routing protocol (static, ospf, eigrp, rip, none)
+        - router_model: Router model (1941, 2901, 2911, ISR4321)
+        - switch_model: Switch model (2960-24TT, 3560-24PS)
+        - template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom)
-        - floating_routes: Si True con routing=static, agrega rutas de respaldo con AD=254
-          por caminos alternativos (requiere topología con múltiples caminos)
-        - ospf_process_id: ID de proceso OSPF (1-65535, default 1)
-        - eigrp_as: Número de AS para EIGRP (1-65535, default 100)
-        - vlans: Solo template router_on_a_stick. Nº de VLANs a repartir entre los PCs (0 = default 2).
-        - dual_stack: Si True, agrega direccionamiento IPv6 (routers por CLI, hosts por SLAAC).
-        - ipv6_base: Prefijo IPv6 base para dual-stack (default "2001:db8::/32").
-        - wireless_laptops: Si True, las laptops se conectan por WiFi (NIC inalámbrica + AP
-          auto-asociado por LAN) en vez de cable.
+        - floating_routes: If True with routing=static, adds backup routes with AD=254
+          over alternative paths (needs a topology with multiple paths)
+        - ospf_process_id: OSPF process ID (1-65535, default 1)
+        - eigrp_as: EIGRP AS number (1-65535, default 100)
+        - vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).
+        - dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).
+        - ipv6_base: Base IPv6 prefix for dual-stack (default "2001:db8::/32").
+        - wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP
+          auto-associated per LAN) instead of a cable.
 
-        Devuelve el plan JSON completo.
+        Returns the full plan JSON.
         """
         request = TopologyRequest(
             template=TopologyTemplate(template),
@@ -369,15 +369,15 @@ def register_tools(mcp: FastMCP) -> None:
         return plan.model_dump_json(indent=2)
 
     # ------------------------------------------------------------------
-    # VALIDACIÓN
+    # VALIDATION
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_validate_plan(plan_json: str) -> str:
         """
-        Valida un plan de topología. Devuelve errores y warnings tipificados.
+        Validates a topology plan. Returns typed errors and warnings.
 
-        Parámetros:
-        - plan_json: JSON del plan (output de pt_plan_topology)
+        Parameters:
+        - plan_json: plan JSON (output of pt_plan_topology)
         """
         try:
             raw = json.loads(plan_json)
@@ -386,9 +386,9 @@ def register_tools(mcp: FastMCP) -> None:
                 "valid": False,
                 "error_count": 1,
                 "warning_count": 0,
-                "errors": [{"code": "INVALID_JSON", "message": f"JSON inválido: {exc.msg}"}],
+                "errors": [{"code": "INVALID_JSON", "message": f"Invalid JSON: {exc.msg}"}],
                 "warnings": [],
-                "summary": "❌ JSON inválido — no se pudo parsear el plan.",
+                "summary": "❌ Invalid JSON — the plan could not be parsed.",
             }, indent=2, ensure_ascii=False)
 
         if not isinstance(raw, dict) or "devices" not in raw or not raw.get("devices"):
@@ -398,10 +398,10 @@ def register_tools(mcp: FastMCP) -> None:
                 "warning_count": 0,
                 "errors": [{
                     "code": "EMPTY_PLAN",
-                    "message": "El JSON no contiene un plan válido (falta 'devices' o está vacío). Genera el plan con pt_plan_topology primero.",
+                    "message": "The JSON does not contain a valid plan ('devices' is missing or empty). Generate the plan with pt_plan_topology first.",
                 }],
                 "warnings": [],
-                "summary": "❌ Plan vacío o sin estructura — debe incluir al menos un dispositivo.",
+                "summary": "❌ Empty or unstructured plan — it must include at least one device.",
             }, indent=2, ensure_ascii=False)
 
         plan = TopologyPlan.model_validate_json(plan_json)
@@ -409,9 +409,9 @@ def register_tools(mcp: FastMCP) -> None:
 
         output = result.to_dict()
         if result.is_valid:
-            output["summary"] = "✅ Plan válido. Sin errores."
+            output["summary"] = "✅ Valid plan. No errors."
         else:
-            output["summary"] = f"❌ Plan con {len(result.errors)} error(es)."
+            output["summary"] = f"❌ Plan with {len(result.errors)} error(s)."
         return json.dumps(output, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
@@ -420,11 +420,11 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_fix_plan(plan_json: str) -> str:
         """
-        Intenta corregir errores del plan automáticamente.
-        Corrige cables, upgradea routers si faltan puertos, reasigna puertos.
+        Tries to fix the plan's errors automatically.
+        Fixes cables, upgrades routers that lack ports, reassigns ports.
 
-        Parámetros:
-        - plan_json: JSON del plan a corregir
+        Parameters:
+        - plan_json: JSON of the plan to fix
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         fixed_plan, fixes = fix_plan(plan)
@@ -437,32 +437,32 @@ def register_tools(mcp: FastMCP) -> None:
         }, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # EXPLICACIÓN
+    # EXPLANATION
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_explain_plan(plan_json: str) -> str:
         """
-        Explica las decisiones del plan en lenguaje natural.
-        Útil para entender por qué se eligieron ciertos modelos, IPs, etc.
+        Explains the plan's decisions in natural language.
+        Useful to understand why certain models, IPs, etc. were chosen.
 
-        Parámetros:
-        - plan_json: JSON del plan
+        Parameters:
+        - plan_json: plan JSON
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         explanations = explain_plan(plan)
         return "\n".join(f"• {e}" for e in explanations)
 
     # ------------------------------------------------------------------
-    # GENERACIÓN
+    # GENERATION
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_generate_script(plan_json: str, include_configs: bool = True) -> str:
         """
-        Genera el script JavaScript de PTBuilder.
+        Generates the PTBuilder JavaScript script.
 
-        Parámetros:
-        - plan_json: JSON del plan
-        - include_configs: si True, incluye configs CLI como comentarios
+        Parameters:
+        - plan_json: plan JSON
+        - include_configs: if True, includes the CLI configs as comments
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         if include_configs:
@@ -472,10 +472,10 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_generate_configs(plan_json: str) -> str:
         """
-        Genera las configuraciones CLI (IOS) para todos los routers y switches.
+        Generates the CLI (IOS) configurations for every router and switch.
 
-        Parámetros:
-        - plan_json: JSON del plan
+        Parameters:
+        - plan_json: plan JSON
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         configs = generate_all_configs(plan)
@@ -488,7 +488,7 @@ def register_tools(mcp: FastMCP) -> None:
 
         pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
         if pcs:
-            result_parts.append("=== Configuración de hosts ===")
+            result_parts.append("=== Host configuration ===")
             use_dhcp = bool(plan.dhcp_pools)
             for pc in pcs:
                 result_parts.append(generate_pc_config(pc, use_dhcp=use_dhcp))
@@ -523,37 +523,37 @@ def register_tools(mcp: FastMCP) -> None:
         wireless_laptops: bool = False,
     ) -> str:
         """
-        Pipeline completo: planifica, valida, genera, explica, estima y despliega.
+        Full pipeline: plans, validates, generates, explains, estimates and deploys.
 
-        Con deploy=True (default) el despliegue depende de si hay canal a PT:
-        - Si el bridge está conectado, la topología se crea DE VERDAD en Packet
-          Tracer (misma ruta que pt_live_deploy, con verificación y reconcile),
-          y además se exportan los archivos del proyecto a disco.
-        - Si no hay canal, cae al modo manual: copia el script al portapapeles
-          y genera instrucciones paso a paso.
+        With deploy=True (default) the deployment depends on whether there is a channel to PT:
+        - If the bridge is connected, the topology is REALLY created in Packet
+          Tracer (same path as pt_live_deploy, with verification and reconcile),
+          and the project files are also exported to disk.
+        - If there is no channel, it falls back to manual mode: copies the script to
+          the clipboard and generates step-by-step instructions.
 
-        Parámetros:
-        - routers: Número de routers (1-20)
-        - pcs_per_lan: PCs por LAN
-        - laptops_per_lan: Laptops por LAN (Laptop-PT)
-        - switches_per_router: Switches por router
-        - servers: Servidores
-        - access_points: Access Points (AccessPoint-PT), uno por LAN
-        - has_wan: Incluir WAN
-        - dhcp: Configurar DHCP
+        Parameters:
+        - routers: Number of routers (1-20)
+        - pcs_per_lan: PCs per LAN
+        - laptops_per_lan: Laptops per LAN (Laptop-PT)
+        - switches_per_router: Switches per router
+        - servers: Servers
+        - access_points: Access Points (AccessPoint-PT), one per LAN
+        - has_wan: Include WAN
+        - dhcp: Configure DHCP
         - routing: static, ospf, eigrp, rip, none
         - router_model: 1941, 2901, 2911, ISR4321
         - switch_model: 2960-24TT, 3560-24PS
         - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom
-        - deploy: Si True, copia script al portapapeles y exporta archivos
-        - floating_routes: Si True con routing=static, agrega rutas de respaldo con AD=254
-        - ospf_process_id: ID de proceso OSPF (1-65535, default 1)
-        - eigrp_as: Número de AS para EIGRP (1-65535, default 100)
-        - vlans: Solo router_on_a_stick. Nº de VLANs a repartir entre los PCs (0 = default 2).
-        - dual_stack: Si True, agrega IPv6 (routers por CLI, hosts por SLAAC).
-        - ipv6_base: Prefijo IPv6 base para dual-stack (default "2001:db8::/32").
-        - wireless_laptops: Si True, las laptops se conectan por WiFi (NIC inalámbrica + AP).
+        - deploy: If True, copies the script to the clipboard and exports files
+        - floating_routes: If True with routing=static, adds backup routes with AD=254
+        - ospf_process_id: OSPF process ID (1-65535, default 1)
+        - eigrp_as: EIGRP AS number (1-65535, default 100)
+        - vlans: router_on_a_stick only. Number of VLANs to spread across the PCs (0 = default 2).
+        - dual_stack: If True, adds IPv6 (routers via CLI, hosts via SLAAC).
+        - ipv6_base: Base IPv6 prefix for dual-stack (default "2001:db8::/32").
+        - wireless_laptops: If True, laptops connect over WiFi (wireless NIC + AP).
         """
         request = TopologyRequest(
             template=TopologyTemplate(template),
@@ -582,24 +582,24 @@ def register_tools(mcp: FastMCP) -> None:
 
         parts: list[str] = []
 
-        # --- Resumen ---
+        # --- Summary ---
         parts.append("=" * 60)
-        parts.append("RESUMEN DE TOPOLOGÍA")
+        parts.append("TOPOLOGY SUMMARY")
         parts.append("=" * 60)
-        parts.append(f"Dispositivos: {len(plan.devices)}")
-        parts.append(f"Enlaces: {len(plan.links)}")
+        parts.append(f"Devices: {len(plan.devices)}")
+        parts.append(f"Links: {len(plan.links)}")
         parts.append(f"DHCP Pools: {len(plan.dhcp_pools)}")
-        parts.append(f"Rutas estáticas: {len(plan.static_routes)}")
+        parts.append(f"Static routes: {len(plan.static_routes)}")
         parts.append(f"OSPF configs: {len(plan.ospf_configs)}")
         parts.append(f"RIP configs: {len(plan.rip_configs)}")
         parts.append(f"EIGRP configs: {len(plan.eigrp_configs)}")
         parts.append("")
 
-        # --- Validación ---
+        # --- Validation ---
         if validation.is_valid:
-            parts.append("✅ Validación: PASS")
+            parts.append("✅ Validation: PASS")
         else:
-            parts.append("❌ Validación: FAIL")
+            parts.append("❌ Validation: FAIL")
             for err in validation.errors:
                 parts.append(f"  ERROR [{err.code.value}]: {err.message}")
         if validation.warnings:
@@ -607,17 +607,17 @@ def register_tools(mcp: FastMCP) -> None:
                 parts.append(f"  ⚠️ [{warn.code.value}]: {warn.message}")
         parts.append("")
 
-        # --- Explicación ---
+        # --- Explanation ---
         parts.append("=" * 60)
-        parts.append("EXPLICACIÓN")
+        parts.append("EXPLANATION")
         parts.append("=" * 60)
         for e in explanation:
             parts.append(f"• {e}")
         parts.append("")
 
-        # --- Tabla de direccionamiento ---
+        # --- Addressing table ---
         parts.append("=" * 60)
-        parts.append("TABLA DE DIRECCIONAMIENTO")
+        parts.append("ADDRESSING TABLE")
         parts.append("=" * 60)
         for dev in plan.devices:
             if dev.interfaces:
@@ -640,7 +640,7 @@ def register_tools(mcp: FastMCP) -> None:
         # --- Configs CLI ---
         configs = generate_all_configs(plan)
         parts.append("=" * 60)
-        parts.append("CONFIGURACIONES CLI")
+        parts.append("CLI CONFIGURATIONS")
         parts.append("=" * 60)
         for device_name, cli_block in configs.items():
             parts.append(f"\n--- {device_name} ---")
@@ -653,65 +653,65 @@ def register_tools(mcp: FastMCP) -> None:
             for pc in pcs:
                 parts.append(generate_pc_config(pc, use_dhcp=use_dhcp))
 
-        # --- Validaciones sugeridas ---
+        # --- Suggested checks ---
         if plan.validations:
             parts.append("")
             parts.append("=" * 60)
-            parts.append("VERIFICACIONES SUGERIDAS")
+            parts.append("SUGGESTED CHECKS")
             parts.append("=" * 60)
             for v in plan.validations:
-                parts.append(f"  {v.check_type}: {v.from_device} → {v.to_target} (esperado: {v.expected})")
+                parts.append(f"  {v.check_type}: {v.from_device} → {v.to_target} (expected: {v.expected})")
 
         # --- Deploy ---
         if deploy:
             parts.append("")
             parts.append("=" * 60)
-            parts.append("DESPLIEGUE EN PACKET TRACER")
+            parts.append("DEPLOYMENT TO PACKET TRACER")
             parts.append("=" * 60)
             project_name = f"build_{routers}r_{pcs_per_lan}pc"
 
-            # Con un canal vivo hay que desplegar de verdad. Antes esto SIEMPRE
-            # iba al portapapeles, así que el pipeline "completo" terminaba con
-            # el canvas vacío aunque el bridge estuviera conectado: el usuario
-            # veía "✅ Validación: PASS" y en PT no había nada.
+            # With a live channel it has to really deploy. This used to ALWAYS
+            # go to the clipboard, so the "full" pipeline ended with an empty
+            # canvas even with the bridge connected: the user saw
+            # "✅ Validation: PASS" and there was nothing in PT.
             if _pick_channel() != "":
                 parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
                 export_result = ManualExecutor(output_dir="projects").execute(
                     plan, project_name=project_name
                 )
-                parts.append(f"Archivos exportados en: {export_result['project_dir']}")
-                parts.append("  Configs CLI en archivos *_config.txt")
+                parts.append(f"Files exported to: {export_result['project_dir']}")
+                parts.append("  CLI configs in *_config.txt files")
             else:
                 deploy_exec = DeployExecutor(output_dir="projects")
                 deploy_result = deploy_exec.execute(plan, project_name=project_name)
                 if deploy_result["clipboard"]:
-                    parts.append("SCRIPT COPIADO AL PORTAPAPELES")
+                    parts.append("SCRIPT COPIED TO THE CLIPBOARD")
                     parts.append("")
-                    parts.append("Instrucciones:")
-                    parts.append("  1. Abre Packet Tracer")
-                    parts.append("  2. Ve a Extensions > Scripting")
-                    parts.append("  3. Pega (Ctrl+V) y ejecuta")
+                    parts.append("Instructions:")
+                    parts.append("  1. Open Packet Tracer")
+                    parts.append("  2. Go to Extensions > Scripting")
+                    parts.append("  3. Paste (Ctrl+V) and run")
                     parts.append("")
-                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
-                    parts.append("  Configs CLI en archivos *_config.txt")
+                    parts.append(f"Files exported to: {deploy_result['project_dir']}")
+                    parts.append("  CLI configs in *_config.txt files")
                 else:
-                    parts.append(f"Archivos exportados en: {deploy_result['project_dir']}")
-                    parts.append("  Copia topology.js y pegalo en PT > Extensions > Scripting")
+                    parts.append(f"Files exported to: {deploy_result['project_dir']}")
+                    parts.append("  Copy topology.js and paste it in PT > Extensions > Scripting")
                 parts.append("")
                 parts.append(deploy_result["instructions"])
 
         # --- Plan JSON ---
         parts.append("")
         parts.append("=" * 60)
-        parts.append("PLAN JSON (para uso programático)")
+        parts.append("PLAN JSON (for programmatic use)")
         parts.append("=" * 60)
         parts.append(plan.model_dump_json(indent=2))
 
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
-    # EXPORTACIÓN
+    # EXPORT
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_export(
@@ -720,26 +720,26 @@ def register_tools(mcp: FastMCP) -> None:
         output_dir: str = "projects",
     ) -> str:
         """
-        Exporta el plan a archivos: script JS, configs CLI y JSON.
+        Exports the plan to files: JS script, CLI configs and JSON.
 
-        Parámetros:
-        - plan_json: JSON del plan
-        - project_name: Nombre del proyecto
-        - output_dir: Directorio de salida
+        Parameters:
+        - plan_json: plan JSON
+        - project_name: project name
+        - output_dir: output directory
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         executor = ManualExecutor(output_dir=output_dir)
         result = executor.execute(plan, project_name=project_name)
 
         lines = [
-            f"Archivos exportados en {result['project_dir']}:",
+            f"Files exported to {result['project_dir']}:",
         ]
         for key, path in result["files"].items():
             lines.append(f"  - {key}: {path}")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # DEPLOY (clipboard + instrucciones)
+    # DEPLOY (clipboard + instructions)
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_deploy(
@@ -748,17 +748,17 @@ def register_tools(mcp: FastMCP) -> None:
         output_dir: str = "projects",
     ) -> str:
         """
-        Despliega un plan en Packet Tracer: copia el script al portapapeles
-        de Windows, exporta los archivos de configuracion, y genera
-        instrucciones paso a paso.
+        Deploys a plan to Packet Tracer: copies the script to the Windows
+        clipboard, exports the configuration files, and generates
+        step-by-step instructions.
 
-        Uso: despues de pt_full_build o pt_plan_topology, pasa el plan JSON
-        aqui para preparar todo para Packet Tracer.
+        Usage: after pt_full_build or pt_plan_topology, pass the plan JSON
+        here to prepare everything for Packet Tracer.
 
-        Parámetros:
-        - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
-        - project_name: Nombre del proyecto
-        - output_dir: Directorio de salida
+        Parameters:
+        - plan_json: plan JSON (output of pt_plan_topology or pt_full_build)
+        - project_name: project name
+        - output_dir: output directory
         """
         plan = TopologyPlan.model_validate_json(plan_json)
         executor = DeployExecutor(output_dir=output_dir)
@@ -767,16 +767,16 @@ def register_tools(mcp: FastMCP) -> None:
         parts: list[str] = []
 
         if result["clipboard"]:
-            parts.append("SCRIPT COPIADO AL PORTAPAPELES")
-            parts.append("Pega directamente en Packet Tracer > Extensions > Scripting")
+            parts.append("SCRIPT COPIED TO THE CLIPBOARD")
+            parts.append("Paste it directly in Packet Tracer > Extensions > Scripting")
         else:
-            parts.append("ARCHIVOS EXPORTADOS (no se pudo copiar al portapapeles)")
-            parts.append(f"Abre {result['project_dir']}/topology.js y copia su contenido")
+            parts.append("FILES EXPORTED (could not copy to the clipboard)")
+            parts.append(f"Open {result['project_dir']}/topology.js and copy its contents")
 
         parts.append("")
-        parts.append(f"Proyecto: {result['project_dir']}")
-        parts.append(f"Dispositivos: {result['devices_count']}")
-        parts.append(f"Enlaces: {result['links_count']}")
+        parts.append(f"Project: {result['project_dir']}")
+        parts.append(f"Devices: {result['devices_count']}")
+        parts.append(f"Links: {result['links_count']}")
         parts.append("")
 
         for key, path in result["files"].items():
@@ -788,30 +788,30 @@ def register_tools(mcp: FastMCP) -> None:
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
-    # PROYECTOS
+    # PROJECTS
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_list_projects(output_dir: str = "projects") -> str:
         """
-        Lista los proyectos guardados.
+        Lists the saved projects.
 
-        Parámetros:
-        - output_dir: directorio base de proyectos
+        Parameters:
+        - output_dir: base projects directory
         """
         repo = ProjectRepository(base_dir=output_dir)
         projects = repo.list_projects()
         if not projects:
-            return "No hay proyectos guardados."
+            return "There are no saved projects."
         return json.dumps(projects, indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def pt_load_project(project_name: str, output_dir: str = "projects") -> str:
         """
-        Carga un proyecto guardado.
+        Loads a saved project.
 
-        Parámetros:
-        - project_name: nombre del proyecto
-        - output_dir: directorio base de proyectos
+        Parameters:
+        - project_name: project name
+        - output_dir: base projects directory
         """
         repo = ProjectRepository(base_dir=output_dir)
         plan = repo.load_plan(project_name)
@@ -824,22 +824,22 @@ def register_tools(mcp: FastMCP) -> None:
     _BRIDGE_PORT = DEFAULT_PORT
     _BRIDGE_URL = f"http://127.0.0.1:{_BRIDGE_PORT}"
 
-    # Comandos por POST. Acotado para no acercarse al límite de cuerpo del bridge
-    # con topologías grandes, y para que el progreso sea visible en PT.
+    # Commands per POST. Bounded so large topologies stay well below the bridge's
+    # body limit, and so progress is visible in PT.
     _DEPLOY_BATCH = 50
 
-    # report_result_js() vive en live_bridge.py (un solo lugar) y se genera bajo
-    # demanda porque lleva el token adentro. La rama HTTP de _bridge_send_and_wait
-    # lo antepone al comando; por el canal de archivo lo inyecta el Script Engine.
+    # report_result_js() lives in live_bridge.py (one single place) and is generated on
+    # demand because it carries the token. The HTTP branch of _bridge_send_and_wait
+    # prepends it to the command; over the file channel the Script Engine injects it.
 
-    # Singleton bridge interno — se inicia automáticamente dentro del proceso MCP
+    # Internal singleton bridge — started automatically inside the MCP process
     _bridge_instance: PTCommandBridge | None = None
 
     def _signed(url: str) -> str:
-        """Añade el token del bridge a la URL.
+        """Add the bridge token to the URL.
 
-        Se firma acá y no en cada llamada para que no exista un camino sin token
-        que alguien pueda agregar por descuido más adelante.
+        Signed here and not on each call so there is no tokenless path that
+        someone could add by mistake later on.
         """
         sep = "&" if "?" in url else "?"
         return f"{url}{sep}t={urllib.parse.quote(get_bridge_token())}"
@@ -862,23 +862,23 @@ def register_tools(mcp: FastMCP) -> None:
             return None, None
 
     def _js_guard(js: str) -> str:
-        """Envuelve un comando JS en un try/catch a nivel Script Engine (fire-and-forget).
+        """Wrap a JS command in a Script-Engine-level try/catch (fire-and-forget).
 
-        Sin esto, un error NO capturado dentro de runCode dispara un QMessageBox modal
-        en PT que congela el webview y mata el polling del bridge — hay que cerrar el
-        modal a mano para reconectar. El catch es silencioso porque este path no espera
-        respuesta; el path que sí espera (_bridge_send_and_wait) usa su propio catch que
-        reporta el error vía reportResult() para no colgarse hasta el timeout.
+        Without this, an UNCAUGHT error inside runCode raises a modal QMessageBox
+        in PT that freezes the webview and kills the bridge's polling — the modal
+        has to be closed by hand to reconnect. The catch is silent because this path
+        expects no answer; the path that does wait (_bridge_send_and_wait) uses its own
+        catch that reports the error via reportResult() so it doesn't hang until the timeout.
         """
         return "try{" + js + "}catch(__pterr){}"
 
     def _bridge_identity() -> str:
-        """Quién está escuchando en el puerto: 'ours' | 'foreign' | 'none'.
+        """Who is listening on the port: 'ours' | 'foreign' | 'none'.
 
-        Antes bastaba con que algo contestara 200 a /ping para darlo por bueno —
-        y a partir de ahí se le mandaban TODOS los payloads JS a ese proceso,
-        fuera lo que fuera. Ahora /ping devuelve un documento de identidad con la
-        huella del token, así que se puede distinguir el nuestro de un extraño.
+        It used to be enough for something to answer 200 on /ping to accept it —
+        and from then on EVERY JS payload was sent to that process, whatever it
+        was. Now /ping returns an identity document with the token's
+        fingerprint, so ours can be told apart from a stranger.
         """
         status, body = _http_get(f"{_BRIDGE_URL}/ping", timeout=1.0)
         if status != 200 or not body:
@@ -907,39 +907,39 @@ def register_tools(mcp: FastMCP) -> None:
 
     def _ensure_bridge() -> bool:
         """
-        Garantiza que exista un bridge escuchando en :54321.
-        Si ya hay uno (interno o externo), no hace nada.
-        Si no hay ninguno, arranca uno in-process como thread daemon.
-        Retorna True si el bridge está operativo.
+        Ensures a bridge is listening on :54321.
+        If there already is one (internal or external), does nothing.
+        If there is none, starts one in-process as a daemon thread.
+        Returns True if the bridge is operational.
         """
         nonlocal _bridge_instance
         if _bridge_is_up():
-            return True  # ya hay uno activo en el puerto
+            return True  # there is already an active one on the port
         if _bridge_instance is None:
             try:
                 b = PTCommandBridge()
                 b.start()
                 _bridge_instance = b
             except OSError:
-                return False  # puerto bloqueado por proceso externo no-bridge
+                return False  # port blocked by an external non-bridge process
         return _bridge_is_up()
 
-    # El bridge se arranca bajo demanda desde las tools que lo necesitan.
-    # Antes se levantaba acá, al registrar tools: importar el servidor abría un
-    # socket aunque nadie fuera a usar el despliegue en vivo, ampliando sin
-    # motivo la ventana en la que el puerto está escuchando.
+    # The bridge is started on demand from the tools that need it.
+    # It used to start here, when registering tools: importing the server opened a
+    # socket even if nobody was going to use live deploy, needlessly widening the
+    # window during which the port is listening.
 
     # ------------------------------------------------------------------
-    # ENRUTADO DE CANAL: HTTP (ventana abierta) o archivo (ventana cerrada)
+    # CHANNEL ROUTING: HTTP (window open) or file (window closed)
     # ------------------------------------------------------------------
-    # Coexisten. Se elige UN canal por comando, nunca los dos, para que nada se
-    # ejecute por partida doble. HTTP es primario cuando la ventana está abierta
-    # (el flujo probado); el archivo toma el relevo cuando el Script Engine está
-    # vivo pero la ventana cerrada.
+    # They coexist. ONE channel is picked per command, never both, so nothing
+    # runs twice. HTTP is primary while the window is open (the proven flow);
+    # the file channel takes over when the Script Engine is alive but the
+    # window is closed.
     _file_bridge = FileBridge()
 
     def _pick_channel() -> str:
-        """'http' | 'file' | '' según qué ejecutor esté disponible."""
+        """'http' | 'file' | '' depending on which executor is available."""
         if _bridge_is_up() and _bridge_pt_connected():
             return "http"
         if _file_bridge.pt_alive():
@@ -947,7 +947,7 @@ def register_tools(mcp: FastMCP) -> None:
         return ""
 
     def _channel_send(payload: str) -> bool:
-        """Envía fire-and-forget por el canal disponible."""
+        """Send fire-and-forget over the available channel."""
         ch = _pick_channel()
         if ch == "http":
             status, _ = _http_post(f"{_BRIDGE_URL}/queue", payload)
@@ -962,27 +962,27 @@ def register_tools(mcp: FastMCP) -> None:
         command_delay: float = 0.0,
     ) -> str:
         """
-        Envia comandos directamente a Packet Tracer en tiempo real.
+        Sends commands directly to Packet Tracer in real time.
 
-        Requiere PT abierto con la extension MCP Control Center instalada. Con la
-        ventana abierta se usa HTTP; si la cerras, el canal por archivo (Script
-        Engine) toma el relevo. El bridge se inicia solo dentro del servidor MCP.
+        Requires PT open with the MCP Control Center extension installed. With the
+        window open HTTP is used; if you close it, the file channel (Script
+        Engine) takes over. The bridge starts by itself inside the MCP server.
 
-        Parámetros:
-        - plan_json: JSON del plan (output de pt_plan_topology o pt_full_build)
-        - command_delay: retardo entre LOTES en segundos (default 0.0).
-          Los comandos ya no se envían de a uno: van en lotes que PT ejecuta en
-          un solo runCode, donde cada uno lleva su propio try/catch. Medido
-          contra PT 9.0, crear 10 dispositivos + enlaces + configurar IOS de
-          corrido tarda ~100 ms y la config queda aplicada. Subilo solo si tu
-          instalación se atraganta.
+        Parameters:
+        - plan_json: plan JSON (output of pt_plan_topology or pt_full_build)
+        - command_delay: delay between BATCHES in seconds (default 0.0).
+          Commands are no longer sent one by one: they go in batches that PT runs in
+          a single runCode, where each one carries its own try/catch. Measured
+          against PT 9.0, creating 10 devices + links + configuring IOS in one go
+          takes ~100 ms and the config is applied. Raise it only if your
+          installation chokes.
         """
         if command_delay < 0.0:
             command_delay = 0.0
 
-        # Requiere un canal a PT (HTTP con ventana abierta, o archivo con el
-        # Script Engine vivo). _check_bridge arranca el HTTP y aplica los patches
-        # por el canal correcto.
+        # Needs a channel to PT (HTTP with the window open, or file with the
+        # Script Engine alive). _check_bridge starts HTTP and applies the patches
+        # over the right channel.
         err = _check_bridge()
         if err:
             return err
@@ -994,9 +994,9 @@ def register_tools(mcp: FastMCP) -> None:
             if line.strip() and not line.strip().startswith("//")
         ]
 
-        # Enviar por lotes: antes era un POST y un sleep(>=1s) POR COMANDO, así
-        # que una topología de 40 comandos tardaba 40 segundos sin ninguna razón
-        # técnica. Cada comando conserva su propio guard dentro del lote.
+        # Send in batches: it used to be one POST and a sleep(>=1s) PER COMMAND, so
+        # a 40-command topology took 40 seconds for no technical reason.
+        # Each command keeps its own guard inside the batch.
         sent = 0
         for i in range(0, len(commands), _DEPLOY_BATCH):
             chunk = commands[i:i + _DEPLOY_BATCH]
@@ -1047,11 +1047,11 @@ def register_tools(mcp: FastMCP) -> None:
                 link_fail.append(f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b} ({r or 'timeout'})")
                 link_fail_objs.append(lnk)
 
-        # --- Reconcile (fix F16): re-encola los comandos de los items faltantes y re-verifica.
-        # pt_live_deploy a veces dropea silenciosamente algunos dispositivos (típicamente
-        # Laptop-PT). Reusamos los `commands` ya generados, filtrando los que referencian a
-        # los dispositivos/enlaces fallidos (su nombre aparece entre comillas en lwAddDevice,
-        # lwAddLink y configurePcIp/configureIosDevice).
+        # --- Reconcile (fix F16): re-queue the commands of the missing items and re-verify.
+        # pt_live_deploy sometimes silently drops some devices (typically
+        # Laptop-PT). We reuse the already generated `commands`, keeping those that reference
+        # the failed devices/links (their name appears in quotes in lwAddDevice,
+        # lwAddLink and configurePcIp/configureIosDevice).
         reconciled = {"devices": [], "links": []}
         if dev_fail or link_fail_objs:
             names = set(dev_fail)
@@ -1063,7 +1063,7 @@ def register_tools(mcp: FastMCP) -> None:
                 _channel_send(_js_guard(cmd))
                 time.sleep(command_delay)
 
-            # Re-verificar dispositivos fallidos
+            # Re-verify the failed devices
             still_missing_dev = []
             for name in dev_fail:
                 safe = _js_escape(name)
@@ -1080,7 +1080,7 @@ def register_tools(mcp: FastMCP) -> None:
                     still_missing_dev.append(name)
             dev_fail = still_missing_dev
 
-            # Re-verificar links fallidos
+            # Re-verify the failed links
             still_failed_links = []
             for lnk in link_fail_objs:
                 if _verify_link(lnk) == "OK":
@@ -1093,18 +1093,18 @@ def register_tools(mcp: FastMCP) -> None:
             link_fail = still_failed_links
 
         report = [
-            "Topologia desplegada en Packet Tracer!",
-            f"  Comandos enviados: {sent}",
-            f"  Dispositivos: {dev_ok}/{len(plan.devices)} verificados",
+            "Topology deployed to Packet Tracer!",
+            f"  Commands sent: {sent}",
+            f"  Devices: {dev_ok}/{len(plan.devices)} verified",
         ]
         if reconciled["devices"] or reconciled["links"]:
             report.append(
-                f"  ♻ Reconciliados: {len(reconciled['devices'])} dispositivo(s), "
-                f"{len(reconciled['links'])} enlace(s) re-agregados tras drop."
+                f"  ♻ Reconciled: {len(reconciled['devices'])} device(s), "
+                f"{len(reconciled['links'])} link(s) re-added after being dropped."
             )
         if dev_fail:
             report.append(f"  FAILED devices: {', '.join(dev_fail)}")
-        report.append(f"  Enlaces: {link_ok}/{len(plan.links)} verificados")
+        report.append(f"  Links: {link_ok}/{len(plan.links)} verified")
         if link_fail:
             report.append("  FAILED links:")
             for f in link_fail:
@@ -1113,10 +1113,10 @@ def register_tools(mcp: FastMCP) -> None:
         return "\n".join(report)
 
     def _stale_client_message() -> str:
-        """Mensaje para cuando PT llega al bridge pero lo rechazamos por token.
+        """Message for when PT reaches the bridge but we reject it because of the token.
 
-        Sin esto, 'PT no está abierto' y 'PT está pero su extensión es vieja' se
-        veían exactamente igual, y el síntoma era 'dejó de andar' sin causa.
+        Without this, 'PT is not open' and 'PT is open but its extension is old'
+        looked exactly the same, and the symptom was 'it stopped working' with no cause.
         """
         return (
             "Packet Tracer IS reaching the bridge, but every request is being "
@@ -1135,11 +1135,11 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_bridge_status() -> str:
         """
-        Verifica por qué canal está conectado Packet Tracer.
+        Checks which channel Packet Tracer is connected through.
 
-        Hay dos: HTTP (cuando la ventana MCP Control Center está abierta) y
-        archivo (cuando está cerrada pero PT sigue abierto con la extensión). Con
-        cualquiera de los dos, el despliegue funciona.
+        There are two: HTTP (when the MCP Control Center window is open) and
+        file (when it is closed but PT is still open with the extension). With
+        either one, deployment works.
         """
         identity = _bridge_identity()
         if identity == "foreign":
@@ -1156,54 +1156,54 @@ def register_tools(mcp: FastMCP) -> None:
         http_connected = http_up and _bridge_pt_connected()
         file_alive = _file_bridge.pt_alive()
 
-        # Cabeceras reales del webview de PT (incluye el Origin: pt-sm:), útil
-        # para diagnóstico y para ajustar CORS más adelante.
+        # Real headers from PT's webview (includes the Origin: pt-sm:), useful
+        # for diagnosis and for tuning CORS later on.
         hdr = ""
         if _bridge_instance is not None and _bridge_instance._client_headers:
             hdr = f"\nPT client headers: {_bridge_instance._client_headers}"
 
         if http_connected and file_alive:
             return (
-                "CONNECTED por ambos canales:\n"
-                f"  • HTTP (ventana abierta) — http://127.0.0.1:{_BRIDGE_PORT}\n"
-                "  • file-bridge (Script Engine, sigue si cerrás la ventana)" + hdr
+                "CONNECTED over both channels:\n"
+                f"  • HTTP (window open) — http://127.0.0.1:{_BRIDGE_PORT}\n"
+                "  • file-bridge (Script Engine, keeps working if you close the window)" + hdr
             )
         if http_connected:
             return (
-                "CONNECTED por HTTP (ventana MCP Control Center abierta) — "
+                "CONNECTED over HTTP (MCP Control Center window open) — "
                 f"http://127.0.0.1:{_BRIDGE_PORT}.\n"
-                "Nota: el file-bridge aún no reportó heartbeat; si cerrás la "
-                "ventana, esperá unos segundos a que tome el relevo." + hdr
+                "Note: the file-bridge has not reported a heartbeat yet; if you close the "
+                "window, wait a few seconds for it to take over." + hdr
             )
         if file_alive:
             return (
-                "CONNECTED por file-bridge (la ventana está cerrada, pero PT sigue "
-                "abierto con la extensión). El despliegue funciona igual, un poco "
-                "más lento que por HTTP. Abrí MCP Control Center si querés el canal "
-                "HTTP y el panel de logs."
+                "CONNECTED over file-bridge (the window is closed, but PT is still "
+                "open with the extension). Deployment works the same, a bit "
+                "slower than over HTTP. Open MCP Control Center if you want the HTTP "
+                "channel and the log panel."
             )
 
-        # Ningún canal.
+        # No channel.
         if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
             return _stale_client_message()
 
         warn = ""
         if token_was_rotated():
             warn = (
-                "\n\nNOTA: el token guardado faltaba o estaba corrupto y se "
-                "regeneró. Reabrí la extensión para que lo relea."
+                "\n\nNOTE: the saved token was missing or corrupt and was "
+                "regenerated. Reopen the extension so it rereads it."
             )
         if token_is_ephemeral():
             warn += (
-                "\n\nADVERTENCIA: el token no se pudo escribir a disco, así que "
-                "cambia en cada reinicio."
+                "\n\nWARNING: the token could not be written to disk, so "
+                "it changes on every restart."
             )
 
         return (
-            "Packet Tracer NO está conectado por ningún canal.\n"
-            "Abrí PT con la extensión MCP Control Center instalada "
-            "(Extensions > MCP BUILDER). Con la ventana abierta usa HTTP; si la "
-            "cerrás, el file-bridge toma el relevo mientras PT siga abierto." + warn
+            "Packet Tracer is NOT connected over any channel.\n"
+            "Open PT with the MCP Control Center extension installed "
+            "(Extensions > MCP BUILDER). With the window open it uses HTTP; if you "
+            "close it, the file-bridge takes over while PT stays open." + warn
         )
 
     @mcp.tool()
@@ -1214,39 +1214,39 @@ def register_tools(mcp: FastMCP) -> None:
         timeout_s: float = 20.0,
     ) -> str:
         """
-        Ejecuta un ping REAL desde un dispositivo en PT y devuelve el resultado.
+        Runs a REAL ping from a device in PT and returns the result.
 
-        A diferencia de las validaciones que solo se imprimen como "verificá a
-        mano", esto corre `ping` en la consola del dispositivo y parsea la salida
-        real: cuántos paquetes llegaron. Sirve para confirmar que una topología
-        recién desplegada de verdad tiene conectividad.
+        Unlike validations that are only printed as "check it by
+        hand", this runs `ping` on the device's console and parses the real
+        output: how many packets arrived. Use it to confirm that a freshly
+        deployed topology really has connectivity.
 
-        Funciona con hosts (PC/Server/Laptop, formato "Packets: Sent=..") y con
-        dispositivos IOS (router/switch, formato "Success rate is N percent").
+        Works with hosts (PC/Server/Laptop, format "Packets: Sent=..") and with
+        IOS devices (router/switch, format "Success rate is N percent").
 
-        Parametros:
-        - from_device: nombre del dispositivo que origina el ping
-        - to_ip: IP destino
-        - count: reservado; PT usa su default por tipo (PC 4, IOS 5). Un flag
-          "-n" rompería en IOS, así que por ahora no se fuerza.
-        - timeout_s: tiempo máximo de espera (default 20s). Un ping FALLIDO tarda
-          más que uno exitoso: cada paquete espera su propio timeout antes de
-          declararse perdido (~13s medidos para 4 paquetes perdidos).
+        Parameters:
+        - from_device: name of the device the ping starts from
+        - to_ip: destination IP
+        - count: reserved; PT uses its default per type (PC 4, IOS 5). A "-n"
+          flag would break on IOS, so it is not forced for now.
+        - timeout_s: maximum wait (default 20s). A FAILED ping takes longer
+          than a successful one: each packet waits for its own timeout before
+          being declared lost (~13s measured for 4 lost packets).
         """
         err = _check_bridge()
         if err:
             return err
 
-        # El JS vive en `console_ping_arm_js` / `console_ping_poll_js` (nivel de
-        # modulo) para poder testear sin bridge que no vuelva a colarse
-        # `getCommandPrompt`, que solo existe en hosts y rompia todo ping IOS.
+        # The JS lives in `console_ping_arm_js` / `console_ping_poll_js` (module
+        # level) so it can be tested without a bridge that `getCommandPrompt`, which
+        # only exists on hosts and broke every IOS ping, never creeps back in.
         armed = _bridge_send_and_wait(
             console_ping_arm_js(from_device, to_ip), timeout=8.0
         )
         if armed is None:
-            return "Sin respuesta de PT (timeout) al iniciar el ping."
+            return "No answer from PT (timeout) while starting the ping."
         if not armed.startswith("BASE:"):
-            return f"No se pudo iniciar el ping: {armed}"
+            return f"Could not start the ping: {armed}"
         base = int(armed[5:])
 
         poll = console_ping_poll_js(from_device, base)
@@ -1260,30 +1260,30 @@ def register_tools(mcp: FastMCP) -> None:
             if r.startswith("DONE:"):
                 stat = r[5:]
                 verdict = {
-                    "ok": "CONECTIVIDAD OK",
-                    # Perdida parcial: antes se reportaba como OK, asi que
-                    # 1 de 4 paquetes se veia igual que 4 de 4.
-                    "partial": "CONECTIVIDAD PARCIAL (hay perdida de paquetes)",
-                    "none": "SIN CONECTIVIDAD",
+                    "ok": "CONNECTIVITY OK",
+                    # Partial loss: it used to be reported as OK, so
+                    # 1 of 4 packets looked the same as 4 of 4.
+                    "partial": "PARTIAL CONNECTIVITY (packet loss)",
+                    "none": "NO CONNECTIVITY",
                 }[_classify_ping(stat)]
                 return f"{from_device} → {to_ip}: {verdict}\n{stat}"
 
         return (
-            f"{from_device} → {to_ip}: sin resultado tras {timeout_s:.0f}s. "
-            "El ping puede seguir corriendo; reintenta o subi timeout_s."
+            f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
+            "The ping may still be running; retry or raise timeout_s."
         )
 
     @mcp.tool()
     def pt_save_project(filename: str, directory: str = "") -> str:
         """
-        Guarda la topologia activa de Packet Tracer como archivo .pkt.
+        Saves Packet Tracer's active topology as a .pkt file.
 
-        Cierra el ciclo: hasta ahora el MCP construia la topologia pero guardarla
-        requeria Ctrl+S a mano.
+        Closes the loop: until now the MCP built the topology but saving it
+        needed Ctrl+S by hand.
 
-        Parametros:
-        - filename: nombre del archivo (se le agrega .pkt si falta)
-        - directory: carpeta destino. Vacio = carpeta de guardado de PT.
+        Parameters:
+        - filename: file name (.pkt is added if missing)
+        - directory: destination folder. Empty = PT's save folder.
         """
         err = _check_bridge()
         if err:
@@ -1301,26 +1301,26 @@ def register_tools(mcp: FastMCP) -> None:
             f"var full=dir+'/'+{json.dumps(name)};"
             "aw.fileSaveAsNoPrompt(full,false);"
             "var fm=ipc.systemFileManager();"
-            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:no se creo '+full));"
+            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:not created '+full));"
         )
         result = _bridge_send_and_wait(js, timeout=20.0)
         if result is None:
-            return "Sin respuesta de PT (timeout) al guardar."
+            return "No answer from PT (timeout) while saving."
         if result.startswith("OK:"):
             path_str, _, size = result[3:].rpartition("|")
-            return f"Proyecto guardado en {path_str} ({size} bytes)."
-        return f"Error de PT al guardar: {result}"
+            return f"Project saved to {path_str} ({size} bytes)."
+        return f"PT error while saving: {result}"
 
     @mcp.tool()
     def pt_open_project(path: str) -> str:
         """
-        Abre un archivo .pkt en Packet Tracer.
+        Opens a .pkt file in Packet Tracer.
 
-        ATENCION: reemplaza la topologia actualmente abierta. Si tiene cambios sin
-        guardar, guardalos antes con pt_save_project.
+        WARNING: it replaces the topology currently open. If it has unsaved
+        changes, save them first with pt_save_project.
 
-        Parametros:
-        - path: ruta completa al archivo .pkt
+        Parameters:
+        - path: full path to the .pkt file
         """
         err = _check_bridge()
         if err:
@@ -1328,57 +1328,57 @@ def register_tools(mcp: FastMCP) -> None:
 
         target = path.strip().replace("\\", "/")
         if not target.lower().endswith(".pkt"):
-            return "El archivo debe terminar en .pkt"
+            return "The file must end in .pkt"
 
         js = (
             "var fm=ipc.systemFileManager();"
             f"var p={json.dumps(target)};"
-            "if(!fm.fileExists(p)){reportResult('ERR:no existe '+p);}"
+            "if(!fm.fileExists(p)){reportResult('ERR:does not exist '+p);}"
             "else{ipc.appWindow().fileOpen(p);"
             "reportResult('OK:'+ipc.network().getDeviceCount());}"
         )
         result = _bridge_send_and_wait(js, timeout=30.0)
         if result is None:
-            return "Sin respuesta de PT (timeout) al abrir."
+            return "No answer from PT (timeout) while opening."
         if result.startswith("OK:"):
-            return f"Proyecto abierto: {target} ({result[3:]} dispositivos)."
-        return f"Error de PT al abrir: {result}"
+            return f"Project opened: {target} ({result[3:]} devices)."
+        return f"PT error while opening: {result}"
 
     # ------------------------------------------------------------------
-    # Helpers para tools bidireccionales (send command → wait for result)
+    # Helpers for bidirectional tools (send command → wait for result)
     # ------------------------------------------------------------------
 
-    # Mensaje único de timeout, para no repetir cuatro variantes casi iguales.
+    # One single timeout message, instead of four nearly identical variants.
     _TIMEOUT_MSG = (
         "No response from PT (timeout). Check pt_bridge_status — PT must be open "
         "with the MCP Control Center extension."
     )
 
-    # Definido en shared/utils.py: al vivir dentro de esta closure no habia
-    # forma de testearlo, y es justo la clase de funcion que hay que testear.
+    # Defined in shared/utils.py: living inside this closure there was no
+    # way to test it, and it is exactly the kind of function that needs testing.
     _js_escape = js_escape
 
     def _bridge_send_and_wait(js_call: str, timeout: float = 10.0) -> str | None:
-        """Manda JS y espera el resultado, por el canal disponible.
+        """Send JS and wait for the result, over the available channel.
 
-        El js_call se envuelve en try/catch: un error no capturado se reporta como
-        'PT_ERROR: ...' vía reportResult en vez de abrir un modal que mate el bridge.
+        The js_call is wrapped in try/catch: an uncaught error is reported as
+        'PT_ERROR: ...' via reportResult instead of opening a modal that kills the bridge.
 
-        HTTP y archivo difieren en cómo llega reportResult, así que el envoltorio
-        se arma distinto por canal:
-        - HTTP: report_result_js define un reportResult que hace XHR a /result.
-        - archivo: el Script Engine inyecta un reportResult local que captura el
-          valor y lo escribe al res; acá se manda el js "crudo" con su try/catch.
+        HTTP and file differ in how reportResult arrives, so the wrapper is
+        built differently per channel:
+        - HTTP: report_result_js defines a reportResult that does an XHR to /result.
+        - file: the Script Engine injects a local reportResult that captures the
+          value and writes it to the res file; here the "raw" js is sent with its try/catch.
         """
         ch = _pick_channel()
         guarded = (
             "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
         )
         if ch == "http":
-            # El rid correlaciona esta operación con SU resultado. Viaja dentro
-            # del JS inyectado, así que PT lo devuelve solo y la extensión no se
-            # entera. Sin él, un resultado que llegaba tarde se lo quedaba la
-            # operación siguiente.
+            # The rid correlates this operation with ITS result. It travels inside
+            # the injected JS, so PT returns it by itself and the extension never
+            # knows. Without it, a result arriving late was picked up by the
+            # next operation.
             rid = next_rid()
             wrapped = (
                 report_result_js(_BRIDGE_PORT, get_bridge_token(), rid) + ";" + guarded
@@ -1386,9 +1386,9 @@ def register_tools(mcp: FastMCP) -> None:
             status_post, _ = _http_post(f"{_BRIDGE_URL}/queue", wrapped)
             if status_post != 200:
                 return None
-            # El `wait` va al servidor: el que sabe cuánto tarda la operación es
-            # quien la pide. El timeout del socket va por encima para que gane
-            # el del servidor y un 204 signifique "no llegó", no "me colgué".
+            # The `wait` goes to the server: whoever asks for the operation knows how
+            # long it takes. The socket timeout sits above it so the server's wins
+            # and a 204 means "it did not arrive", not "I hung".
             status_get, body = _http_get(
                 f"{_BRIDGE_URL}/result?rid={rid}&wait={timeout}",
                 timeout=timeout + 5.0,
@@ -1399,23 +1399,23 @@ def register_tools(mcp: FastMCP) -> None:
         return None
 
     def _check_bridge() -> str | None:
-        """Verifica que haya un canal a PT (HTTP o archivo). Mensaje de error o None.
+        """Check that there is a channel to PT (HTTP or file). Error message or None.
 
-        Los helpers del script engine (lwAddDevice, etc.) los define la extensión
-        (installMcpHelpers en la V5), así que no hay nada que inyectar por canal.
+        The script engine helpers (lwAddDevice, etc.) are defined by the extension
+        (installMcpHelpers in V5), so there is nothing to inject per channel.
         """
         ch = _pick_channel()
         if ch in ("http", "file"):
             return None
-        # Ningún canal vivo: arrancar el HTTP por si la ventana está por abrirse.
+        # No live channel: start HTTP in case the window is about to open.
         _ensure_bridge()
         if _bridge_instance is not None and _bridge_instance.saw_recent_unauthorized:
             return _stale_client_message()
         return (
-            "Packet Tracer no está conectado por ningún canal.\n"
-            "Abrí la extensión MCP Control Center en PT (Extensions > MCP BUILDER). "
-            "Con la ventana abierta usa HTTP; si la cerrás, el canal por archivo "
-            "toma el relevo mientras PT siga abierto."
+            "Packet Tracer is not connected over any channel.\n"
+            "Open the MCP Control Center extension in PT (Extensions > MCP BUILDER). "
+            "With the window open it uses HTTP; if you close it, the file channel "
+            "takes over while PT stays open."
         )
 
     # ------------------------------------------------------------------
@@ -1648,9 +1648,9 @@ def register_tools(mcp: FastMCP) -> None:
             return err
 
         if not new_name.strip():
-            return "Error: new_name no puede estar vacío."
+            return "Error: new_name cannot be empty."
         if old_name == new_name:
-            return f"Device '{old_name}' ya se llama así — sin cambios."
+            return f"Device '{old_name}' already has that name — no changes."
 
         safe_old = _js_escape(old_name)
         safe_new = _js_escape(new_name)
@@ -1658,10 +1658,10 @@ def register_tools(mcp: FastMCP) -> None:
             "try {"
             f'  var dev = ipc.network().getDevice("{safe_old}");'
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
-            # PT deja poner un nombre repetido sin chistar, y ahí getDevice()
-            # solo puede devolver uno de los dos: el otro queda en el canvas
-            # pero inalcanzable por nombre, y toda tool que lo referencie
-            # trabaja en silencio sobre el equivocado.
+            # PT lets you set a duplicate name without complaint, and then getDevice()
+            # can only return one of the two: the other stays on the canvas
+            # but unreachable by name, and every tool that references it
+            # silently works on the wrong one.
             f'  else if (ipc.network().getDevice("{safe_new}")) {{'
             f"    reportResult('ERROR:DUPLICATE'); }}"
             "  else {"
@@ -1675,10 +1675,10 @@ def register_tools(mcp: FastMCP) -> None:
             return "No response from PT."
         if result == "ERROR:DUPLICATE":
             return (
-                f"Error: ya existe un dispositivo llamado '{new_name}'. "
-                "Dos dispositivos con el mismo nombre hacen que PT resuelva "
-                "siempre al mismo y el otro queda inalcanzable por nombre — "
-                "elegí otro o renombrá primero el que lo ocupa."
+                f"Error: a device named '{new_name}' already exists. "
+                "Two devices with the same name make PT always resolve "
+                "to the same one, and the other becomes unreachable by name — "
+                "pick another name or rename the one that holds it first."
             )
         if result.startswith("ERROR:"):
             return f"Error: {result[6:]}"
@@ -1887,10 +1887,10 @@ def register_tools(mcp: FastMCP) -> None:
             "  if (p2.getLink() != null) {"
             f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
             "  }"
-            # getModel() y NO getClassName(): la clase de PT no distingue un
-            # switch de un router (un 3560 dice "Router" porque es multicapa, y
-            # un 2960 dice "CiscoDevice"), así que ninguna categoría "switch"
-            # llegaba nunca a CABLE_RULES y un router↔switch salía cruzado.
+            # getModel() and NOT getClassName(): PT's class does not tell a
+            # switch from a router (a 3560 says "Router" because it is multilayer, and
+            # a 2960 says "CiscoDevice"), so no "switch" category ever reached
+            # CABLE_RULES and a router↔switch link came out crossed.
             "  reportResult('PRE_OK:' + d1.getModel() + '|' + d2.getModel());"
             "} catch(e) { if (e !== 'stop') reportResult('ERROR:' + e); }"
         )
@@ -1948,33 +1948,33 @@ def register_tools(mcp: FastMCP) -> None:
         ike: int = -1,
     ) -> str:
         """
-        Configura atributos low-level de un puerto en un dispositivo vivo en PT.
+        Sets low-level attributes of a port on a live device in PT.
 
-        Solo aplica los atributos que se pasen explícitamente (parámetros con
-        defaults sentinela). Útil para ajustes que la CLI no expone fácil o que
-        se quieren aplicar sin entrar a `configure terminal`.
+        Only applies the attributes passed explicitly (parameters with
+        sentinel defaults). Useful for adjustments the CLI doesn't expose easily, or
+        that you want to apply without entering `configure terminal`.
 
-        Parámetros:
-        - device: nombre del dispositivo en PT (ej: "R1")
-        - interface: nombre de la interfaz (ej: "GigabitEthernet0/0")
-        - bandwidth: ancho de banda en kbps (>0 para aplicar; 0 = no cambiar)
-        - bandwidth_auto: 1 activa auto-negotiate de BW, 0 lo desactiva, -1 no cambia
-        - full_duplex: 1 full duplex, 0 half duplex, -1 no cambia
-        - duplex_auto: 1 activa auto-negotiate de duplex, 0 desactiva, -1 no cambia
-        - description: texto descriptivo (vacío = no cambia)
-        - mac_address: MAC en formato "AABB.CCDD.EEFF" (vacío = no cambia)
-        - power: 1 enciende puerto, 0 lo apaga, -1 no cambia
-        - zone_member: nombre de la security zone del puerto, para Zone-Based
-          Firewall (vacío = no cambia). Solo en interfaces de router.
-        - proxy_arp: 1 activa Proxy ARP, 0 lo desactiva, -1 no cambia. Apagarlo
-          es hardening habitual: con Proxy ARP el router responde ARPs que no
-          son suyos y filtra información de la topología.
-        - ike: 1 habilita IKE en la interfaz (VPN IPsec), 0 lo deshabilita,
-          -1 no cambia.
+        Parameters:
+        - device: device name in PT (e.g. "R1")
+        - interface: interface name (e.g. "GigabitEthernet0/0")
+        - bandwidth: bandwidth in kbps (>0 to apply; 0 = don't change)
+        - bandwidth_auto: 1 enables BW auto-negotiation, 0 disables it, -1 doesn't change
+        - full_duplex: 1 full duplex, 0 half duplex, -1 doesn't change
+        - duplex_auto: 1 enables duplex auto-negotiation, 0 disables, -1 doesn't change
+        - description: descriptive text (empty = doesn't change)
+        - mac_address: MAC in "AABB.CCDD.EEFF" format (empty = doesn't change)
+        - power: 1 powers the port on, 0 off, -1 doesn't change
+        - zone_member: name of the port's security zone, for Zone-Based
+          Firewall (empty = doesn't change). Router interfaces only.
+        - proxy_arp: 1 enables Proxy ARP, 0 disables it, -1 doesn't change. Turning it off
+          is common hardening: with Proxy ARP the router answers ARPs that are not
+          its own and leaks information about the topology.
+        - ike: 1 enables IKE on the interface (IPsec VPN), 0 disables it,
+          -1 doesn't change.
 
-        Devuelve qué atributos se aplicaron (los que tenían método disponible en
-        la API del puerto). Si algún `setXxx` no existe en el modelo del device,
-        se ignora silenciosamente y se reporta solo lo que sí pegó.
+        Returns which attributes were applied (those with a method available in
+        the port's API). If some `setXxx` does not exist on the device's model,
+        it is silently ignored and only what took effect is reported.
         """
         err = _check_bridge()
         if err:
@@ -2021,9 +2021,9 @@ def register_tools(mcp: FastMCP) -> None:
                 f'if(typeof p.setPower==="function"){{p.setPower({v});applied.push("power={v}");}}'
             )
 
-        # Zone-Based Firewall / Proxy ARP / IKE: solo existen en puertos de
-        # router, así que el typeof no es defensivo de más — en un switch o un
-        # host estos setters no están y llamarlos abriría un modal.
+        # Zone-Based Firewall / Proxy ARP / IKE: they only exist on router
+        # ports, so the typeof is not over-defensive — on a switch or a
+        # host these setters are missing and calling them would open a modal.
         if zone_member:
             parts.append(
                 f'if(typeof p.setZoneMemberName==="function"){{p.setZoneMemberName({json.dumps(zone_member)});applied.push("zone_member");}}'
@@ -2041,25 +2041,25 @@ def register_tools(mcp: FastMCP) -> None:
 
         parts.append('reportResult(JSON.stringify({success:true,applied:applied}));')
 
-        # IIFE para que los `return` tempranos funcionen en el Script Engine de PT.
+        # IIFE so early `return`s work in PT's Script Engine.
         js = '(function(){' + ''.join(parts) + '})()'
 
         result = _bridge_send_and_wait(js, timeout=8.0)
         if result is None:
-            return "Sin respuesta de PT."
+            return "No answer from PT."
         try:
             data = json.loads(result)
             if data.get("success"):
                 applied = data.get("applied", [])
                 if not applied:
                     return (
-                        f"No se aplicó nada en {device}/{interface}: "
-                        "no se pasaron atributos o ningún setXxx está disponible en este modelo."
+                        f"Nothing applied on {device}/{interface}: "
+                        "no attributes were passed or no setXxx is available on this model."
                     )
-                return f"Aplicado en {device}/{interface}: " + ", ".join(applied)
-            return f"Error: {data.get('error', 'desconocido')}"
+                return f"Applied on {device}/{interface}: " + ", ".join(applied)
+            return f"Error: {data.get('error', 'unknown')}"
         except Exception:
-            return f"Respuesta inesperada: {result}"
+            return f"Unexpected reply: {result}"
 
     @mcp.tool()
     def pt_send_raw(js_code: str, wait_result: bool = False) -> str:
@@ -2084,15 +2084,15 @@ def register_tools(mcp: FastMCP) -> None:
         if wait_result:
             result = _bridge_send_and_wait(js_code, timeout=10.0)
             if result is None:
-                return "Sin respuesta (timeout). Asegúrate de que el código llame a reportResult(...)."
+                return "No answer (timeout). Make sure the code calls reportResult(...)."
             return result
         else:
             if _channel_send(_js_guard(js_code)):
-                return "Comando enviado a PT."
-            return "Error al enviar comando al bridge."
+                return "Command sent to PT."
+            return "Error sending the command to the bridge."
 
     # ------------------------------------------------------------------
-    # MODULES — instalar módulos de expansión en dispositivos vivos
+    # MODULES — install expansion modules on live devices
     # ------------------------------------------------------------------
 
     @mcp.tool()
@@ -2101,19 +2101,19 @@ def register_tools(mcp: FastMCP) -> None:
         category: str = "",
     ) -> str:
         """
-        Lista módulos de expansión disponibles del catálogo PT.
+        Lists the expansion modules available in the PT catalog.
 
-        Sin filtros devuelve TODOS los módulos. Útil para descubrir nombres
-        exactos antes de llamar a pt_add_module.
+        Without filters it returns ALL modules. Useful to find the exact
+        names before calling pt_add_module.
 
-        Parámetros:
-        - router_model: si se especifica (ej: "2911", "ISR4321"), filtra a
-          módulos compatibles con ese router. Incluye módulos genéricos
-          (sin lista compatible_with) y los que listan ese modelo.
-        - category: filtra por categoría (ej: "router_hwic", "router_nm",
-          "router_nim", "router_wic"). Vacío = todas.
+        Parameters:
+        - router_model: if given (e.g. "2911", "ISR4321"), filters to
+          modules compatible with that router. Includes generic modules
+          (no compatible_with list) and the ones that list that model.
+        - category: filters by category (e.g. "router_hwic", "router_nm",
+          "router_nim", "router_wic"). Empty = all.
 
-        Devuelve JSON con: name, description, category, ports_added,
+        Returns JSON with: name, description, category, ports_added,
         compatible_with.
         """
         rm = (router_model or "").strip()
@@ -2149,57 +2149,57 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Instala un módulo de expansión en un dispositivo de la topología activa.
+        Installs an expansion module on a device in the active topology.
 
-        El runtime patch ya inyectado en PT apaga el dispositivo, instala el
-        módulo y vuelve a encenderlo (con skipBoot). NO necesitas apagar a mano.
+        The runtime patch already injected in PT powers the device off, installs the
+        module and powers it back on (with skipBoot). You do NOT need to power it off by hand.
 
-        Parámetros:
-        - device_name: nombre exacto del dispositivo en PT (ej: "R1"). Usa
-          pt_query_topology para listar nombres válidos.
-        - slot: identificador del slot como STRING. El formato depende del
-          tipo de slot del dispositivo:
-            * HWIC en 2911/2901 → "0/0".."0/3" · en 1941 SOLO "0/0" y "0/1"
-              (verificado contra PT 9.0.1: el 1941 tiene 2 slots, no 4)
+        Parameters:
+        - device_name: exact device name in PT (e.g. "R1"). Use
+          pt_query_topology to list valid names.
+        - slot: the slot identifier as a STRING. The format depends on the
+          device's slot type:
+            * HWIC on 2911/2901 → "0/0".."0/3" · on 1941 ONLY "0/0" and "0/1"
+              (verified against PT 9.0.1: the 1941 has 2 slots, not 4)
               (chassis-slot/hwic-subslot)
-            * NM en 2811/2620XM/Router-PT → "1"
-            * NIM en ISR4321/4331   → "0/1", "0/2"  (chassis/subslot — NO "0"/"1")
-            * Cloud-PT/Server-PT/PCs → "0", "1", ... según el slot disponible
-          Si pasas un entero también se acepta y se convierte a string.
-        - module_name: nombre exacto del módulo, ej: "HWIC-2T", "NM-4A/S",
-          "NIM-2T", "HWIC-1GE-SFP". Usa pt_list_modules para descubrirlos.
-        - dry_run: si True, valida y devuelve el JS payload sin enviarlo.
+            * NM on 2811/2620XM/Router-PT → "1"
+            * NIM on ISR4321/4331   → "0/1", "0/2"  (chassis/subslot — NOT "0"/"1")
+            * Cloud-PT/Server-PT/PCs → "0", "1", ... depending on the available slot
+          An integer is accepted too and converted to a string.
+        - module_name: exact module name, e.g. "HWIC-2T", "NM-4A/S",
+          "NIM-2T", "HWIC-1GE-SFP". Use pt_list_modules to discover them.
+        - dry_run: if True, validates and returns the JS payload without sending it.
 
-        Ejemplo: agregar 2 puertos seriales a R1 en el HWIC slot 0:
+        Example: add 2 serial ports to R1 in HWIC slot 0:
           pt_add_module(device_name="R1", slot="0/0", module_name="HWIC-2T")
         """
-        # Coercer slot a string (acepta int por compat) y validar no vacío
+        # Coerce slot to a string (accepts int for compatibility) and check it is not empty
         if isinstance(slot, bool) or slot is None:
-            return f"Error: slot inválido (recibido: {slot!r})."
+            return f"Error: invalid slot (received: {slot!r})."
         slot_s = str(slot).strip()
         if not slot_s:
-            return "Error: slot no puede ser vacío."
+            return "Error: slot cannot be empty."
 
-        # Validar nombre de módulo
+        # Validate the module name
         spec = resolve_module(module_name)
         if not spec:
             return (
-                f"Error: módulo '{module_name}' no encontrado en el catálogo.\n"
-                f"Llama a pt_list_modules para ver los nombres válidos."
+                f"Error: module '{module_name}' not found in the catalog.\n"
+                f"Call pt_list_modules to see the valid names."
             )
 
-        # Construir JS payload
+        # Build the JS payload
         safe_name = _js_escape(device_name)
         safe_module = _js_escape(spec.name)
         safe_slot = _js_escape(slot_s)
-        # Los puertos llevan el slot en el nombre, así que hay que calcularlos
-        # para ESTE slot: el catálogo los lista para el primero de la familia.
+        # Ports carry the slot in their name, so they have to be computed
+        # for THIS slot: the catalog lists them for the family's first slot.
         slot_ports = ports_for_slot(spec, slot_s)
-        ports_added = ", ".join(slot_ports) if slot_ports else "(sin puertos)"
+        ports_added = ", ".join(slot_ports) if slot_ports else "(no ports)"
 
         if dry_run:
             return json.dumps({
-                "summary": f"[dry_run] Payload generado para instalar {spec.name} en {device_name} slot {slot_s}.",
+                "summary": f"[dry_run] Payload generated to install {spec.name} on {device_name} slot {slot_s}.",
                 "device": device_name,
                 "slot": slot_s,
                 "module": spec.name,
@@ -2211,64 +2211,64 @@ def register_tools(mcp: FastMCP) -> None:
                 "dry_run": True,
             }, indent=2, ensure_ascii=False)
 
-        # Verificar bridge + PT
+        # Check bridge + PT
         err = _check_bridge()
         if err:
             return err
 
-        # Verificar que el dispositivo existe y validar compatibilidad
+        # Check the device exists and validate compatibility
         devices = _query_pt_devices()
         if devices:
             target = next((d for d in devices if d.get("name") == device_name), None)
             if target is None:
                 names = sorted({d.get("name", "") for d in devices if d.get("name")})
                 return (
-                    f"Error: dispositivo '{device_name}' no existe en PT.\n"
-                    f"Dispositivos actuales: {', '.join(names) or '(ninguno)'}"
+                    f"Error: device '{device_name}' does not exist in PT.\n"
+                    f"Current devices: {', '.join(names) or '(none)'}"
                 )
             if spec.compatible_with:
                 target_model = target.get("model", "") or ""
                 if target_model and target_model not in spec.compatible_with:
                     return (
-                        f"Error: módulo '{spec.name}' no es compatible con modelo '{target_model}'.\n"
-                        f"Compatible con: {', '.join(spec.compatible_with)}"
+                        f"Error: module '{spec.name}' is not compatible with model '{target_model}'.\n"
+                        f"Compatible with: {', '.join(spec.compatible_with)}"
                     )
 
-        # Enviar al bridge — el helper de la extensión maneja el power cycle.
-        # El JS tiene que REPORTAR el resultado: antes lo devolvía con un return
-        # y la tool siempre terminaba en timeout aunque el módulo se instalara.
+        # Send to the bridge — the extension's helper handles the power cycle.
+        # The JS must REPORT the result: it used to return it, and the tool
+        # always ended in a timeout even when the module was installed.
         js = add_module_js(device_name, slot_s, spec.name)
         result = _bridge_send_and_wait(js, timeout=15.0)
 
         if result is None:
             return (
-                f"Sin respuesta de PT (timeout). Posibles causas:\n"
-                f"  - El módulo se está instalando aún (power cycle puede tardar)\n"
-                f"  - El nombre del módulo no existe en allModuleTypes de PT\n"
-                f"  - El slot '{slot_s}' ya está ocupado o no existe\n"
-                f"Verifica manualmente con pt_query_topology."
+                f"No answer from PT (timeout). Possible causes:\n"
+                f"  - The module is still being installed (the power cycle can take a while)\n"
+                f"  - The module name does not exist in PT's allModuleTypes\n"
+                f"  - Slot '{slot_s}' is already taken or does not exist\n"
+                f"Check by hand with pt_query_topology."
             )
 
         try:
             data = json.loads(result)
             success = bool(data.get("success"))
         except Exception:
-            return f"Respuesta inesperada de PT: {result}"
+            return f"Unexpected reply from PT: {result}"
 
         if success:
             return (
-                f"Módulo instalado en {device_name}.\n"
+                f"Module installed on {device_name}.\n"
                 f"  Slot: {slot_s}\n"
-                f"  Módulo: {spec.name} — {spec.description}\n"
-                f"  Puertos agregados: {ports_added}\n"
-                f"  PT apagó/encendió el dispositivo automáticamente."
+                f"  Module: {spec.name} — {spec.description}\n"
+                f"  Ports added: {ports_added}\n"
+                f"  PT powered the device off and on automatically."
             )
         return (
-            f"PT rechazó la instalación de '{spec.name}' en {device_name} slot '{slot_s}'.\n"
-            f"Causas habituales:\n"
-            f"  - Slot ocupado por otro módulo\n"
-            f"  - Módulo incompatible con el modelo del dispositivo\n"
-            f"  - Slot fuera de rango o formato incorrecto (HWIC: '0/0', NM: '1', NIM: '0/1')"
+            f"PT refused to install '{spec.name}' on {device_name} slot '{slot_s}'.\n"
+            f"Usual causes:\n"
+            f"  - Slot taken by another module\n"
+            f"  - Module not compatible with the device's model\n"
+            f"  - Slot out of range or in the wrong format (HWIC: '0/0', NM: '1', NIM: '0/1')"
         )
 
     @mcp.tool()
@@ -2277,77 +2277,77 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Instala N módulos en un solo runCode JS — power-off → addModule×N → power-on.
+        Installs N modules in a single runCode JS — power-off → addModule×N → power-on.
 
-        Útil cuando hay que poner varios módulos seriales (HWIC-2T, NIM-2T, etc.) en
-        varios routers a la vez. PREFERIR esta tool sobre llamadas múltiples a
-        pt_add_module: cada power-cycle individual puede pausar el script engine de PT
-        > 5s y matar el polling del bootstrap del bridge.
+        Useful when several serial modules (HWIC-2T, NIM-2T, etc.) have to go into
+        several routers at once. PREFER this tool over multiple calls to
+        pt_add_module: each individual power cycle can pause PT's script engine
+        for > 5s and kill the bridge bootstrap's polling.
 
-        Parámetros:
-        - modules: lista de dicts con {device, slot, module}. Ejemplo para RTR-4 con
-          4 puertos seriales en un 2911 (que NO acepta NM-4A/S):
+        Parameters:
+        - modules: list of dicts with {device, slot, module}. Example for RTR-4 with
+          4 serial ports on a 2911 (which does NOT accept NM-4A/S):
             [
               {"device": "RTR-4", "slot": "0/0", "module": "HWIC-2T"},
               {"device": "RTR-4", "slot": "0/1", "module": "HWIC-2T"}
             ]
-          → genera Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.
-        - dry_run: si True, valida y devuelve el JS payload sin enviarlo.
+          → gives Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.
+        - dry_run: if True, validates and returns the JS payload without sending it.
 
-        Reglas del slot (string):
-          HWIC en 2911/2901 → "0/0".."0/3" · en 1941 SOLO "0/0" y "0/1"
-          NIM en ISR4321/4331    → "0/1", "0/2"   (chassis/subslot — NO "0"/"1")
-          NM en 2811/Router-PT    → "1"
+        Slot rules (string):
+          HWIC on 2911/2901 → "0/0".."0/3" · on 1941 ONLY "0/0" and "0/1"
+          NIM on ISR4321/4331    → "0/1", "0/2"   (chassis/subslot — NOT "0"/"1")
+          NM on 2811/Router-PT    → "1"
           Cloud-PT / hosts        → "0".."7"
 
-        Retorna JSON con summary, status por módulo y js_payload.
+        Returns JSON with summary, per-module status and js_payload.
         """
         if not isinstance(modules, list) or not modules:
-            return json.dumps({"error": "modules debe ser lista no vacía de {device, slot, module}."})
+            return json.dumps({"error": "modules must be a non-empty list of {device, slot, module}."})
 
-        # Validar cada entry contra el catálogo
+        # Validate each entry against the catalog
         validated = []
         errors = []
         for idx, entry in enumerate(modules):
             if not isinstance(entry, dict):
-                errors.append(f"[{idx}] no es dict")
+                errors.append(f"[{idx}] is not a dict")
                 continue
             dev = entry.get("device")
             slot = entry.get("slot")
             mod = entry.get("module")
             if not dev or not isinstance(dev, str):
-                errors.append(f"[{idx}] device requerido (str)")
+                errors.append(f"[{idx}] device required (str)")
                 continue
             if slot is None or isinstance(slot, bool):
-                errors.append(f"[{idx}] slot requerido")
+                errors.append(f"[{idx}] slot required")
                 continue
             slot_s = str(slot).strip()
             if not slot_s:
-                errors.append(f"[{idx}] slot vacío")
+                errors.append(f"[{idx}] empty slot")
                 continue
             if not mod or not isinstance(mod, str):
-                errors.append(f"[{idx}] module requerido (str)")
+                errors.append(f"[{idx}] module required (str)")
                 continue
             spec = resolve_module(mod)
             if not spec:
-                errors.append(f"[{idx}] módulo '{mod}' no existe (usa pt_list_modules)")
+                errors.append(f"[{idx}] module '{mod}' does not exist (use pt_list_modules)")
                 continue
             validated.append({
                 "device": dev, "slot": slot_s,
                 "module": spec.name,
-                # Por slot, no del catálogo: dos HWIC-2T en "0/0" y "0/1" dan
-                # puertos distintos, y antes ambos se reportaban como 0/0.
+                # Per slot, not from the catalog: two HWIC-2T in "0/0" and "0/1" give
+                # different ports, and both used to be reported as 0/0.
                 "ports_added": ports_for_slot(spec, slot_s),
                 "compatible_with": list(spec.compatible_with) if spec.compatible_with else None,
             })
 
         if errors:
             return json.dumps({
-                "error": "Validación falló",
+                "error": "Validation failed",
                 "details": errors,
             }, indent=2, ensure_ascii=False)
 
-        # Construir un único JS one-liner: power-off de devices únicos → addModule × N → power-on
+        # Build a single one-liner JS: power-off of the unique devices → addModule × N → power-on
         unique_devs = []
         seen = set()
         for v in validated:
@@ -2355,7 +2355,7 @@ def register_tools(mcp: FastMCP) -> None:
                 seen.add(v["device"])
                 unique_devs.append(v["device"])
 
-        # JS literal arrays para devices y módulos
+        # JS literal arrays for devices and modules
         devs_js = "[" + ",".join(f'"{_js_escape(d)}"' for d in unique_devs) + "]"
         mods_js = "[" + ",".join(
             f'["{_js_escape(v["device"])}","{_js_escape(v["slot"])}","{_js_escape(v["module"])}"]'
@@ -2373,9 +2373,9 @@ def register_tools(mcp: FastMCP) -> None:
             "if(hp&&was)d.setPower(false);"
             "saved.push({n:DEVS[i],hp:hp,was:was});"
             "}"
-            # addModule devuelve false cuando el slot no existe en ese modelo
-            # (un 1941 no tiene HWIC 0/2) y PT no lanza: falla en silencio. Sin
-            # mirar el retorno, la tool informaba puertos que nunca se crearon.
+            # addModule returns false when the slot does not exist on that model
+            # (a 1941 has no HWIC 0/2) and PT does not throw: it fails silently. Without
+            # checking the return value, the tool reported ports that were never created.
             "var res=[];"
             "for(var j=0;j<MODS.length;j++){"
             "var m=MODS[j];var dd=ipc.network().getDevice(m[0]);"
@@ -2384,8 +2384,8 @@ def register_tools(mcp: FastMCP) -> None:
             "try{ok=dd.addModule(m[1],allModuleTypes[m[2]],m[2]);}catch(e){ok=false;}"
             "res.push(m[0]+'|'+m[1]+'|'+(ok?'ok':'fail'));"
             "}"
-            # Se reporta ANTES del power-on a propósito: encender es lo que
-            # tarda, y esperarlo era la razón de que esto fuera fire-and-forget.
+            # Reported BEFORE the power-on on purpose: powering on is what takes
+            # time, and waiting for it was the reason this was fire-and-forget.
             "reportResult(res.join(';'));"
             "for(var k=0;k<saved.length;k++){"
             "var s=saved[k];if(!s.hp||!s.was)continue;"
@@ -2405,43 +2405,43 @@ def register_tools(mcp: FastMCP) -> None:
         }
 
         if dry_run:
-            summary["summary"] = f"[dry_run] {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s)."
+            summary["summary"] = f"[dry_run] {len(validated)} module(s) on {len(unique_devs)} device(s)."
             return json.dumps(summary, indent=2, ensure_ascii=False)
 
         err = _check_bridge()
         if err:
             return err
 
-        # Verificar dispositivos existen + validar compatibilidad de módulos
+        # Check the devices exist + validate module compatibility
         pt_devices = _query_pt_devices()
         if pt_devices:
             by_name = {d.get("name"): d for d in pt_devices}
             for v in validated:
                 if v["device"] not in by_name:
-                    return f"Error: dispositivo '{v['device']}' no existe en PT."
+                    return f"Error: device '{v['device']}' does not exist in PT."
                 if v["compatible_with"]:
                     target_model = by_name[v["device"]].get("model", "") or ""
                     if target_model and target_model not in v["compatible_with"]:
                         return (
-                            f"Error: módulo '{v['module']}' incompatible con modelo "
-                            f"'{target_model}' (dispositivo '{v['device']}').\n"
-                            f"Compatible con: {', '.join(v['compatible_with'])}"
+                            f"Error: module '{v['module']}' is not compatible with model "
+                            f"'{target_model}' (device '{v['device']}').\n"
+                            f"Compatible with: {', '.join(v['compatible_with'])}"
                         )
 
-        # Se espera el resultado: el JS reporta antes de encender, así que el
-        # power-on —lo que antes obligaba a fire-and-forget— ya no cuenta.
+        # The result is awaited: the JS reports before powering on, so the
+        # power-on — what used to force fire-and-forget — no longer counts.
         raw = _bridge_send_and_wait(js, timeout=20.0)
         if raw is None:
             summary["sent"] = True
             summary["verified"] = False
             summary["summary"] = (
-                f"Batch enviado ({len(validated)} módulo(s)) pero PT no confirmó a tiempo.\n"
-                "Verificá con pt_query_topology cuáles quedaron instalados."
+                f"Batch sent ({len(validated)} module(s)) but PT did not confirm in time.\n"
+                "Check with pt_query_topology which ones were installed."
             )
             return json.dumps(summary, indent=2, ensure_ascii=False)
 
-        # "R1|0/0|ok;R1|0/2|fail" — un slot inexistente para el modelo devuelve
-        # false sin lanzar, así que sin esto se informaban puertos fantasma.
+        # "R1|0/0|ok;R1|0/2|fail" — a slot that doesn't exist on the model returns
+        # false without throwing, so without this phantom ports were reported.
         status: dict[tuple[str, str], str] = {}
         for chunk in raw.split(";"):
             parts = chunk.split("|")
@@ -2462,31 +2462,31 @@ def register_tools(mcp: FastMCP) -> None:
         if failed:
             summary["failed"] = failed
             summary["summary"] = (
-                f"{summary['installed_count']}/{len(validated)} módulo(s) instalado(s). "
-                f"PT rechazó: {', '.join(failed)}.\n"
-                "Ese slot no existe en ese modelo — revisá pt_list_modules y el "
-                "slot correcto para la familia del router."
+                f"{summary['installed_count']}/{len(validated)} module(s) installed. "
+                f"PT refused: {', '.join(failed)}.\n"
+                "That slot does not exist on that model — check pt_list_modules and the "
+                "correct slot for the router's family."
             )
             return json.dumps(summary, indent=2, ensure_ascii=False)
 
         summary["summary"] = (
-            f"Batch enviado: {len(validated)} módulo(s) en {len(unique_devs)} dispositivo(s).\n"
-            f"PT está apagando, instalando y reencendiendo en un solo paso. "
-            f"Verifica con pt_query_topology o consultando getPorts() en cada router."
+            f"Batch sent: {len(validated)} module(s) on {len(unique_devs)} device(s).\n"
+            f"PT is powering off, installing and powering back on in a single step. "
+            f"Check with pt_query_topology or by querying getPorts() on each router."
         )
         return json.dumps(summary, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # ACL — aplicar y eliminar Access Control Lists vía bridge
+    # ACL — apply and remove Access Control Lists through the bridge
     # ------------------------------------------------------------------
 
-    # JS que lee la topología activa y la devuelve como JSON estructurado.
-    # Reemplaza al antiguo `queryTopology()` que NUNCA se definía/inyectaba (la llamada
-    # siempre devolvía PT_ERROR → lista vacía → las pre-validaciones de compatibilidad de
-    # módulos y de ACL/NAT contra PT quedaban silenciosamente deshabilitadas). JSON.stringify
-    # está disponible en el Script Engine de PT (verificado en vivo). isPortUp()/getLink()
-    # alimentan el health-check y el diff. Cada puerto se guarda con su nombre tal cual
-    # (incluye subinterfaces "Gig0/0.10" si existen).
+    # JS that reads the active topology and returns it as structured JSON.
+    # Replaces the old `queryTopology()` that was NEVER defined/injected (the call
+    # always returned PT_ERROR → empty list → the compatibility pre-validations for
+    # modules and for ACL/NAT against PT were silently disabled). JSON.stringify
+    # is available in PT's Script Engine (verified live). isPortUp()/getLink()
+    # feed the health check and the diff. Each port is stored with its name as is
+    # (including subinterfaces "Gig0/0.10" if any).
     _LIVE_DEVICES_JS = (
         "var net=ipc.network();var n=net.getDeviceCount();var arr=[];"
         "for(var i=0;i<n;i++){"
@@ -2505,11 +2505,11 @@ def register_tools(mcp: FastMCP) -> None:
     )
 
     def _live_devices() -> list[dict]:
-        """Lee la topología activa de PT como lista estructurada de dispositivos.
+        """Read PT's active topology as a structured list of devices.
 
-        Cada elemento: {name, model, ports:[{name, ip, mask, up, linked}]}.
-        Fuente única de verdad para las pre-checks (compat módulos, ACL/NAT),
-        pt_diff y pt_health_check. Devuelve [] si el bridge no responde o PT falla.
+        Each element: {name, model, ports:[{name, ip, mask, up, linked}]}.
+        Single source of truth for the pre-checks (module compat, ACL/NAT),
+        pt_diff and pt_health_check. Returns [] if the bridge doesn't answer or PT fails.
         """
         result = _bridge_send_and_wait(_LIVE_DEVICES_JS, timeout=10.0)
         if not result or result.startswith("PT_ERROR") or result.startswith("ERROR"):
@@ -2521,11 +2521,11 @@ def register_tools(mcp: FastMCP) -> None:
             return []
 
     def _query_pt_devices() -> list[dict]:
-        """Alias compat de _live_devices (nombre usado por las pre-checks de módulos/ACL/NAT)."""
+        """Compat alias of _live_devices (the name used by the module/ACL/NAT pre-checks)."""
         return _live_devices()
 
     def _bridge_send_payload(js_call: str) -> bool:
-        """Envía un JS payload fire-and-forget por el canal disponible (HTTP o archivo)."""
+        """Send a fire-and-forget JS payload over the available channel (HTTP or file)."""
         return _channel_send(_js_guard(js_call))
 
     @mcp.tool()
@@ -2539,40 +2539,40 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Aplica una Access Control List (ACL) a un router en la topología activa de PT.
+        Applies an Access Control List (ACL) to a router in PT's active topology.
 
-        Pipeline: construye plan → valida estática (rangos, tipos, IPs/wildcards,
-        reglas inalcanzables) → verifica router/interfaz contra PT vía bridge →
-        genera CLI IOS → envía vía configureIosDevice.
+        Pipeline: builds the plan → static validation (ranges, types, IPs/wildcards,
+        unreachable rules) → checks router/interface against PT through the bridge →
+        generates IOS CLI → sends it through configureIosDevice.
 
-        Parámetros:
-        - router: nombre del dispositivo en PT (ej: "CORE-R1"). Llama a
-          pt_query_topology si no estás seguro de los nombres exactos.
-        - name_or_number: identificador IOS de la ACL.
-            * 1-99 o 1300-1999 → standard
-            * 100-199 o 2000-2699 → extended
-            * cualquier string alfanumérico → named ACL
-        - acl_type: "standard" o "extended". Standard solo filtra por source.
-          Extended permite source + destination + protocolo + puertos.
-        - entries: lista de reglas. Cada regla es un dict con:
-            * action: "permit" | "deny" (requerido)
+        Parameters:
+        - router: device name in PT (e.g. "CORE-R1"). Call
+          pt_query_topology if you are not sure of the exact names.
+        - name_or_number: the ACL's IOS identifier.
+            * 1-99 or 1300-1999 → standard
+            * 100-199 or 2000-2699 → extended
+            * any alphanumeric string → named ACL
+        - acl_type: "standard" or "extended". Standard only filters by source.
+          Extended allows source + destination + protocol + ports.
+        - entries: list of rules. Each rule is a dict with:
+            * action: "permit" | "deny" (required)
             * protocol: "ip" | "icmp" | "tcp" | "udp" | ... (default "ip")
-            * source: "any" | "host A.B.C.D" | "A.B.C.D wildcard" (requerido)
-            * destination: igual que source (solo extended)
-            * source_port_op / source_port: ej "eq" / 80 (TCP/UDP, opcional)
-            * dest_port_op / dest_port / dest_port_end: igual (opcional)
-            * icmp_type: "echo" | "echo-reply" | ... (solo ICMP)
-            * tcp_flags: ["established"] | ["syn"] (solo TCP, opcional)
-            * log: bool (opcional)
-            * remark: comentario opcional
-        - binding_interface: si se especifica, aplica la ACL a esa interfaz
-          (ej: "GigabitEthernet0/0"). Si vacío, solo se define la ACL sin aplicar.
-        - binding_direction: "in" o "out" (default "in"). Solo aplica si
-          binding_interface está definido.
-        - dry_run: si True, NO envía nada al bridge — solo valida y devuelve
-          el CLI/JS payload para inspección.
+            * source: "any" | "host A.B.C.D" | "A.B.C.D wildcard" (required)
+            * destination: same as source (extended only)
+            * source_port_op / source_port: e.g. "eq" / 80 (TCP/UDP, optional)
+            * dest_port_op / dest_port / dest_port_end: same (optional)
+            * icmp_type: "echo" | "echo-reply" | ... (ICMP only)
+            * tcp_flags: ["established"] | ["syn"] (TCP only, optional)
+            * log: bool (optional)
+            * remark: optional comment
+        - binding_interface: if given, applies the ACL to that interface
+          (e.g. "GigabitEthernet0/0"). If empty, the ACL is only defined, not applied.
+        - binding_direction: "in" or "out" (default "in"). Only applies if
+          binding_interface is set.
+        - dry_run: if True, sends NOTHING to the bridge — only validates and returns
+          the CLI/JS payload for inspection.
 
-        Ejemplo: bloquear ping de 192.168.1.0/24 a 192.168.0.0/24 en CORE-R1:
+        Example: block ping from 192.168.1.0/24 to 192.168.0.0/24 on CORE-R1:
           pt_apply_acl(
               router="CORE-R1",
               name_or_number="101",
@@ -2599,7 +2599,7 @@ def register_tools(mcp: FastMCP) -> None:
                 direction=binding_direction,
             )
 
-        # Solo consulta PT si el bridge está conectado (validación dinámica)
+        # Only queries PT if the bridge is connected (dynamic validation)
         bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
@@ -2612,23 +2612,23 @@ def register_tools(mcp: FastMCP) -> None:
             dry_run=dry_run,
         )
 
-        # Resumen amigable
+        # Friendly summary
         summary_lines = []
         if result["valid"]:
-            summary_lines.append(f"✅ ACL '{plan.name_or_number}' válida ({len(plan.entries)} reglas).")
+            summary_lines.append(f"✅ ACL '{plan.name_or_number}' valid ({len(plan.entries)} rules).")
         else:
-            summary_lines.append(f"❌ ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).")
+            summary_lines.append(f"❌ ACL '{plan.name_or_number}' has {len(result['errors'])} error(s).")
 
         if dry_run:
-            summary_lines.append("Modo dry_run — NO se envió al bridge.")
+            summary_lines.append("dry_run mode — NOT sent to the bridge.")
         elif result["sent"]:
-            summary_lines.append(f"📤 Aplicada en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(f"📤 Applied on '{router}' through the bridge (configureIosDevice).")
             if binding:
                 summary_lines.append(f"   Binding: {binding.interface} {binding.direction}")
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append("⚠ Bridge not connected — payload generated but NOT sent.")
         elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK pero envío falló.")
+            summary_lines.append("⚠ Bridge OK but sending failed.")
 
         return json.dumps({
             "summary": "\n".join(summary_lines),
@@ -2653,18 +2653,18 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Aplica una ACL usando la API de objetos de PT (AclProcess.addAcl/addStatement)
-        en lugar de CLI vía configureIosDevice.
+        Applies an ACL using PT's object API (AclProcess.addAcl/addStatement)
+        instead of CLI through configureIosDevice.
 
-        Mismo input que pt_apply_acl. Es más rápida (sin parsing de CLI) y menos
-        propensa a tirar popups modales que rompan el bridge si una línea sale mal.
+        Same input as pt_apply_acl. It is faster (no CLI parsing) and less
+        prone to raising modal popups that break the bridge if a line goes wrong.
 
-        Limitación: el binding solo funciona en puertos físicos del catálogo (ej.
-        GigabitEthernet0/0). Para sub-interfaces (G0/0/1.20) usar pt_apply_acl (CLI),
-        ya que port.setAclInID solo se aplica al puerto base y no a la sub-interface.
+        Limitation: binding only works on the catalog's physical ports (e.g.
+        GigabitEthernet0/0). For sub-interfaces (G0/0/1.20) use pt_apply_acl (CLI),
+        since port.setAclInID only applies to the base port and not the sub-interface.
 
-        Pipeline: validar plan → generar statements (sin prefijo "access-list NAME ")
-        → ejecutar addAcl + addStatement uno por uno + binding opcional.
+        Pipeline: validate the plan → generate statements (without the "access-list NAME " prefix)
+        → run addAcl + addStatement one by one + optional binding.
         """
         plan = build_acl_plan(router, name_or_number, acl_type, entries)
         binding = None
@@ -2678,19 +2678,19 @@ def register_tools(mcp: FastMCP) -> None:
 
         bridge_ok = _pick_channel() != ""
 
-        # Validación estática + topológica
+        # Static + topological validation
         query_fn = _query_pt_devices if bridge_ok else None
         result = apply_acl_uc(
             plan=plan,
             binding=binding,
             query_pt_topology=query_fn,
-            bridge_send=None,        # no enviamos por CLI — armamos JS propio
-            dry_run=True,            # validar sin enviar
+            bridge_send=None,        # we don't send via CLI — we build our own JS
+            dry_run=True,            # validate without sending
         )
 
         if not result["valid"]:
             return json.dumps({
-                "summary": f"❌ ACL '{plan.name_or_number}' tiene {len(result['errors'])} error(es).",
+                "summary": f"❌ ACL '{plan.name_or_number}' has {len(result['errors'])} error(s).",
                 "valid": False,
                 "errors": result["errors"],
                 "warnings": result["warnings"],
@@ -2699,12 +2699,12 @@ def register_tools(mcp: FastMCP) -> None:
                 "backend": "objects",
             }, indent=2, ensure_ascii=False)
 
-        # Convertir líneas CLI a statements (sin el prefijo "access-list NAME ")
+        # Convert CLI lines to statements (without the "access-list NAME " prefix)
         cli_lines = generate_acl_cli(plan)
         prefix = f"access-list {plan.name_or_number} "
         statements = [ln[len(prefix):] for ln in cli_lines if ln.startswith(prefix)]
 
-        # Construir JS para AclProcess.addAcl + addStatement
+        # Build the JS for AclProcess.addAcl + addStatement
         name_js = json.dumps(str(plan.name_or_number))
         router_js = json.dumps(router)
         stmts_js = "[" + ",".join(json.dumps(s) for s in statements) + "]"
@@ -2757,18 +2757,18 @@ def register_tools(mcp: FastMCP) -> None:
 
         if dry_run:
             payload["summary"] = (
-                f"[dry_run] ACL '{plan.name_or_number}' lista: "
-                f"{len(statements)} statement(s) + binding={bound}. JS NO enviado."
+                f"[dry_run] ACL '{plan.name_or_number}' ready: "
+                f"{len(statements)} statement(s) + binding={bound}. JS NOT sent."
             )
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "⚠ Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = "⚠ Bridge not connected — payload generated but NOT sent."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
         if response is None:
-            payload["summary"] = "Sin respuesta de PT."
+            payload["summary"] = "No answer from PT."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         try:
@@ -2778,13 +2778,13 @@ def register_tools(mcp: FastMCP) -> None:
                 payload["added"] = r.get("added")
                 payload["cmd_count"] = r.get("cmdCount")
                 payload["summary"] = (
-                    f"📤 ACL '{plan.name_or_number}' aplicada en '{router}' vía AclProcess "
+                    f"📤 ACL '{plan.name_or_number}' applied on '{router}' through AclProcess "
                     f"({r.get('added')}/{len(statements)} statements). Binding={bound}."
                 )
             else:
-                payload["summary"] = f"Error PT: {r.get('error', 'desconocido')}"
+                payload["summary"] = f"PT error: {r.get('error', 'unknown')}"
         except Exception:
-            payload["summary"] = f"Respuesta inesperada: {response}"
+            payload["summary"] = f"Unexpected reply: {response}"
 
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
@@ -2797,17 +2797,17 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Elimina una ACL usando la API de objetos (AclProcess.removeAcl + Port.setAclInID="").
+        Removes an ACL using the object API (AclProcess.removeAcl + Port.setAclInID="").
 
-        Alternativa a pt_remove_acl (CLI). Si binding_interface se especifica,
-        primero limpia el AclInID/AclOutID del puerto y luego remueve la ACL.
+        Alternative to pt_remove_acl (CLI). If binding_interface is given, it
+        first clears the port's AclInID/AclOutID and then removes the ACL.
 
-        Parámetros:
-        - router: nombre del dispositivo en PT
-        - name_or_number: identificador de la ACL a eliminar
-        - binding_interface: opcional, interfaz donde estaba el binding
-        - binding_direction: "in" o "out" (solo si binding_interface)
-        - dry_run: si True, devuelve payload sin enviarlo
+        Parameters:
+        - router: device name in PT
+        - name_or_number: identifier of the ACL to remove
+        - binding_interface: optional, interface where the binding was
+        - binding_direction: "in" or "out" (only with binding_interface)
+        - dry_run: if True, returns the payload without sending it
         """
         bridge_ok = _pick_channel() != ""
 
@@ -2851,18 +2851,18 @@ def register_tools(mcp: FastMCP) -> None:
 
         if dry_run:
             payload["summary"] = (
-                f"[dry_run] payload generado para remover ACL '{name_or_number}' "
-                f"en '{router}' (binding={bound_label}). NO enviado."
+                f"[dry_run] payload generated to remove ACL '{name_or_number}' "
+                f"on '{router}' (binding={bound_label}). NOT sent."
             )
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         if not bridge_ok:
-            payload["summary"] = "⚠ Bridge no conectado — payload generado pero NO enviado."
+            payload["summary"] = "⚠ Bridge not connected — payload generated but NOT sent."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
         if response is None:
-            payload["summary"] = "Sin respuesta de PT."
+            payload["summary"] = "No answer from PT."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         try:
@@ -2871,13 +2871,13 @@ def register_tools(mcp: FastMCP) -> None:
                 payload["sent"] = True
                 payload["removed"] = r.get("removed")
                 payload["summary"] = (
-                    f"📤 ACL '{name_or_number}' removida en '{router}' vía AclProcess "
+                    f"📤 ACL '{name_or_number}' removed on '{router}' through AclProcess "
                     f"(removed={r.get('removed')}, binding={bound_label})."
                 )
             else:
-                payload["summary"] = f"Error PT: {r.get('error', 'desconocido')}"
+                payload["summary"] = f"PT error: {r.get('error', 'unknown')}"
         except Exception:
-            payload["summary"] = f"Respuesta inesperada: {response}"
+            payload["summary"] = f"Unexpected reply: {response}"
 
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
@@ -2890,18 +2890,18 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Elimina una ACL aplicada en un router.
+        Removes an ACL applied on a router.
 
-        Si binding_interface se especifica, primero quita el binding de la
-        interfaz (no ip access-group ...) y luego elimina la ACL completa
+        If binding_interface is given, it first removes the binding from the
+        interface (no ip access-group ...) and then deletes the whole ACL
         (no access-list ...).
 
-        Parámetros:
-        - router: nombre del dispositivo en PT
-        - name_or_number: identificador de la ACL a eliminar
-        - binding_interface: opcional, interfaz donde estaba aplicada
-        - binding_direction: "in" o "out" (solo si binding_interface)
-        - dry_run: si True, devuelve payload sin enviarlo
+        Parameters:
+        - router: device name in PT
+        - name_or_number: identifier of the ACL to remove
+        - binding_interface: optional, interface where it was applied
+        - binding_direction: "in" or "out" (only with binding_interface)
+        - dry_run: if True, returns the payload without sending it
         """
         bridge_ok = _pick_channel() != ""
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
@@ -2917,15 +2917,15 @@ def register_tools(mcp: FastMCP) -> None:
 
         summary = []
         if not result["valid"]:
-            summary.append("❌ Rechazado: " + "; ".join(e["message"] for e in result["errors"]))
+            summary.append("❌ Rejected: " + "; ".join(e["message"] for e in result["errors"]))
         elif dry_run:
-            summary.append(f"Modo dry_run — payload generado para eliminar ACL '{name_or_number}' en '{router}'.")
+            summary.append(f"dry_run mode — payload generated to remove ACL '{name_or_number}' on '{router}'.")
         elif result["sent"]:
-            summary.append(f"📤 ACL '{name_or_number}' eliminada en '{router}' vía bridge.")
+            summary.append(f"📤 ACL '{name_or_number}' removed on '{router}' through the bridge.")
         elif not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
         else:
-            summary.append("⚠ Envío falló.")
+            summary.append("⚠ Sending failed.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -2939,7 +2939,7 @@ def register_tools(mcp: FastMCP) -> None:
         }, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # NAT / PAT — aplicar y eliminar traducción de direcciones vía bridge
+    # NAT / PAT — apply and remove address translation through the bridge
     # ------------------------------------------------------------------
 
     @mcp.tool()
@@ -2959,54 +2959,54 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Aplica NAT o PAT a un router en la topología activa de Packet Tracer.
+        Applies NAT or PAT to a router in Packet Tracer's active topology.
 
-        ── CUÁNDO USAR CADA MODO ──────────────────────────────────────────────
+        ── WHEN TO USE EACH MODE ──────────────────────────────────────────────
 
-        mode="static"  — NAT estático (1 a 1, permanente)
-          Cada IP privada se mapea SIEMPRE a la misma IP pública.
-          Usar cuando un servidor interno (web, FTP, correo) debe ser
-          alcanzable desde Internet con una IP pública fija conocida.
-          Requiere: static_mappings = [{"inside_local": "...", "inside_global": "..."}]
+        mode="static"  — static NAT (1 to 1, permanent)
+          Each private IP is ALWAYS mapped to the same public IP.
+          Use it when an internal server (web, FTP, mail) must be
+          reachable from the Internet with a known fixed public IP.
+          Requires: static_mappings = [{"inside_local": "...", "inside_global": "..."}]
 
-        mode="dynamic" — NAT dinámico (pool de IPs públicas)
-          El router asigna IPs del pool bajo demanda. Cuando el host cierra
-          la sesión, la IP pública vuelve al pool para otro host.
-          Usar cuando tienes MÁS IPs públicas que overload justifica pero
-          MENOS que hosts internos simultáneos, y el tracking por IP importa.
-          Requiere: inside_networks + pool_start/end/netmask
+        mode="dynamic" — dynamic NAT (pool of public IPs)
+          The router assigns IPs from the pool on demand. When the host closes
+          the session, the public IP goes back to the pool for another host.
+          Use it when you have MORE public IPs than overload justifies but
+          FEWER than simultaneous internal hosts, and per-IP tracking matters.
+          Requires: inside_networks + pool_start/end/netmask
 
-        mode="pat"     — PAT / NAT Overload (muchos a uno con puertos)
-          Múltiples hosts internos comparten UNA sola IP pública. El router
-          diferencia las conexiones usando números de puerto únicos.
-          Es el modo que usan casi todos los routers domésticos y empresariales.
-          Usar cuando tienes 1 IP pública del ISP y N hosts internos.
-          Sub-modos:
-            use_interface_overload=True  → usa la IP de outside_interface directamente
-            use_interface_overload=False → usa un pool (típicamente de 1 IP)
-          Requiere: inside_networks (+ pool si use_interface_overload=False)
+        mode="pat"     — PAT / NAT Overload (many to one with ports)
+          Many internal hosts share ONE single public IP. The router
+          tells the connections apart using unique port numbers.
+          It is the mode almost every home and business router uses.
+          Use it when you have 1 public IP from the ISP and N internal hosts.
+          Sub-modes:
+            use_interface_overload=True  → uses outside_interface's IP directly
+            use_interface_overload=False → uses a pool (typically of 1 IP)
+          Requires: inside_networks (+ pool if use_interface_overload=False)
 
-        ── PARÁMETROS ────────────────────────────────────────────────────────
+        ── PARAMETERS ────────────────────────────────────────────────────────
 
-        - router: nombre del dispositivo en PT (ej: "R1"). Llama a
-          pt_query_topology si no conoces el nombre exacto.
+        - router: device name in PT (e.g. "R1"). Call
+          pt_query_topology if you don't know the exact name.
         - mode: "static" | "dynamic" | "pat"
-        - inside_interface: interfaz conectada a la LAN privada (ej: "GigabitEthernet0/0")
-        - outside_interface: interfaz conectada a la WAN/Internet (ej: "GigabitEthernet0/1")
-        - static_mappings: solo mode="static". Lista de dicts:
+        - inside_interface: interface connected to the private LAN (e.g. "GigabitEthernet0/0")
+        - outside_interface: interface connected to the WAN/Internet (e.g. "GigabitEthernet0/1")
+        - static_mappings: mode="static" only. List of dicts:
             [{"inside_local": "192.168.1.10", "inside_global": "200.1.1.5"}]
-        - inside_networks: modos dynamic/pat. Redes internas a traducir en
-            formato "network wildcard" (ej: ["192.168.1.0 0.0.0.255"]).
-            Se generan como access-list inline.
-        - acl_number: número o nombre de ACL para identificar inside hosts (default "1")
-        - pool_name: nombre del pool NAT (default "NAT-POOL")
-        - pool_start / pool_end: primera y última IP del pool público
-        - pool_netmask: máscara del pool (formato máscara, ej: "255.255.255.0")
-        - use_interface_overload: solo PAT. Si True, usa la IP de outside_interface
-            en lugar de un pool. Tipico cuando el ISP asigna 1 IP a la WAN.
-        - dry_run: si True, valida y genera el payload sin enviarlo al bridge.
+        - inside_networks: dynamic/pat modes. Internal networks to translate, in
+            "network wildcard" format (e.g. ["192.168.1.0 0.0.0.255"]).
+            They are generated as an inline access-list.
+        - acl_number: ACL number or name identifying the inside hosts (default "1")
+        - pool_name: name of the NAT pool (default "NAT-POOL")
+        - pool_start / pool_end: first and last IP of the public pool
+        - pool_netmask: the pool's mask (mask format, e.g. "255.255.255.0")
+        - use_interface_overload: PAT only. If True, uses outside_interface's IP
+            instead of a pool. Typical when the ISP assigns 1 IP to the WAN.
+        - dry_run: if True, validates and generates the payload without sending it to the bridge.
 
-        Ejemplo PAT con overload de interfaz (caso más común):
+        PAT example with interface overload (the most common case):
           pt_apply_nat(
               router="R1",
               mode="pat",
@@ -3043,20 +3043,20 @@ def register_tools(mcp: FastMCP) -> None:
         )
 
         summary_lines = []
-        mode_label = {"static": "NAT Estático", "dynamic": "NAT Dinámico", "pat": "PAT/Overload"}.get(mode, mode)
+        mode_label = {"static": "Static NAT", "dynamic": "Dynamic NAT", "pat": "PAT/Overload"}.get(mode, mode)
         if result["valid"]:
-            summary_lines.append(f"✅ {mode_label} válido para router '{router}'.")
+            summary_lines.append(f"✅ {mode_label} valid for router '{router}'.")
         else:
-            summary_lines.append(f"❌ {mode_label}: {len(result['errors'])} error(es).")
+            summary_lines.append(f"❌ {mode_label}: {len(result['errors'])} error(s).")
 
         if dry_run:
-            summary_lines.append("Modo dry_run — NO se envió al bridge.")
+            summary_lines.append("dry_run mode — NOT sent to the bridge.")
         elif result["sent"]:
-            summary_lines.append(f"📤 Aplicado en '{router}' vía bridge (configureIosDevice).")
+            summary_lines.append(f"📤 Applied on '{router}' through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary_lines.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary_lines.append("⚠ Bridge not connected — payload generated but NOT sent.")
         elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK pero envío falló.")
+            summary_lines.append("⚠ Bridge OK but sending failed.")
 
         return json.dumps({
             "summary": "\n".join(summary_lines),
@@ -3082,21 +3082,21 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Elimina la configuración NAT/PAT de un router.
+        Removes the NAT/PAT configuration from a router.
 
-        Quita las marcas ip nat inside/outside de las interfaces y elimina
-        las traducciones, pool y access-list asociados.
+        Removes the ip nat inside/outside marks from the interfaces and deletes
+        the associated translations, pool and access-list.
 
-        Parámetros:
-        - router: nombre del dispositivo en PT
+        Parameters:
+        - router: device name in PT
         - mode: "static" | "dynamic" | "pat"
-        - inside_interface: interfaz marcada como ip nat inside
-        - outside_interface: interfaz marcada como ip nat outside
-        - acl_number: número/nombre del access-list usado (default "1")
-        - pool_name: nombre del pool NAT a eliminar (solo dynamic/pat con pool)
-        - static_mappings: solo mode="static". Lista de dicts con inside_local/inside_global
-            para generar los comandos "no ip nat inside source static ..."
-        - dry_run: si True, devuelve payload sin enviarlo
+        - inside_interface: interface marked as ip nat inside
+        - outside_interface: interface marked as ip nat outside
+        - acl_number: number/name of the access-list used (default "1")
+        - pool_name: name of the NAT pool to remove (only dynamic/pat with a pool)
+        - static_mappings: mode="static" only. List of dicts with inside_local/inside_global
+            to generate the "no ip nat inside source static ..." commands
+        - dry_run: if True, returns the payload without sending it
         """
         bridge_ok = _pick_channel() != ""
         send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
@@ -3115,15 +3115,15 @@ def register_tools(mcp: FastMCP) -> None:
 
         summary = []
         if not result["valid"]:
-            summary.append("❌ Rechazado: " + "; ".join(e["message"] for e in result["errors"]))
+            summary.append("❌ Rejected: " + "; ".join(e["message"] for e in result["errors"]))
         elif dry_run:
-            summary.append(f"Modo dry_run — payload generado para eliminar NAT '{mode}' en '{router}'.")
+            summary.append(f"dry_run mode — payload generated to remove NAT '{mode}' on '{router}'.")
         elif result["sent"]:
-            summary.append(f"📤 NAT '{mode}' eliminado en '{router}' vía bridge.")
+            summary.append(f"📤 NAT '{mode}' removed on '{router}' through the bridge.")
         elif not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
         else:
-            summary.append("⚠ Envío falló.")
+            summary.append("⚠ Sending failed.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -3147,25 +3147,25 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Aplica VLANs / trunks / inter-VLAN routing a una topología activa de PT.
+        Applies VLANs / trunks / inter-VLAN routing to an active PT topology.
 
-        Configura el switch (definición de VLANs, puertos access, trunks) y opcionalmente
-        el router (subinterfaces .1q para inter-VLAN routing / router-on-a-stick).
-        Todo vía CLI IOS (configureIosDevice). Usa pt_query_topology para nombres/puertos reales.
+        Configures the switch (VLAN definitions, access ports, trunks) and optionally
+        the router (.1q subinterfaces for inter-VLAN routing / router-on-a-stick).
+        All through IOS CLI (configureIosDevice). Use pt_query_topology for the real names/ports.
 
-        Parámetros:
-        - switch: nombre del switch en PT (ej "SW1").
-        - router: nombre del router (solo si haces inter-VLAN routing con subinterfaces).
-        - vlans: lista de {vlan_id:int, name:str?}. Ej [{"vlan_id":10,"name":"VENTAS"}].
-        - access_ports: lista de {switch, port, vlan_id}. Ej
+        Parameters:
+        - switch: switch name in PT (e.g. "SW1").
+        - router: router name (only if you do inter-VLAN routing with subinterfaces).
+        - vlans: list of {vlan_id:int, name:str?}. E.g. [{"vlan_id":10,"name":"SALES"}].
+        - access_ports: list of {switch, port, vlan_id}. E.g.
             [{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10}].
-        - trunks: lista de {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.
-            En 2960 (dot1q-only) NO se emite `switchport trunk encapsulation`; en 3560 sí.
-        - subinterfaces: lista de {router, parent_port, vlan_id, ip_cidr}. Ej
+        - trunks: list of {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.
+            On a 2960 (dot1q-only) `switchport trunk encapsulation` is NOT emitted; on a 3560 it is.
+        - subinterfaces: list of {router, parent_port, vlan_id, ip_cidr}. E.g.
             [{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"}].
-        - dry_run: si True, solo valida y devuelve el CLI/payload sin enviar.
+        - dry_run: if True, only validates and returns the CLI/payload without sending.
 
-        Ejemplo router-on-a-stick (2 VLANs):
+        Router-on-a-stick example (2 VLANs):
           pt_apply_vlan(
             switch="SW1", router="R1",
             vlans=[{"vlan_id":10,"name":"V10"},{"vlan_id":20,"name":"V20"}],
@@ -3194,15 +3194,15 @@ def register_tools(mcp: FastMCP) -> None:
 
         summary = []
         if result["valid"]:
-            summary.append(f"✅ VLAN config válida ({len(plan.vlans)} VLAN(s)).")
+            summary.append(f"✅ VLAN config valid ({len(plan.vlans)} VLAN(s)).")
         else:
-            summary.append(f"❌ VLAN: {len(result['errors'])} error(es).")
+            summary.append(f"❌ VLAN: {len(result['errors'])} error(s).")
         if dry_run:
-            summary.append("Modo dry_run — NO se envió al bridge.")
+            summary.append("dry_run mode — NOT sent to the bridge.")
         elif result["sent"]:
-            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+            summary.append("📤 Applied through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
 
         return json.dumps({
             "summary": "\n".join(summary),
@@ -3217,14 +3217,14 @@ def register_tools(mcp: FastMCP) -> None:
 
     def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
         summary = []
-        summary.append(f"✅ {label} válida." if result["valid"]
-                       else f"❌ {label}: {len(result['errors'])} error(es).")
+        summary.append(f"✅ {label} valid." if result["valid"]
+                       else f"❌ {label}: {len(result['errors'])} error(s).")
         if dry_run:
-            summary.append("Modo dry_run — NO se envió al bridge.")
+            summary.append("dry_run mode — NOT sent to the bridge.")
         elif result["sent"]:
-            summary.append("📤 Aplicado vía bridge (configureIosDevice).")
+            summary.append("📤 Applied through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge no conectado — payload generado pero NO enviado.")
+            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
         return json.dumps({
             "summary": "\n".join(summary),
             "valid": result["valid"],
@@ -3247,19 +3247,19 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Configura Spanning-Tree en un switch de la topología activa.
+        Configures Spanning-Tree on a switch in the active topology.
 
-        Parámetros:
-        - switch: nombre del switch en PT (ej "SW1").
-        - mode: "rapid-pvst" (default) o "pvst".
-        - root_primary_vlans: lista de VLANs donde este switch es root primary (genera
+        Parameters:
+        - switch: switch name in PT (e.g. "SW1").
+        - mode: "rapid-pvst" (default) or "pvst".
+        - root_primary_vlans: list of VLANs where this switch is root primary (generates
           `spanning-tree vlan N root primary`).
-        - priority: dict {vlan_id: prioridad}. La prioridad debe ser 0-61440 y múltiplo de 4096.
-        - portfast_ports: puertos access con `spanning-tree portfast`.
-        - bpduguard_ports: puertos con `spanning-tree bpduguard enable`.
-        - dry_run: si True, solo valida y devuelve el CLI/payload.
+        - priority: dict {vlan_id: priority}. The priority must be 0-61440 and a multiple of 4096.
+        - portfast_ports: access ports with `spanning-tree portfast`.
+        - bpduguard_ports: ports with `spanning-tree bpduguard enable`.
+        - dry_run: if True, only validates and returns the CLI/payload.
 
-        Ejemplo: SW1 root de VLAN 10 + portfast en Fa0/1:
+        Example: SW1 root for VLAN 10 + portfast on Fa0/1:
           pt_apply_stp(switch="SW1", root_primary_vlans=[10],
                        portfast_ports=["FastEthernet0/1"], dry_run=True)
         """
@@ -3290,18 +3290,18 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Configura port-security en un puerto access de un switch.
+        Configures port-security on a switch's access port.
 
-        Parámetros:
-        - switch: nombre del switch en PT.
-        - port: puerto access (ej "FastEthernet0/1").
-        - max_mac: máximo de MACs permitidas (default 1).
+        Parameters:
+        - switch: switch name in PT.
+        - port: access port (e.g. "FastEthernet0/1").
+        - max_mac: maximum number of allowed MACs (default 1).
         - violation: "shutdown" (default) | "restrict" | "protect".
-        - sticky: si True, aprende MACs sticky (`mac-address sticky`).
-        - static_macs: MACs estáticas en formato IOS aaaa.bbbb.cccc.
-        - dry_run: si True, solo valida y devuelve el CLI/payload.
+        - sticky: if True, learns sticky MACs (`mac-address sticky`).
+        - static_macs: static MACs in IOS aaaa.bbbb.cccc format.
+        - dry_run: if True, only validates and returns the CLI/payload.
 
-        Ejemplo: max 2 MACs sticky en Fa0/1 de SW1:
+        Example: max 2 sticky MACs on SW1's Fa0/1:
           pt_apply_port_security(switch="SW1", port="FastEthernet0/1", max_mac=2, dry_run=True)
         """
         cfg = PortSecurityConfig(
@@ -3329,24 +3329,24 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Endurece (hardening) un router/switch de la topología activa.
+        Hardens a router/switch in the active topology.
 
-        Aplica vía CLI: hostname, banner MOTD, enable secret, usuarios locales, SSH
-        (domain-name + claves RSA + `ip ssh version`), service password-encryption, y
-        restringe las líneas vty a SSH con login local.
+        Applies via CLI: hostname, MOTD banner, enable secret, local users, SSH
+        (domain-name + RSA keys + `ip ssh version`), service password-encryption, and
+        restricts the vty lines to SSH with local login.
 
-        Parámetros:
-        - device: nombre del dispositivo en PT.
-        - hostname: nuevo hostname (opcional).
-        - banner_motd: texto del banner MOTD (sin el carácter '#').
-        - enable_secret: contraseña de enable (se cifra).
-        - users: lista de {username, secret, privilege?}. Necesarios para SSH/login local.
-        - ssh: dict {domain?, modulus?, version?, enable?} para habilitar SSH. Requiere
-          al menos un usuario. modulus<768 genera warning.
-        - service_password_encryption: aplica `service password-encryption` (default True).
-        - dry_run: si True, solo valida y devuelve el CLI/payload.
+        Parameters:
+        - device: device name in PT.
+        - hostname: new hostname (optional).
+        - banner_motd: MOTD banner text (without the '#' character).
+        - enable_secret: enable password (it is encrypted).
+        - users: list of {username, secret, privilege?}. Needed for SSH/local login.
+        - ssh: dict {domain?, modulus?, version?, enable?} to enable SSH. Requires
+          at least one user. modulus<768 raises a warning.
+        - service_password_encryption: applies `service password-encryption` (default True).
+        - dry_run: if True, only validates and returns the CLI/payload.
 
-        Ejemplo: hardening completo de R1 con SSH:
+        Example: full hardening of R1 with SSH:
           pt_apply_hardening(device="R1", hostname="R1", enable_secret="cisco123",
             users=[{"username":"admin","secret":"adminpass","privilege":15}],
             ssh={"domain":"lab.local","modulus":1024}, dry_run=True)
@@ -3382,26 +3382,26 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Ajusta parámetros de una interfaz de router en la topología activa.
+        Tunes the parameters of a router interface in the active topology.
 
-        Parámetros (todos opcionales salvo router/interface):
-        - router: nombre del router en PT.
-        - interface: interfaz a ajustar (ej "Serial0/0/0", "GigabitEthernet0/0").
-        - clock_rate: SOLO en interfaces Serial (extremo DCE). Ej 64000, 2000000.
-          Aplicar clock_rate a una interfaz no-serial es un error de validación.
-        - bandwidth: ancho de banda en kbps (`bandwidth N`).
-        - ospf_cost / ospf_priority: knobs OSPF por interfaz.
-        - ospf_hello_interval / ospf_dead_interval: timers OSPF. Tienen que
-          coincidir con los del vecino o la adyacencia no forma; la convención
-          IOS es dead = 4 x hello, y dead <= hello se rechaza.
-        - ospf_md5_key + ospf_md5_key_id: autenticación OSPF message-digest
-          (recomendada). El id tiene que coincidir con el del vecino.
-        - ospf_auth_key: autenticación OSPF en texto plano. Funciona, pero la
-          clave viaja legible por la red — se emite un warning.
-        - delay: delay de la interfaz (afecta métrica EIGRP), en decenas de microsegundos.
-        - dry_run: si True, solo valida y devuelve el CLI/payload.
+        Parameters (all optional except router/interface):
+        - router: router name in PT.
+        - interface: interface to tune (e.g. "Serial0/0/0", "GigabitEthernet0/0").
+        - clock_rate: ONLY on Serial interfaces (DCE end). E.g. 64000, 2000000.
+          Applying clock_rate to a non-serial interface is a validation error.
+        - bandwidth: bandwidth in kbps (`bandwidth N`).
+        - ospf_cost / ospf_priority: per-interface OSPF knobs.
+        - ospf_hello_interval / ospf_dead_interval: OSPF timers. They must
+          match the neighbour's or the adjacency won't form; the IOS
+          convention is dead = 4 x hello, and dead <= hello is rejected.
+        - ospf_md5_key + ospf_md5_key_id: OSPF message-digest authentication
+          (recommended). The id must match the neighbour's.
+        - ospf_auth_key: plain-text OSPF authentication. It works, but the
+          key travels readable across the network — a warning is emitted.
+        - delay: interface delay (affects the EIGRP metric), in tens of microseconds.
+        - dry_run: if True, only validates and returns the CLI/payload.
 
-        Ejemplo: autenticar OSPF con MD5 entre R1 y su vecino:
+        Example: authenticate OSPF with MD5 between R1 and its neighbour:
           pt_apply_interface_tuning(router="R1", interface="GigabitEthernet0/0",
                                     ospf_md5_key_id=1, ospf_md5_key="s3cr3t")
         """
@@ -3425,25 +3425,25 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_diff(plan_json: str) -> str:
         """
-        Compara un plan (JSON de pt_plan_topology) contra la topología VIVA de PT.
+        Compares a plan (JSON from pt_plan_topology) against PT's LIVE topology.
 
-        Reporta: dispositivos del plan que faltan en PT, dispositivos extra en PT,
-        y discrepancias de IP por interfaz. Útil para reconciliar tras un deploy.
-        Requiere bridge conectado.
+        Reports: plan devices missing from PT, extra devices in PT,
+        and per-interface IP mismatches. Useful to reconcile after a deploy.
+        Requires a connected bridge.
         """
         try:
             plan = TopologyPlan.model_validate_json(plan_json)
         except Exception as exc:
-            return json.dumps({"error": f"plan_json inválido: {exc}"}, ensure_ascii=False)
+            return json.dumps({"error": f"invalid plan_json: {exc}"}, ensure_ascii=False)
         err = _check_bridge()
         if err:
             return err
         live = _live_devices()
         result = topology_diff(plan, live)
         result["summary"] = (
-            "✅ Plan y PT en sincronía."
+            "✅ Plan and PT in sync."
             if result["in_sync"]
-            else f"⚠ {len(result['missing_devices'])} faltante(s), "
+            else f"⚠ {len(result['missing_devices'])} missing, "
                  f"{len(result['extra_devices'])} extra(s), "
                  f"{len(result['ip_mismatches'])} IP mismatch(es)."
         )
@@ -3452,10 +3452,10 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_health_check() -> str:
         """
-        Barrido de salud de la topología VIVA de PT.
+        Health sweep of PT's LIVE topology.
 
-        Reporta: enlaces caídos (cableados pero no up), puertos cableados sin IP
-        (posible DHCP no completado), e IPs duplicadas. Requiere bridge conectado.
+        Reports: down links (cabled but not up), cabled ports without an IP
+        (possibly an unfinished DHCP), and duplicate IPs. Requires a connected bridge.
         """
         err = _check_bridge()
         if err:
@@ -3463,23 +3463,23 @@ def register_tools(mcp: FastMCP) -> None:
         live = _live_devices()
         result = health_check(live)
         result["summary"] = (
-            "✅ Topología saludable."
+            "✅ Healthy topology."
             if result["healthy"]
-            else f"⚠ {len(result['down_links'])} link(s) caído(s), "
-                 f"{len(result['duplicate_ips'])} IP(s) duplicada(s)."
+            else f"⚠ {len(result['down_links'])} link(s) down, "
+                 f"{len(result['duplicate_ips'])} duplicate IP(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # AUDITORÍA DE SEGURIDAD — postura real leída de los dispositivos vivos
+    # SECURITY AUDIT — real posture read from the live devices
     # ------------------------------------------------------------------
 
-    # Clasifica cada credencial por su prefijo y devuelve SOLO la etiqueta del
-    # algoritmo. El hash nunca cruza el bridge: terminaría en el contexto del LLM
-    # y en los logs del cliente MCP, y la etiqueta alcanza para auditar.
-    # Verificado contra PT 9.0.0.0810: `enable secret`/`username X secret` dan
-    # "$1$...", y `username X password` con service-password-encryption da hex
-    # type-7 (reversible con decodificadores públicos).
+    # Classifies each credential by its prefix and returns ONLY the algorithm
+    # label. The hash never crosses the bridge: it would end up in the LLM's context
+    # and in the MCP client's logs, and the label is enough to audit.
+    # Verified against PT 9.0.0.0810: `enable secret`/`username X secret` give
+    # "$1$...", and `username X password` with service-password-encryption gives hex
+    # type-7 (reversible with public decoders).
     _AUDIT_ALGO_JS = (
         "function __algo(s){"
         "  if(!s) return null;"
@@ -3501,15 +3501,15 @@ def register_tools(mcp: FastMCP) -> None:
         "  for (var __i = 0; __i < __n; __i++) {"
         "    try {"
         "      var __d = __net.getDeviceAt(__i);"
-        # Los hosts (PC/Server/Laptop) no exponen configuración IOS: llamar a
-        # estos getters ahí lanza y abre un modal que congela el bridge.
+        # Hosts (PC/Server/Laptop) expose no IOS configuration: calling
+        # these getters there throws and opens a modal that freezes the bridge.
         "      if (!__d || typeof __d.getEnableSecret !== 'function') continue;"
         "      var __users = [];"
         "      try {"
         "        var __uc = __d.getUserPassCount();"
         "        for (var __j = 0; __j < __uc; __j++) {"
-        # getUserEntryAt lanza 'out of bound' en vez de devolver null, así que
-        # cada lectura va con su propio guard.
+        # getUserEntryAt throws 'out of bound' instead of returning null, so
+        # each read carries its own guard.
         "          try {"
         "            var __u = String(__d.getUserEntryAt(__j));"
         "            __users.push({ name: __u, algo: __algo(__d.getUserPass(__u)) });"
@@ -3542,24 +3542,24 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_audit_security(device: str = "") -> str:
         """
-        Audita la postura de seguridad REAL de los dispositivos vivos en PT.
+        Audits the REAL security posture of the live devices in PT.
 
-        No lee el plan: lee la configuración efectiva de cada router/switch del
-        canvas y reporta hallazgos con severidad (high/medium/low). Detecta
-        `enable secret` ausente, credenciales guardadas de forma reversible
-        (type 7), `service password-encryption` apagado, falta de usuarios
-        locales, banner MOTD ausente y config-register en 0x2142 (que descarta
-        la startup-config en el próximo reboot).
+        It does not read the plan: it reads the effective configuration of each router/switch
+        on the canvas and reports findings with a severity (high/medium/low). Detects
+        a missing `enable secret`, credentials stored reversibly
+        (type 7), `service password-encryption` off, no local
+        users, a missing MOTD banner and config-register at 0x2142 (which discards
+        the startup-config on the next reboot).
 
-        Las contraseñas y hashes NUNCA salen del dispositivo: solo se transmite
-        la etiqueta del algoritmo con que están guardadas.
+        Passwords and hashes NEVER leave the device: only the label of the
+        algorithm they are stored with is transmitted.
 
-        Los hosts (PC/Server/Laptop) se omiten: no tienen configuración IOS.
+        Hosts (PC/Server/Laptop) are skipped: they have no IOS configuration.
 
-        Parámetros:
-        - device: si se indica, audita solo ese dispositivo; vacío = todos.
+        Parameters:
+        - device: if given, audits only that device; empty = all of them.
 
-        Ejemplo: auditar toda la topología:
+        Example: audit the whole topology:
           pt_audit_security()
         """
         err = _check_bridge()
@@ -3575,44 +3575,44 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             devices = json.loads(raw).get("devices", [])
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         wanted = device.strip()
         if wanted:
             devices = [d for d in devices if d.get("name") == wanted]
             if not devices:
                 return (
-                    f"'{wanted}' no existe en la topología activa o no tiene "
-                    "configuración IOS (los PCs y servidores no la tienen). "
-                    "Usá pt_query_topology para ver los nombres reales."
+                    f"'{wanted}' does not exist in the active topology or has no "
+                    "IOS configuration (PCs and servers don't have one). "
+                    "Use pt_query_topology to see the real names."
                 )
 
         result = audit_security(devices)
         counts = result["counts"]
         if not devices:
-            result["summary"] = "No hay dispositivos con configuración IOS en el canvas."
+            result["summary"] = "There are no devices with an IOS configuration on the canvas."
         elif result["secure"]:
             result["summary"] = (
-                f"✅ {result['devices_audited']} dispositivo(s) auditado(s), "
-                f"sin hallazgos altos ni medios ({counts['low']} bajo(s))."
+                f"✅ {result['devices_audited']} device(s) audited, "
+                f"no high or medium findings ({counts['low']} low)."
             )
         else:
             result["summary"] = (
-                f"⚠ {counts['high']} hallazgo(s) alto(s), {counts['medium']} medio(s), "
-                f"{counts['low']} bajo(s) en {result['devices_audited']} dispositivo(s)."
+                f"⚠ {counts['high']} high finding(s), {counts['medium']} medium, "
+                f"{counts['low']} low on {result['devices_audited']} device(s)."
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # INSPECCIÓN DE PUERTOS — estado físico y lógico leído del dispositivo
+    # PORT INSPECTION — physical and logical state read from the device
     # ------------------------------------------------------------------
 
     def _inspect_ports_js(device: str) -> str:
-        """Lector por puerto. `device` vacío = todos.
+        """Per-port reader. Empty `device` = all.
 
-        Cada getter va detrás de un typeof: la superficie de Port cambia por
-        modelo (un PC-PT no tiene getNatMode ni getAclInID) y una llamada a un
-        método inexistente lanza y abre un modal que congela el bridge.
+        Each getter sits behind a typeof: Port's surface changes by
+        model (a PC-PT has no getNatMode or getAclInID) and a call to a
+        missing method throws and opens a modal that freezes the bridge.
         """
         want = json.dumps(device.strip())
         return (
@@ -3669,21 +3669,21 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_inspect_ports(device: str = "", only_linked: bool = False) -> str:
         """
-        Estado real de cada puerto de un dispositivo vivo en PT.
+        Real state of each port of a live device in PT.
 
-        Lee del dispositivo, no del plan: line/protocol status, MAC, IP/máscara,
-        duplex, ancho de banda, MTU, delay, CDP, cliente DHCP, modo NAT y ACLs
-        aplicadas. Marca anomalías (cable puesto con el puerto down, línea up con
-        protocolo down).
+        Reads the device, not the plan: line/protocol status, MAC, IP/mask,
+        duplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied
+        ACLs. Flags anomalies (cable connected with the port down, line up with
+        protocol down).
 
-        Es la vista de DETALLE de un dispositivo; para el barrido de toda la
-        topología (links caídos, IPs duplicadas) usá pt_health_check.
+        It is the DETAIL view of one device; for the sweep of the whole
+        topology (down links, duplicate IPs) use pt_health_check.
 
-        Parámetros:
-        - device: nombre del dispositivo; vacío = todos (verboso en topologías grandes).
-        - only_linked: si True, devuelve solo puertos con cable conectado.
+        Parameters:
+        - device: device name; empty = all (verbose on large topologies).
+        - only_linked: if True, returns only ports with a cable connected.
 
-        Ejemplo: ver por qué no levanta un enlace de R1:
+        Example: see why one of R1's links won't come up:
           pt_inspect_ports(device="R1", only_linked=True)
         """
         err = _check_bridge()
@@ -3698,13 +3698,13 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             devices = json.loads(raw).get("devices", [])
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         wanted = device.strip()
         if wanted and not devices:
             return (
-                f"'{wanted}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{wanted}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
 
         for dev in devices:
@@ -3719,30 +3719,30 @@ def register_tools(mcp: FastMCP) -> None:
         result["devices"] = devices
         anomalies = result["anomalies"]
         result["summary"] = (
-            f"✅ {result['ports_up']}/{result['ports_total']} puerto(s) up, "
-            f"{result['ports_linked']} cableado(s), sin anomalías."
+            f"✅ {result['ports_up']}/{result['ports_total']} port(s) up, "
+            f"{result['ports_linked']} cabled, no anomalies."
             if not anomalies
-            else f"⚠ {len(anomalies)} anomalía(s) en {result['ports_total']} puerto(s)."
+            else f"⚠ {len(anomalies)} anomaly(ies) in {result['ports_total']} port(s)."
         )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # VLANs — leídas del VlanManager del switch, no del plan
+    # VLANs — read from the switch's VlanManager, not from the plan
     # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_read_vlans(switch: str) -> str:
         """
-        Lee la base de datos de VLANs REAL de un switch en PT.
+        Reads a switch's REAL VLAN database in PT.
 
-        Devuelve cada VLAN con su número, nombre y si es una de las que trae PT
-        de fábrica (1, 1002-1005). Sirve para confirmar que un pt_apply_vlan
-        quedó aplicado, o para descubrir qué hay en una topología que no armaste.
+        Returns each VLAN with its number, name and whether it is one of PT's
+        factory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan
+        was applied, or to discover what is in a topology you didn't build.
 
-        Parámetros:
-        - switch: nombre del switch en PT.
+        Parameters:
+        - switch: switch name in PT.
 
-        Ejemplo: pt_read_vlans(switch="SW1")
+        Example: pt_read_vlans(switch="SW1")
         """
         err = _check_bridge()
         if err:
@@ -3787,49 +3787,49 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
             return (
-                f"'{switch}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{switch}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
         if not data.get("supported"):
             return (
-                f"'{switch}' no expone VlanManager: no es un switch o el modelo no "
-                "maneja VLANs. Usá pt_get_device_details para ver qué es."
+                f"'{switch}' does not expose VlanManager: it is not a switch or the model does not "
+                "handle VLANs. Use pt_get_device_details to see what it is."
             )
 
         vlans = data.get("vlans", [])
         custom = [v for v in vlans if not v.get("is_default")]
         data["summary"] = (
-            f"{len(vlans)} VLAN(s): {len(custom)} propia(s), "
-            f"{len(vlans) - len(custom)} de fábrica. "
-            f"Máximo del modelo: {data.get('max_vlans')}."
+            f"{len(vlans)} VLAN(s): {len(custom)} custom, "
+            f"{len(vlans) - len(custom)} factory. "
+            f"Model maximum: {data.get('max_vlans')}."
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # ENCENDIDO / APAGADO de dispositivos
+    # POWER ON / OFF of devices
     # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_device_power(device: str, on: bool = True) -> str:
         """
-        Enciende o apaga un dispositivo en PT, con lectura de verificación.
+        Powers a device in PT on or off, with a verification read.
 
-        Útil para simular una caída de equipo y ver cómo reacciona el routing, o
-        para reiniciar un router y que relea su startup-config.
+        Useful to simulate equipment failure and see how routing reacts, or
+        to restart a router so it rereads its startup-config.
 
-        Funciona en todos los modelos, incluidos los PCs. Los hosts no tienen
-        arranque IOS, así que al encenderlos `booting` vuelve null; en un router
-        o switch se saltea el boot para no esperar el arranque completo.
+        Works on every model, PCs included. Hosts have no IOS boot,
+        so when powering them on `booting` comes back null; on a router
+        or switch the boot is skipped so as not to wait for the full start-up.
 
-        Parámetros:
-        - device: nombre del dispositivo en PT.
-        - on: True enciende (default), False apaga.
+        Parameters:
+        - device: device name in PT.
+        - on: True powers on (default), False powers off.
 
-        Ejemplo: simular la caída de R2:
+        Example: simulate R2 going down:
           pt_device_power(device="R2", on=False)
         """
         err = _check_bridge()
@@ -3865,50 +3865,50 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
             return (
-                f"'{device}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{device}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
         if not data.get("supported"):
-            # No se observó ningún modelo sin setPower/getPower en PT 9.0.0.0810
-            # (ni siquiera los PCs), pero la superficie varía por build y un
-            # método ausente lanza y abre un modal que congela el bridge.
-            return f"'{device}' no expone control de energía en esta build de PT."
+            # No model without setPower/getPower was seen in PT 9.0.0.0810
+            # (not even PCs), but the surface varies by build and a
+            # missing method throws and opens a modal that freezes the bridge.
+            return f"'{device}' does not expose power control in this PT build."
 
-        verb = "encendido" if on else "apagado"
+        verb = "powered on" if on else "powered off"
         if data["after"] == on:
             data["summary"] = (
                 f"✅ '{device}' {verb}."
                 if data["before"] != on
-                else f"'{device}' ya estaba {verb}; sin cambios."
+                else f"'{device}' was already {verb}; no changes."
             )
         else:
             data["summary"] = (
-                f"⚠ Se pidió {verb} pero PT reporta power={data['after']}. "
-                "El modelo puede no soportar el cambio."
+                f"⚠ Asked for {verb} but PT reports power={data['after']}. "
+                "The model may not support the change."
             )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # SIMULACIÓN — modo, paso a paso y lectura del event list
+    # SIMULATION — mode, step by step and reading the event list
     # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_simulation_mode(on: bool = True) -> str:
         """
-        Cambia PT entre modo Realtime y modo Simulación.
+        Switches PT between Realtime and Simulation mode.
 
-        En modo Simulación los paquetes NO avanzan solos: quedan encolados en el
-        event list y hay que moverlos con pt_simulation_step. Eso es lo que
-        permite leer el recorrido paquete por paquete con pt_read_packet_trace.
+        In Simulation mode packets do NOT move on their own: they stay queued in the
+        event list and have to be moved with pt_simulation_step. That is what
+        allows reading the path packet by packet with pt_read_packet_trace.
 
-        Parámetros:
-        - on: True entra a Simulación (default), False vuelve a Realtime.
+        Parameters:
+        - on: True enters Simulation (default), False goes back to Realtime.
 
-        Ejemplo: pt_simulation_mode(on=True)
+        Example: pt_simulation_mode(on=True)
         """
         err = _check_bridge()
         if err:
@@ -3934,30 +3934,30 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
-        mode = "Simulación" if data["after"] else "Realtime"
+        mode = "Simulation" if data["after"] else "Realtime"
         data["summary"] = (
-            f"Modo {mode}. {data['frames']} frame(s) en el event list."
+            f"{mode} mode. {data['frames']} frame(s) in the event list."
             if data["before"] != data["after"]
-            else f"Ya estaba en modo {mode}; sin cambios."
+            else f"Already in {mode} mode; no changes."
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def pt_simulation_step(action: str = "forward", times: int = 1) -> str:
         """
-        Avanza, retrocede o reinicia la simulación paso a paso.
+        Steps the simulation forward, back, or resets it.
 
-        Requiere estar en modo Simulación (pt_simulation_mode(on=True)). Cada
-        paso mueve los paquetes un evento; después de avanzar, leé el resultado
-        con pt_read_packet_trace.
+        Requires Simulation mode (pt_simulation_mode(on=True)). Each
+        step moves the packets one event; after stepping, read the result
+        with pt_read_packet_trace.
 
-        Parámetros:
+        Parameters:
         - action: "forward" (default) | "back" | "reset".
-        - times: cuántos pasos dar (1-100, ignorado en "reset").
+        - times: how many steps to take (1-100, ignored for "reset").
 
-        Ejemplo: avanzar 5 eventos:
+        Example: step 5 events forward:
           pt_simulation_step(action="forward", times=5)
         """
         err = _check_bridge()
@@ -3967,7 +3967,7 @@ def register_tools(mcp: FastMCP) -> None:
         act = action.strip().lower()
         if act not in ("forward", "back", "reset"):
             return json.dumps(
-                {"error": f"action inválida: '{action}'. Usá forward, back o reset."},
+                {"error": f"Invalid action: '{action}'. Use forward, back or reset."},
                 ensure_ascii=False,
             )
         steps = max(1, min(int(times), 100))
@@ -4000,18 +4000,18 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("simulation_mode"):
             return (
-                "PT está en modo Realtime, así que no hay nada que avanzar. "
-                "Llamá pt_simulation_mode(on=True) primero."
+                "PT is in Realtime mode, so there is nothing to step. "
+                "Call pt_simulation_mode(on=True) first."
             )
         data["action"] = act
         data["steps"] = 1 if act == "reset" else steps
         data["summary"] = (
-            f"{act} x{data['steps']} — {data['frames_after']} frame(s) en el event list "
-            f"(antes {data['frames_before']})."
+            f"{act} x{data['steps']} — {data['frames_after']} frame(s) in the event list "
+            f"(before {data['frames_before']})."
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
@@ -4022,23 +4022,23 @@ def register_tools(mcp: FastMCP) -> None:
         include_decisions: bool = True,
     ) -> str:
         """
-        Lee el event list de la simulación: qué hizo cada paquete y POR QUÉ.
+        Reads the simulation's event list: what each packet did and WHY.
 
-        Además del recorrido (dispositivo, puerto de entrada/salida, origen,
-        destino, tipo de tráfico y desenlace) devuelve el log de decisiones que
-        PT genera por capa OSI — el mismo texto del panel "PDU Details" de su
-        GUI. Ahí es donde se ve la causa real de un ping que no anda, por
-        ejemplo: "The next-hop IP address is not in the ARP table."
+        Besides the path (device, ingress/egress port, source,
+        destination, traffic type and outcome) it returns the decision log that
+        PT generates per OSI layer — the same text as the "PDU Details" panel of its
+        GUI. That is where the real cause of a failing ping shows up, for
+        example: "The next-hop IP address is not in the ARP table."
 
-        Requiere modo Simulación con tráfico generado (pt_simulation_mode(on=True)
-        y después un ping, o pt_simulation_step para que avancen los eventos).
+        Requires Simulation mode with generated traffic (pt_simulation_mode(on=True)
+        and then a ping, or pt_simulation_step so the events move on).
 
-        Parámetros:
-        - limit: máximo de frames a devolver (1-200, default 20).
-        - device: si se indica, solo los frames que pasaron por ese dispositivo.
-        - include_decisions: si False, omite el log por capa (respuesta más corta).
+        Parameters:
+        - limit: maximum frames to return (1-200, default 20).
+        - device: if given, only the frames that went through that device.
+        - include_decisions: if False, omits the per-layer log (shorter reply).
 
-        Ejemplo: ver por qué se cae un ping:
+        Example: see why a ping is dropped:
           pt_read_packet_trace(limit=10)
         """
         err = _check_bridge()
@@ -4064,8 +4064,8 @@ def register_tools(mcp: FastMCP) -> None:
             "      var __prev = __f.getPreviousDevice();"
             "      var __ip = __f.getInPort();"
             "      var __op = null;"
-            # getOutPort(0) lanza cuando getOutPortCount() es 0 (frame en buffer,
-            # todavía sin puerto de salida elegido).
+            # getOutPort(0) throws when getOutPortCount() is 0 (frame in a buffer,
+            # no egress port chosen yet).
             "      try {"
             "        if (__f.getOutPortCount() > 0) {"
             "          var __o = __f.getOutPort(0); __op = __o ? __o.getName() : null;"
@@ -4073,12 +4073,12 @@ def register_tools(mcp: FastMCP) -> None:
             "      } catch (__oe) {}"
             "      var __dl = [];"
             "      if (__wd) {"
-            # No hay getDecisionCount(); el conteo de nodos del flowchart coincide
-            # con el de decisiones (verificado: 6/6 y 3/3 en un ping real).
+            # There is no getDecisionCount(); the flowchart's node count matches
+            # the number of decisions (verified: 6/6 and 3/3 on a real ping).
             "        var __dc = __f.getFlowChartNodeCount();"
             "        for (var __j = 0; __j < __dc; __j++) {"
             "          try {"
-            # getFrameDecsionAt: el typo es de PT, no nuestro.
+            # getFrameDecsionAt: the typo is PT's, not ours.
             "            var __d = __f.getFrameDecsionAt(__j);"
             "            if (!__d) continue;"
             "            __dl.push({ layer: __d.osiLayer, inbound: !!__d.osiIn,"
@@ -4118,7 +4118,7 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         frames = data.get("frames", [])
         for frame in frames:
@@ -4131,27 +4131,27 @@ def register_tools(mcp: FastMCP) -> None:
 
         if not data.get("simulation_mode"):
             result["summary"] = (
-                "PT está en modo Realtime: el event list no retiene paquetes. "
-                "Llamá pt_simulation_mode(on=True) y generá tráfico."
+                "PT is in Realtime mode: the event list does not keep packets. "
+                "Call pt_simulation_mode(on=True) and generate traffic."
             )
         elif not frames:
             result["summary"] = (
-                "Modo Simulación activo pero sin frames. Generá tráfico "
-                "(por ejemplo pt_verify_connectivity) y volvé a leer."
+                "Simulation mode is on but there are no frames. Generate traffic "
+                "(for example pt_verify_connectivity) and read again."
             )
         elif result["clean"]:
             result["summary"] = (
-                f"{result['frames']} frame(s) leídos, ninguno descartado."
+                f"{result['frames']} frame(s) read, none dropped."
             )
         else:
             reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
             result["summary"] = (
-                f"⚠ {len(result['failures'])} frame(s) no llegaron a destino. {reasons}"
+                f"⚠ {len(result['failures'])} frame(s) did not reach their destination. {reasons}"
             )
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # CANVAS — captura y anotaciones
+    # CANVAS — capture and annotations
     # ------------------------------------------------------------------
 
     @mcp.tool()
@@ -4161,21 +4161,21 @@ def register_tools(mcp: FastMCP) -> None:
         output_dir: str = "projects",
     ) -> str:
         """
-        Captura el canvas lógico de PT y lo guarda como imagen.
+        Captures PT's logical canvas and saves it as an image.
 
-        Devuelve la RUTA del archivo, no la imagen: una captura pesa decenas de
-        miles de bytes y volcarla en la respuesta llenaría el contexto sin que
-        nadie pueda verla.
+        Returns the file's PATH, not the image: a capture weighs tens of
+        thousands of bytes and dumping it in the reply would fill the context without
+        anyone being able to see it.
 
-        PNG comprime mucho mejor un diagrama que JPG (medido: 33 KB contra
-        105 KB del mismo canvas), así que es el default.
+        PNG compresses a diagram much better than JPG (measured: 33 KB versus
+        105 KB for the same canvas), so it is the default.
 
-        Parámetros:
-        - filename: nombre del archivo, sin extensión. Se sanitiza.
+        Parameters:
+        - filename: file name, without extension. It is sanitised.
         - fmt: PNG (default) | JPG | JPEG | BMP.
-        - output_dir: carpeta destino, relativa a la raíz del proyecto.
+        - output_dir: destination folder, relative to the project root.
 
-        Ejemplo: pt_screenshot(filename="lab-ospf")
+        Example: pt_screenshot(filename="lab-ospf")
         """
         err = _check_bridge()
         if err:
@@ -4192,12 +4192,12 @@ def register_tools(mcp: FastMCP) -> None:
             f"  reportResult(String(__lw.getWorkspaceImage({json.dumps(image_fmt)})));"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
-        # Generoso a propósito: la imagen viaja como texto y son cientos de KB.
+        # Generous on purpose: the image travels as text and is hundreds of KB.
         raw = _bridge_send_and_wait(js, timeout=45.0)
         if raw is None:
             return (
-                "Sin respuesta de PT al capturar. En canvases muy grandes la "
-                "imagen puede superar el límite del bridge; probá con fmt='PNG'."
+                "No answer from PT while capturing. On very large canvases the "
+                "image can exceed the bridge's limit; try fmt='PNG'."
             )
         if raw.startswith("ERROR:"):
             return f"PT error: {raw}"
@@ -4205,7 +4205,7 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             blob = decode_pt_image(raw, image_fmt)
         except CanvasImageError as exc:
-            return f"No se pudo decodificar la imagen: {exc}"
+            return f"Could not decode the image: {exc}"
 
         safe = safe_name_component(filename, fallback="topology")
         ext = "jpg" if image_fmt in ("JPG", "JPEG") else image_fmt.lower()
@@ -4215,45 +4215,45 @@ def register_tools(mcp: FastMCP) -> None:
             target = resolve_within(base, f"{safe}.{ext}")
             target.write_bytes(blob)
         except (OSError, ValueError) as exc:
-            return f"No se pudo escribir la imagen: {exc}"
+            return f"Could not write the image: {exc}"
 
         return json.dumps({
             "path": str(target),
             "format": image_fmt,
             "bytes": len(blob),
-            "summary": f"✅ Captura guardada en {target} ({len(blob):,} bytes).",
+            "summary": f"✅ Capture saved to {target} ({len(blob):,} bytes).",
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def pt_add_note(x: int, y: int, text: str) -> str:
         """
-        Escribe una nota de texto sobre el canvas de PT.
+        Writes a text note on PT's canvas.
 
-        Sirve para documentar la topología en el propio diagrama: etiquetar una
-        subred, marcar un área OSPF, nombrar un enlace troncal. Devuelve el id
-        de la nota, con el que se la puede borrar después.
+        Use it to document the topology on the diagram itself: label a
+        subnet, mark an OSPF area, name a trunk link. Returns the note's
+        id, which can be used to delete it later.
 
-        Las coordenadas son las mismas del canvas lógico que usan pt_add_device
-        y pt_move_device: routers ~y=100, switches ~y=250, hosts ~y=400.
+        The coordinates are the same logical-canvas ones that pt_add_device
+        and pt_move_device use: routers ~y=100, switches ~y=250, hosts ~y=400.
 
-        El tamaño de fuente NO es configurable: PT lo fija y usa ese parámetro
-        para el orden de apilado, que la tool calcula sola.
+        The font size is NOT configurable: PT fixes it and uses that parameter
+        for the stacking order, which the tool computes by itself.
 
-        Parámetros:
-        - x, y: posición en el canvas.
-        - text: contenido de la nota.
+        Parameters:
+        - x, y: position on the canvas.
+        - text: the note's content.
 
-        Ejemplo: pt_add_note(x=300, y=100, text="LAN 192.168.0.0/24")
+        Example: pt_add_note(x=300, y=100, text="LAN 192.168.0.0/24")
         """
         err = _check_bridge()
         if err:
             return err
         if not text.strip():
-            return json.dumps({"error": "La nota está vacía."}, ensure_ascii=False)
+            return json.dumps({"error": "The note is empty."}, ensure_ascii=False)
 
-        # El tercer argumento de addNote es el Z-ORDER, no el tamaño de fuente:
-        # PT expone getIncNoteZOrder() justamente para obtener el siguiente. Se
-        # verificó pasando 12 y 14 — las notas salen del mismo tamaño.
+        # addNote's third argument is the Z-ORDER, not the font size:
+        # PT exposes getIncNoteZOrder() precisely to get the next one. Verified
+        # by passing 12 and 14 — the notes come out the same size.
         js = (
             "try {"
             "  var __lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
@@ -4270,24 +4270,24 @@ def register_tools(mcp: FastMCP) -> None:
             return f"PT error: {raw}"
         return json.dumps({
             "id": raw.strip(),
-            "summary": f"✅ Nota agregada en ({x},{y}).",
+            "summary": f"✅ Note added at ({x},{y}).",
         }, indent=2, ensure_ascii=False)
 
     @mcp.tool()
     def pt_clear_annotations(kind: str = "all") -> str:
         """
-        Borra las anotaciones del canvas: notas de texto y dibujos.
+        Removes the canvas annotations: text notes and drawings.
 
-        NO toca dispositivos ni enlaces, solo los elementos gráficos.
+        It does NOT touch devices or links, only the graphic elements.
 
-        PT deja ids de nota huérfanos que no libera nunca — sin texto y que se
-        niega a borrar. No son un fallo: el canvas queda visualmente limpio
-        igual, y se reportan aparte como `stale_ids`.
+        PT leaves orphan note ids that it never releases — with no text and that it
+        refuses to delete. They are not a failure: the canvas is visually clean
+        anyway, and they are reported separately as `stale_ids`.
 
-        Parámetros:
-        - kind: "all" (default) borra notas y dibujos; "notes" solo las notas.
+        Parameters:
+        - kind: "all" (default) removes notes and drawings; "notes" only the notes.
 
-        Ejemplo: pt_clear_annotations()
+        Example: pt_clear_annotations()
         """
         err = _check_bridge()
         if err:
@@ -4296,12 +4296,12 @@ def register_tools(mcp: FastMCP) -> None:
         what = kind.strip().lower()
         if what not in ("all", "notes"):
             return json.dumps(
-                {"error": f"kind inválido: '{kind}'. Usá 'all' o 'notes'."},
+                {"error": f"Invalid kind: '{kind}'. Use 'all' or 'notes'."},
                 ensure_ascii=False,
             )
-        # getCanvasItemIds NO incluye las notas: son conjuntos distintos. Barrer
-        # solo uno dejaba notas en pantalla y encima reportaba remaining=0, que
-        # es peor que no borrar — el usuario cree que quedó limpio.
+        # getCanvasItemIds does NOT include the notes: they are separate sets. Sweeping
+        # only one left notes on screen and on top reported remaining=0, which
+        # is worse than not deleting — the user believes it is clean.
         getters = ["getCanvasNoteIds"] if what == "notes" else [
             "getCanvasNoteIds", "getCanvasItemIds",
         ]
@@ -4319,9 +4319,9 @@ def register_tools(mcp: FastMCP) -> None:
             "      try { if (__lw.removeCanvasItem(__ids[__i])) __n++; } catch (__re) {}"
             "    }"
             "  }"
-            # PT deja IDs de nota huérfanos: sin texto y con removeCanvasItem
-            # devolviendo false. Contarlos como "restantes" haría creer que la
-            # limpieza falló cuando el canvas quedó vacío, así que se separan.
+            # PT leaves orphan note IDs: no text, and removeCanvasItem
+            # returning false. Counting them as "remaining" would suggest the
+            # cleanup failed when the canvas ended up empty, so they are kept apart.
             "  var __left = 0, __stale = 0;"
             "  for (var __m = 0; __m < __gs.length; __m++) {"
             "    var __rest = null;"
@@ -4348,44 +4348,44 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
         data["kind"] = what
         stale = data.get("stale_ids", 0)
-        # Los ids huérfanos no son un fallo: PT no los libera nunca y el canvas
-        # queda visualmente limpio igual. Se mencionan sin alarmar.
-        nota = f" ({stale} id(s) huérfano(s) que PT no libera)." if stale else "."
+        # The orphan ids are not a failure: PT never releases them and the canvas
+        # is visually clean anyway. They are mentioned without alarm.
+        nota = f" ({stale} orphan id(s) that PT does not release)." if stale else "."
         data["summary"] = (
-            f"✅ {data['removed']} anotación(es) borrada(s){nota}"
+            f"✅ {data['removed']} annotation(s) removed{nota}"
             if data.get("removed")
-            else f"No había anotaciones que borrar{nota}"
+            else f"There were no annotations to remove{nota}"
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # BACKUP y METADATA del proyecto
+    # Project BACKUP and METADATA
     # ------------------------------------------------------------------
 
-    # La startup-config vuelve con las líneas separadas por COMAS, no por
-    # saltos. Reconstruirla es lo que la vuelve pegable en una CLI.
+    # The startup-config comes back with the lines separated by COMMAS, not by
+    # newlines. Rebuilding it is what makes it pasteable into a CLI.
     _MAX_BACKUP_XML = 200_000
 
     @mcp.tool()
     def pt_backup_config(device: str, include_xml: bool = False) -> str:
         """
-        Respalda la configuración de arranque de un dispositivo de PT.
+        Backs up a PT device's startup configuration.
 
-        Devuelve la startup-config real (la que el equipo relee al reiniciar),
-        más su número de serie, config-register, imágenes de arranque y uptime.
-        Sirve para guardar un estado conocido antes de tocar algo, o para
-        comparar dos equipos.
+        Returns the real startup-config (the one the device rereads on restart),
+        plus its serial number, config-register, boot images and uptime.
+        Use it to save a known state before touching something, or to
+        compare two devices.
 
-        Parámetros:
-        - device: nombre del router o switch en PT.
-        - include_xml: si True, agrega el volcado completo del dispositivo en XML
-          (topología + config + módulos). Son decenas de miles de caracteres:
-          útil para archivar, pesado para leer.
+        Parameters:
+        - device: name of the router or switch in PT.
+        - include_xml: if True, adds the device's full XML dump
+          (topology + config + modules). It is tens of thousands of characters:
+          useful for archiving, heavy to read.
 
-        Ejemplo: pt_backup_config(device="R1")
+        Example: pt_backup_config(device="R1")
         """
         err = _check_bridge()
         if err:
@@ -4426,15 +4426,15 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
             return (
-                f"'{device}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{device}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
         if not data.get("supported"):
-            return f"'{device}' no tiene startup-config (los hosts de PT no la tienen)."
+            return f"'{device}' has no startup-config (PT's hosts don't have one)."
 
         startup = data.pop("startup", "")
         lines = [ln for ln in startup.split(",") if ln != ""]
@@ -4442,12 +4442,12 @@ def register_tools(mcp: FastMCP) -> None:
         data["startup_lines"] = len(lines)
         if not lines:
             data["summary"] = (
-                f"'{device}' no tiene startup-config guardada. "
-                "Corré `write memory` en el equipo antes de respaldar."
+                f"'{device}' has no saved startup-config. "
+                "Run `write memory` on the device before backing it up."
             )
         else:
             data["summary"] = (
-                f"{len(lines)} línea(s) de startup-config de '{device}' "
+                f"{len(lines)} line(s) of startup-config from '{device}' "
                 f"({data.get('model')}, serial {data.get('serial')})."
             )
         return json.dumps(data, indent=2, ensure_ascii=False)
@@ -4455,17 +4455,17 @@ def register_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pt_project_metadata(description: str = "") -> str:
         """
-        Lee (y opcionalmente escribe) los metadatos del proyecto abierto en PT.
+        Reads (and optionally writes) the metadata of the project open in PT.
 
-        Devuelve el archivo guardado, la versión de PT que lo escribió y la
-        descripción del proyecto, junto con el conteo de dispositivos y enlaces.
-        Útil para saber con qué se está trabajando antes de modificar algo.
+        Returns the saved file, the PT version that wrote it and the
+        project description, together with the device and link counts.
+        Useful to know what you are working with before changing anything.
 
-        Parámetros:
-        - description: si se indica, REEMPLAZA la descripción del proyecto.
-          Vacío = solo lectura.
+        Parameters:
+        - description: if given, REPLACES the project description.
+          Empty = read only.
 
-        Ejemplo: pt_project_metadata()
+        Example: pt_project_metadata()
         """
         err = _check_bridge()
         if err:
@@ -4503,18 +4503,18 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
-            return "PT no tiene ningún archivo de red activo."
+            return "PT has no active network file."
 
         data["updated_description"] = bool(new_desc)
         saved = data.get("saved_filename") or ""
         data["summary"] = (
-            f"{data['devices']} dispositivo(s), {data['links']} enlace(s). "
-            + (f"Archivo: {saved}." if saved
-               else "Proyecto SIN guardar — usá pt_save_project para persistirlo.")
-            + (" Descripción actualizada." if new_desc else "")
+            f"{data['devices']} device(s), {data['links']} link(s). "
+            + (f"File: {saved}." if saved
+               else "Project NOT saved — use pt_save_project to persist it.")
+            + (" Description updated." if new_desc else "")
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
@@ -4527,21 +4527,21 @@ def register_tools(mcp: FastMCP) -> None:
         show_device_labels: int = -1,
     ) -> str:
         """
-        Lee y ajusta opciones del workspace de PT que afectan cómo se comporta.
+        Reads and adjusts PT workspace options that affect how it behaves.
 
-        Sin argumentos es solo lectura. Los flags son tri-estado: 1 activa,
-        0 desactiva, -1 (default) no toca.
+        Without arguments it is read-only. The flags are tri-state: 1 enables,
+        0 disables, -1 (default) leaves alone.
 
-        Parámetros:
-        - auto_cabling: el auto-cableado de PT elige el cable y el puerto por vos.
-          Apagalo antes de construir topologías por script si querés control
-          exacto de qué puerto se usa.
-        - external_network_access: permite que PT alcance la red REAL de la
-          máquina. Apagado por defecto; encenderlo saca tráfico del simulador.
-        - show_port_labels / show_link_lights / show_device_labels: qué se ve en
-          el canvas. Importa para que una captura sea legible.
+        Parameters:
+        - auto_cabling: PT's auto-cabling picks the cable and the port for you.
+          Turn it off before building topologies by script if you want exact
+          control over which port is used.
+        - external_network_access: lets PT reach the machine's REAL
+          network. Off by default; turning it on takes traffic out of the simulator.
+        - show_port_labels / show_link_lights / show_device_labels: what is shown on
+          the canvas. It matters for a capture to be readable.
 
-        Ejemplo: apagar auto-cabling antes de un deploy scripteado:
+        Example: turn auto-cabling off before a scripted deploy:
           pt_workspace_options(auto_cabling=0)
         """
         err = _check_bridge()
@@ -4549,23 +4549,23 @@ def register_tools(mcp: FastMCP) -> None:
             return err
 
         def _opt_set(method: str, args: str) -> str:
-            """Un setter aislado: si PT lo rechaza, cae solo y se reporta.
+            """One isolated setter: if PT rejects it, it falls alone and is reported.
 
-            Cada uno va en su propio try/catch a propósito. Antes iban todos
-            bajo el mismo, así que un setter que fallara —`setHideDevLabel` con
-            la aridad equivocada— abortaba la tanda entera y devolvía un error
-            crudo, pero los anteriores YA se habían aplicado: el usuario veía
-            "falló" con la mitad de los cambios puestos.
+            Each one goes in its own try/catch on purpose. They used to all be
+            under the same one, so one failing setter — `setHideDevLabel` with
+            the wrong arity — aborted the whole batch and returned a raw
+            error, but the earlier ones HAD ALREADY been applied: the user saw
+            "failed" with half the changes in place.
             """
             return (
                 f"    try {{ if (typeof __o.{method} === 'function')"
                 f" {{ __o.{method}({args}); __applied.push('{method}'); }}"
-                f" else {{ __failed.push('{method}: no existe'); }} }}"
+                f" else {{ __failed.push('{method}: does not exist'); }} }}"
                 f" catch (__se) {{ __failed.push('{method}: ' + __se); }}"
             )
 
-        # La polaridad y la aridad viven en WORKSPACE_SETTERS /
-        # WORKSPACE_EXTRA_ARG (nivel de módulo) para poder testearlas sin PT.
+        # The polarity and arity live in WORKSPACE_SETTERS /
+        # WORKSPACE_EXTRA_ARG (module level) so they can be tested without PT.
         sets: list[str] = []
         for flag, value in (
             ("auto_cabling", auto_cabling),
@@ -4604,27 +4604,27 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
-        # Lo que PT aceptó de verdad, no lo que se intentó: contar los intentos
-        # daba "5 opciones cambiadas" aunque una hubiera sido rechazada.
+        # What PT really accepted, not what was attempted: counting the attempts
+        # gave "5 options changed" even when one had been rejected.
         applied = data.get("applied") or []
         failed = data.get("failed") or []
         data["changed"] = len(applied)
         notes = []
         if not data["auto_cabling"]:
-            notes.append("auto-cabling APAGADO (los puertos los elegís vos)")
+            notes.append("auto-cabling OFF (you pick the ports)")
         if data["external_network_access"]:
-            notes.append("⚠ acceso a la red REAL habilitado")
+            notes.append("⚠ access to the REAL network enabled")
         if failed:
-            notes.append(f"⚠ {len(failed)} opción(es) rechazada(s) por PT: {'; '.join(failed)}")
+            notes.append(f"⚠ {len(failed)} option(s) rejected by PT: {'; '.join(failed)}")
         data["summary"] = (
-            f"{len(applied)} opción(es) cambiada(s). " if sets else "Solo lectura. "
-        ) + ("; ".join(notes) if notes else "Configuración por defecto.")
+            f"{len(applied)} option(s) changed. " if sets else "Read only. "
+        ) + ("; ".join(notes) if notes else "Default configuration.")
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # NETFLOW — se configura por API nativa, no por CLI
+    # NETFLOW — configured through the native API, not CLI
     # ------------------------------------------------------------------
 
     @mcp.tool()
@@ -4640,24 +4640,24 @@ def register_tools(mcp: FastMCP) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Configura un exportador NetFlow en un dispositivo de PT.
+        Configures a NetFlow exporter on a PT device.
 
-        A diferencia del resto de features avanzadas, NetFlow NO va por CLI: se
-        configura directamente y se relee para verificar que quedó aplicado. Si
-        el nombre ya existe, se reconfigura en vez de duplicarse.
+        Unlike the rest of the advanced features, NetFlow does NOT go through CLI: it is
+        configured directly and read back to verify it was applied. If
+        the name already exists, it is reconfigured instead of duplicated.
 
-        Parámetros:
-        - device: router donde vive el exportador.
-        - name: nombre del exportador (ej "COLLECTOR-1").
-        - destination_ip: IP del colector. Sin esto el exportador queda inerte.
-        - udp_port: puerto UDP del colector (default 2055).
-        - version: 9 (templates, recomendada) o 5 (formato fijo).
-        - source_port: interfaz de origen; vacío = la elige PT.
-        - monitors: nombres de monitores a asociar.
-        - remove: si True, borra el exportador `name` en vez de crearlo.
-        - dry_run: si True, solo valida y devuelve el payload sin tocar PT.
+        Parameters:
+        - device: router where the exporter lives.
+        - name: exporter name (e.g. "COLLECTOR-1").
+        - destination_ip: the collector's IP. Without it the exporter is inert.
+        - udp_port: the collector's UDP port (default 2055).
+        - version: 9 (templates, recommended) or 5 (fixed format).
+        - source_port: source interface; empty = PT picks it.
+        - monitors: names of the monitors to associate.
+        - remove: if True, deletes the exporter `name` instead of creating it.
+        - dry_run: if True, only validates and returns the payload without touching PT.
 
-        Ejemplo: exportar a un colector en 192.168.0.50:
+        Example: export to a collector at 192.168.0.50:
           pt_apply_netflow(device="R1", name="COLLECTOR-1", destination_ip="192.168.0.50")
         """
         cfg = NetflowExporter(
@@ -4679,8 +4679,8 @@ def register_tools(mcp: FastMCP) -> None:
             except Exception as exc:  # pragma: no cover
                 warnings.append(PlanError(
                     code=ErrorCode.VALIDATION_ERROR, device=cfg.device,
-                    message=f"No se pudo validar contra PT: {exc}",
-                    suggestion="Verificá el bridge con pt_bridge_status.",
+                    message=f"Could not validate against PT: {exc}",
+                    suggestion="Check the bridge with pt_bridge_status.",
                 ))
 
         dev = json.dumps(cfg.device)
@@ -4705,7 +4705,7 @@ def register_tools(mcp: FastMCP) -> None:
                 "    var __created = false;"
                 f"    if (!__e) {{ __e = __m.createNFExporter({exporter}); __created = true; }}"
                 f"    if (!__e) {{ reportResult(JSON.stringify({{ found: true, supported: true,"
-                "      error: 'no se pudo crear el exportador' })); } else {"
+                "      error: 'could not create the exporter' })); } else {"
                 + "".join(sets) +
                 "      reportResult(JSON.stringify({ found: true, supported: true,"
                 "        created: __created, name: __e.getExporterName(),"
@@ -4740,10 +4740,10 @@ def register_tools(mcp: FastMCP) -> None:
         }
 
         if errors:
-            payload["summary"] = f"❌ NetFlow: {len(errors)} error(es); no se envió nada."
+            payload["summary"] = f"❌ NetFlow: {len(errors)} error(s); nothing was sent."
             return json.dumps(payload, indent=2, ensure_ascii=False)
         if dry_run:
-            payload["summary"] = "✅ NetFlow válido. Modo dry_run — NO se envió al bridge."
+            payload["summary"] = "✅ NetFlow valid. dry_run mode — NOT sent to the bridge."
             return json.dumps(payload, indent=2, ensure_ascii=False)
 
         err = _check_bridge()
@@ -4758,53 +4758,53 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
             return (
-                f"'{device}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{device}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
         if not data.get("supported"):
-            return f"'{device}' no expone NetFlow (los switches y hosts de PT no lo tienen)."
+            return f"'{device}' does not expose NetFlow (PT's switches and hosts don't have it)."
 
         payload.update(data)
         payload["sent"] = True
         if remove:
-            payload["summary"] = f"✅ Exportador '{name}' eliminado de {device}."
+            payload["summary"] = f"✅ Exporter '{name}' removed from {device}."
         elif data.get("fully_configured"):
             payload["summary"] = (
-                f"✅ '{name}' {'creado' if data.get('created') else 'actualizado'} en {device} "
+                f"✅ '{name}' {'created' if data.get('created') else 'updated'} on {device} "
                 f"→ {data.get('destination')}:{data.get('udp_port')} (v{data.get('version')})."
             )
         else:
             payload["summary"] = (
-                f"⚠ '{name}' existe en {device} pero PT lo reporta incompleto: "
-                "sin destino no exporta flujos."
+                f"⚠ '{name}' exists on {device} but PT reports it incomplete: "
+                "without a destination it exports no flows."
             )
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # QoS — SOLO LECTURA: la API de PT no permite crear class/policy-maps
+    # QoS — READ ONLY: PT's API does not allow creating class/policy-maps
     # ------------------------------------------------------------------
 
     @mcp.tool()
     def pt_read_qos(device: str) -> str:
         """
-        Lee la configuración de QoS REAL de un dispositivo: class-maps y policy-maps.
+        Reads a device's REAL QoS configuration: class-maps and policy-maps.
 
-        Solo lectura: QoS no se puede crear programáticamente en PT, así que para
-        CONFIGURARLO hay que mandar el CLI IOS con pt_send_raw
-        (`configureIosDevice`). Esta tool sirve para verificar que quedó aplicado.
+        Read only: QoS cannot be created programmatically in PT, so to
+        CONFIGURE it you send IOS CLI with pt_send_raw
+        (`configureIosDevice`). This tool is for checking that it was applied.
 
-        Devuelve, por class-map, su tipo de match y su representación CLI; por
-        policy-map, cuántas clases tiene y qué features usa (bandwidth, priority,
+        Returns, per class-map, its match type and CLI representation; per
+        policy-map, how many classes it has and which features it uses (bandwidth, priority,
         shaping, fair-queue).
 
-        Parámetros:
-        - device: nombre del router en PT.
+        Parameters:
+        - device: router name in PT.
 
-        Ejemplo: pt_read_qos(device="R1")
+        Example: pt_read_qos(device="R1")
         """
         err = _check_bridge()
         if err:
@@ -4862,31 +4862,31 @@ def register_tools(mcp: FastMCP) -> None:
         try:
             data = json.loads(raw)
         except Exception as exc:
-            return f"Respuesta ilegible de PT: {exc}"
+            return f"Unreadable reply from PT: {exc}"
 
         if not data.get("found"):
             return (
-                f"'{device}' no existe en la topología activa. "
-                "Usá pt_query_topology para ver los nombres reales."
+                f"'{device}' does not exist in the active topology. "
+                "Use pt_query_topology to see the real names."
             )
         if not data.get("supported"):
-            return f"'{device}' no expone QoS (los hosts de PT no lo tienen)."
+            return f"'{device}' does not expose QoS (PT's hosts don't have it)."
 
         cmaps = data.get("class_maps", [])
         pmaps = data.get("policy_maps", [])
         custom = [c for c in cmaps if not c.get("is_default")]
         data["summary"] = (
-            f"{len(cmaps)} class-map(s) ({len(custom)} propia(s)), "
-            f"{len(pmaps)} policy-map(s). QoS es de solo lectura por API: "
-            "para configurarlo usá CLI IOS."
+            f"{len(cmaps)} class-map(s) ({len(custom)} custom), "
+            f"{len(pmaps)} policy-map(s). QoS is read-only through the API: "
+            "to configure it use IOS CLI."
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
-    # PANEL DEL DISPOSITIVO (CLI, Command Prompt, IP Configuration, GUI)
+    # DEVICE PANEL (CLI, Command Prompt, IP Configuration, GUI)
     # ------------------------------------------------------------------
-    # Viven en su propio módulo con los helpers del bridge inyectados: así son
-    # testeables sin PT y este archivo no sigue creciendo.
+    # They live in their own module with the bridge helpers injected: that way
+    # they are testable without PT and this file stops growing.
     register_device_panel_tools(
         mcp, send_and_wait=_bridge_send_and_wait, check_bridge=_check_bridge,
     )

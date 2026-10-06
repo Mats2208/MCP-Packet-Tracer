@@ -1,8 +1,8 @@
 """
-Taxonomía de errores del sistema.
+System error taxonomy.
 
-Cada error tiene un código, mensaje y sugerencia para que el LLM
-pueda entender qué falló y cómo corregirlo automáticamente.
+Each error has a code, message and suggestion so the LLM
+can understand what failed and how to fix it automatically.
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from enum import Enum
 
 
 class ErrorCode(str, Enum):
-    # Dispositivos
+    # Devices
     UNKNOWN_DEVICE_MODEL = "UNKNOWN_DEVICE_MODEL"
     DUPLICATE_DEVICE_NAME = "DUPLICATE_DEVICE_NAME"
     DEVICE_INVALID_NAME = "DEVICE_INVALID_NAME"
     INSUFFICIENT_PORTS = "INSUFFICIENT_PORTS"
 
-    # Enlaces
+    # Links
     DEVICE_NOT_FOUND = "DEVICE_NOT_FOUND"
     INVALID_PORT = "INVALID_PORT"
     PORT_ALREADY_USED = "PORT_ALREADY_USED"
@@ -38,7 +38,7 @@ class ErrorCode(str, Enum):
     OSPF_NO_NETWORKS = "OSPF_NO_NETWORKS"
     OSPF_INVALID_ROUTER_ID = "OSPF_INVALID_ROUTER_ID"
 
-    # Topologia (forma del grafo)
+    # Topology (shape of the graph)
     TOPOLOGY_DISCONNECTED = "TOPOLOGY_DISCONNECTED"
 
     # Wireless
@@ -130,7 +130,7 @@ class ErrorCode(str, Enum):
 
 @dataclass
 class PlanError:
-    """Error estructurado con código, mensaje y sugerencia de corrección."""
+    """Structured error with a code, message and fix suggestion."""
     code: ErrorCode
     message: str
     device: str = ""
@@ -142,7 +142,7 @@ class PlanError:
             parts.append(f"({self.device})")
         parts.append(self.message)
         if self.suggestion:
-            parts.append(f"→ Sugerencia: {self.suggestion}")
+            parts.append(f"→ Suggestion: {self.suggestion}")
         return " ".join(parts)
 
     def to_dict(self) -> dict:
@@ -156,7 +156,7 @@ class PlanError:
 
 @dataclass
 class ValidationResult:
-    """Resultado completo de una validación."""
+    """Complete result of a validation."""
     errors: list[PlanError] = field(default_factory=list)
     warnings: list[PlanError] = field(default_factory=list)
 

@@ -1,16 +1,16 @@
-"""Presentador: muestra el diálogo de un dispositivo en PT y lo captura.
+"""Presenter: shows a device's dialog in PT and captures it.
 
-Orden de preferencia, del más nativo al menos (verificado contra PT 9.0.1):
+Order of preference, from most native to least (verified against PT 9.0.1):
 
-1. Si el diálogo ya existe (aunque esté oculto), se muestra con la API de PT
+1. If the dialog already exists (even hidden), it is shown with PT's API
    (`DialogManager.getDialog(name).setVisible(true)`).
-2. Si no existe, PT no ofrece una llamada para abrirlo: se envía un clic al
-   ícono del dispositivo en el canvas (`PostMessage`, el cursor real no se
-   mueve). Antes se exige que la herramienta activa sea "Select": con
-   "Delete" activa ese clic BORRARÍA el dispositivo.
-3. Pestaña, sección (Config > FastEthernet0, Services > DHCP) y app del Desktop
-   se eligen por UI Automation (SelectionItem / Invoke), sin teclado ni mouse.
-4. La captura es `PrintWindow`: funciona aunque la ventana esté tapada.
+2. If it does not exist, PT offers no call to open it: a click is posted to
+   the device's icon on the canvas (`PostMessage`, the real cursor does not
+   move). The active tool must be "Select" first: with "Delete" active that
+   click would DELETE the device.
+3. Tab, section (Config > FastEthernet0, Services > DHCP) and Desktop app are
+   chosen through UI Automation (SelectionItem / Invoke), no keyboard or mouse.
+4. Capture is `PrintWindow`: it works even when the window is covered.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class PresenterError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# JS (nivel de módulo: testeable)
+# JS (module level: testable)
 # ---------------------------------------------------------------------------
 
 def device_state_js(device: str) -> str:
@@ -75,16 +75,16 @@ def pid_js() -> str:
     return "(function(){reportResult(String(ipc.appWindow().getProcessId()));})();"
 
 
-# Cabeceras de las apps del Desktop. PT 9.0.1 usa dos variantes (vistas por
-# UIA): Command Prompt → m_titleBar.m_titleLabel / m_closeButton; Firewall y
-# Email → m_titleFrame.m_titleLable (con la errata de Cisco) / m_closeBtn.
+# Title bars of the Desktop apps. PT 9.0.1 uses two variants (seen through
+# UIA): Command Prompt → m_titleBar.m_titleLabel / m_closeButton; Firewall and
+# Email → m_titleFrame.m_titleLable (Cisco's typo) / m_closeBtn.
 APPLET_TITLES = ("m_titleBar.m_titleLabel", "m_titleFrame.m_titleLable")
 APPLET_CLOSERS = ("m_titleBar.m_closeButton", "m_titleFrame.m_closeBtn")
 
 
 def applet_parts(els, suffixes: tuple[str, ...]) -> list:
-    """Elementos visibles de las apps abiertas cuyo AutomationId termina en
-    alguno de `suffixes`."""
+    """Visible elements of the open apps whose AutomationId ends in one of
+    `suffixes`."""
     return [e for e in els if "CDesktopApplet" in e.automation_id
             and e.automation_id.endswith(suffixes) and not e.offscreen]
 
@@ -92,15 +92,15 @@ def applet_parts(els, suffixes: tuple[str, ...]) -> list:
 # ---------------------------------------------------------------------------
 
 def is_available() -> tuple[bool, str]:
-    """(disponible, motivo). La parte de GUI necesita Windows y comtypes."""
+    """(available, reason). The GUI part needs Windows and comtypes."""
     from . import win32
     if not win32.is_supported():
-        return False, "la presentación en la GUI de PT solo funciona en Windows"
+        return False, "presenting in PT's GUI only works on Windows"
     try:
         import comtypes  # noqa: F401
     except ImportError:
-        return False, ("falta 'comtypes': instalalo con `pip install packet-tracer-mcp[ui]` "
-                       "(o `pip install comtypes`)")
+        return False, ("'comtypes' is missing: install it with `pip install packet-tracer-mcp[ui]` "
+                       "(or `pip install comtypes`)")
     return True, ""
 
 
@@ -113,22 +113,22 @@ class Presenter:
     def _js(self, js: str, timeout: float = 10.0) -> str:
         raw = self._send(js, timeout)
         if raw is None:
-            raise PresenterError("Sin respuesta de PT (timeout del bridge).")
+            raise PresenterError("No answer from PT (bridge timeout).")
         if raw.startswith("PT_ERROR") or raw.startswith("ERROR"):
-            raise PresenterError(f"PT respondió con error: {raw}")
+            raise PresenterError(f"PT answered with an error: {raw}")
         return raw
 
     def _state(self, device: str) -> dict:
         data = json.loads(self._js(device_state_js(device)))
         if not data.get("ok"):
-            raise PresenterError(f"'{device}' no existe en la topología activa.")
+            raise PresenterError(f"'{device}' does not exist in the active topology.")
         return data
 
     def _pid(self) -> int:
         return int(self._js(pid_js()))
 
     def device_info(self, device: str) -> dict:
-        """pid, vista lógica, zoom, coordenadas, si es host y si su diálogo existe."""
+        """pid, logical view, zoom, coordinates, whether it is a host and whether its dialog exists."""
         return self._state(device)
 
     def _wait_window(self, pid: int, title: str, seconds: float) -> int | None:
@@ -140,7 +140,7 @@ class Presenter:
                 return hwnd
             self._sleep(0.15)
 
-    # -- abrir ------------------------------------------------------------
+    # -- open -------------------------------------------------------------
     def open(
         self,
         device: str,
@@ -151,12 +151,12 @@ class Presenter:
         scroll_bottom: bool = False,
         reopen: bool = False,
     ) -> dict:
-        """Muestra el diálogo en `tab`/`section`/`app`.
+        """Show the dialog on `tab`/`section`/`app`.
 
-        `reopen`: si la app ya está abierta, la cierra y la vuelve a abrir. Hace
-        falta en los paneles de estado (IP Configuration...), que leen los
-        valores al abrirse y NO se refrescan si cambian por la API después.
-        Las consolas sí se actualizan en vivo.
+        `reopen`: if the app is already open, close it and open it again. State
+        panels (IP Configuration...) need this: they read their values when
+        opened and do NOT refresh if the API changes them afterwards. Consoles
+        do update live.
         """
         ok, why = is_available()
         if not ok:
@@ -172,34 +172,34 @@ class Presenter:
             self._js(show_dialog_js(device, True))
             hwnd = self._wait_window(pid, device, 2.0)
             if hwnd:
-                steps.append("diálogo mostrado por la API de PT")
+                steps.append("dialog shown through PT's API")
         u = Uia()
         if hwnd is None:
             if not st.get("logical"):
                 raise PresenterError(
-                    "PT está en la vista Physical; el diálogo se abre desde la vista Logical."
+                    "PT is in the Physical view; the dialog opens from the Logical view."
                 )
             hwnd = self._open_by_click(u, pid, device, st, steps)
         else:
-            steps.append("diálogo ya abierto")
+            steps.append("dialog already open")
         win32.raise_window(hwnd)
 
         if app and not tab:
             tab = "Desktop"
         if tab:
             self._select_tab(u, hwnd, tab)
-            steps.append(f"pestaña {tab}")
+            steps.append(f"tab {tab}")
             self._sleep(0.25)
         if section:
             self._open_section(u, hwnd, section)
-            steps.append(f"sección {section}")
+            steps.append(f"section {section}")
             self._sleep(0.2)
         if app:
             steps.append(self._open_app(u, hwnd, app, reopen=reopen))
             self._sleep(0.35)
         if scroll_bottom:
             if self.scroll_consoles(hwnd, u):
-                steps.append("consola desplazada al final")
+                steps.append("console scrolled to the end")
         return {"ok": True, "device": device, "hwnd": hwnd, "tab": tab, "app": app,
                 "section": section, "steps": steps}
 
@@ -207,23 +207,23 @@ class Presenter:
         from . import win32
         main = win32.main_window(pid)
         if main is None:
-            raise PresenterError("No encuentro la ventana principal de Packet Tracer.")
+            raise PresenterError("Can't find Packet Tracer's main window.")
         els = u.descendants(main)
         select = next((e for e in els if e.name.startswith("Select (")), None)
         if select is None:
-            raise PresenterError("No encuentro la herramienta Select de PT; no hago clic a ciegas.")
+            raise PresenterError("Can't find PT's Select tool; not clicking blind.")
         if u.toggle_state(select) != 1:
             u.invoke(select)
             self._sleep(0.1)
             if u.toggle_state(select) != 1:
                 raise PresenterError(
-                    "La herramienta activa del canvas no es Select y no pude cambiarla. "
-                    "Un clic con Delete activo borraría el dispositivo, así que no lo hago."
+                    "The canvas's active tool is not Select and I couldn't change it. "
+                    "A click with Delete active would delete the device, so I won't click."
                 )
-            steps.append("herramienta Select activada")
+            steps.append("Select tool activated")
         vp = next((e for e in els if e.automation_id.endswith("CLogicalWorkspace.QWidget")), None)
         if vp is None:
-            raise PresenterError("No encuentro el canvas lógico de PT.")
+            raise PresenterError("Can't find PT's logical canvas.")
         bars = {
             "h": next((e for e in els if "CLogicalWorkspace.qt_scrollarea_hcontainer" in e.automation_id
                        and e.automation_id.endswith("QScrollBar")), None),
@@ -240,9 +240,9 @@ class Presenter:
                 return 0.0
 
         def device_point() -> tuple[int, int]:
-            # A zoom 100% (getCurrentZoom()==0) la escena se ve 1:1 desplazada
-            # por el valor de las barras. Calibrado: PC en escena (199,400) con
-            # barras en 0 cae en viewport (199,400).
+            # At 100% zoom (getCurrentZoom()==0) the scene is shown 1:1, offset
+            # by the scrollbar values. Calibrated: a PC at scene (199,400) with
+            # the bars at 0 lands at viewport (199,400).
             return int(left + st["cx"] - scroll("h")), int(top + st["cy"] - scroll("v"))
 
         def inside(x: int, y: int) -> bool:
@@ -255,35 +255,35 @@ class Presenter:
                 self._js(center_on_js(device))
                 self._sleep(0.2)
                 x, y = device_point()
-                steps.append("canvas centrado en el dispositivo")
+                steps.append("canvas centred on the device")
         else:
             self._js(center_on_js(device))
             self._sleep(0.2)
             x, y = center
-            steps.append("canvas centrado en el dispositivo (zoom distinto de 100%)")
+            steps.append("canvas centred on the device (zoom other than 100%)")
 
         win32.post_click(main, x, y)
         hwnd = self._wait_window(pid, device, 3.0)
         if hwnd is None and (x, y) != center:
-            # Segundo intento: centrar y clicar el centro del viewport.
+            # Second attempt: centre and click the middle of the viewport.
             self._js(center_on_js(device))
             self._sleep(0.25)
             win32.post_click(main, *center)
             hwnd = self._wait_window(pid, device, 3.0)
         if hwnd is None:
             raise PresenterError(
-                f"No se abrió el diálogo de '{device}'. ¿Está dentro de un cluster o tapado por "
-                "otro dispositivo? Probá abrirlo una vez a mano."
+                f"The dialog for '{device}' did not open. Is it inside a cluster or covered by "
+                "another device? Try opening it once by hand."
             )
-        steps.append("diálogo abierto (clic enviado, sin mover el cursor)")
+        steps.append("dialog opened (click posted, cursor not moved)")
         return hwnd
 
     def _select_tab(self, u, hwnd: int, tab: str) -> None:
         tabs = u.descendants(hwnd, "TabItem")
         match = next((e for e in tabs if names.tab_matches(tab, e.name)), None)
         if match is None:
-            have = ", ".join(dict.fromkeys(e.name for e in tabs)) or "(ninguna)"
-            raise PresenterError(f"La pestaña '{tab}' no existe en este dispositivo. Tiene: {have}.")
+            have = ", ".join(dict.fromkeys(e.name for e in tabs)) or "(none)"
+            raise PresenterError(f"Tab '{tab}' does not exist on this device. It has: {have}.")
         u.select(match)
 
     def _open_section(self, u, hwnd: int, section: str) -> None:
@@ -295,26 +295,26 @@ class Presenter:
                 u.invoke(e)
                 return
         raise PresenterError(
-            f"No encuentro la sección '{section}' en la pestaña actual "
-            "(en Config: 'Settings', 'FastEthernet0'...; en Services: 'DHCP', 'DNS', 'HTTP'...)."
+            f"Can't find section '{section}' in the current tab "
+            "(in Config: 'Settings', 'FastEthernet0'...; in Services: 'DHCP', 'DNS', 'HTTP'...)."
         )
 
     def _open_app(self, u, hwnd: int, app: str, *, reopen: bool = False) -> str:
         obj = names.desktop_app_object_name(app)
         if obj is None:
             raise PresenterError(
-                f"App '{app}' desconocida. Apps: {', '.join(names.known_apps())}."
+                f"Unknown app '{app}'. Apps: {', '.join(names.known_apps())}."
             )
         els = u.descendants(hwnd)
-        # ¿Hay una app abierta encima del escritorio? Su barra de título lo dice.
+        # Is an app open on top of the desktop? Its title bar tells.
         titles = applet_parts(els, APPLET_TITLES)
         if titles:
             outer = min(titles, key=lambda e: len(e.automation_id))
             if names.desktop_app_object_name(outer.name) == obj and not reopen:
-                return f"app {outer.name.strip()} ya abierta"
-            # Email abre un sub-panel (Configure Mail) y PT ignora el cierre del
-            # panel de afuera mientras se ve el de adentro: cerrar de adentro
-            # hacia afuera hasta que no quede ninguno.
+                return f"app {outer.name.strip()} already open"
+            # Email opens a sub-panel (Configure Mail) and PT ignores closing the
+            # outer panel while the inner one is shown: close from the inside
+            # out until none is left.
             for _ in range(4):
                 closers = applet_parts(els, APPLET_CLOSERS)
                 if not closers:
@@ -323,8 +323,8 @@ class Presenter:
                 self._sleep(0.3)
                 els = u.descendants(hwnd)
         btn = next((e for e in els if e.automation_id.endswith("." + obj)), None)
-        # Por si el escritorio tarda en volver al árbol UIA tras cerrar la app:
-        # reintentar un momento antes de rendirse.
+        # In case the desktop takes a moment to return to the UIA tree after
+        # closing the app: retry briefly before giving up.
         for _ in range(8):
             if btn is not None:
                 break
@@ -333,14 +333,14 @@ class Presenter:
                         if e.automation_id.endswith("." + obj)), None)
         if btn is None:
             raise PresenterError(
-                f"Este dispositivo no tiene la app '{app}' en su Desktop."
+                f"This device has no '{app}' app on its Desktop."
             )
         u.invoke(btn)
-        return f"app {app} abierta"
+        return f"app {app} opened"
 
     def fill_and_go(self, hwnd: int, edit_suffix: str, text: str, button_suffix: str) -> bool:
-        """Escribe `text` en el campo cuya AutomationId termina en `edit_suffix`
-        y pulsa el botón `button_suffix` (p. ej. URL + Go del Web Browser)."""
+        """Write `text` into the field whose AutomationId ends in `edit_suffix`
+        and press the `button_suffix` button (e.g. the Web Browser's URL + Go)."""
         from .uia import Uia
         u = Uia()
         els = [e for e in u.descendants(hwnd) if not e.offscreen]
@@ -353,8 +353,8 @@ class Presenter:
         return True
 
     def invoke_button(self, hwnd: int, name: str) -> bool:
-        """Pulsa (Invoke) un botón visible del diálogo por su texto, p. ej. el OK
-        de "Terminal Configuration". False si no está."""
+        """Press (Invoke) a visible button of the dialog by its text, e.g. the OK
+        of "Terminal Configuration". False if it isn't there."""
         from .uia import Uia
         u = Uia()
         for e in u.descendants(hwnd, "Button"):
@@ -364,7 +364,7 @@ class Presenter:
         return False
 
     def scroll_consoles(self, hwnd: int, u=None) -> bool:
-        """Lleva al final las consolas visibles (CLI / Command Prompt / Terminal)."""
+        """Scroll the visible consoles (CLI / Command Prompt / Terminal) to the end."""
         if u is None:
             from .uia import Uia
             u = Uia()
@@ -378,12 +378,12 @@ class Presenter:
                     pass
         return moved
 
-    # -- cerrar / capturar ------------------------------------------------
+    # -- close / capture --------------------------------------------------
     def close(self, device: str = "") -> str:
         if device:
-            return "cerrado" if self._js(show_dialog_js(device, False)) == "ok" else "no estaba abierto"
+            return "closed" if self._js(show_dialog_js(device, False)) == "ok" else "was not open"
         self._js(close_all_js())
-        return "todos los diálogos cerrados"
+        return "all dialogs closed"
 
     def capture(self, device: str, target: Path) -> dict:
         ok, why = is_available()
@@ -394,8 +394,8 @@ class Presenter:
         hwnd = win32.find_window(pid, device) if device else win32.main_window(pid)
         if hwnd is None:
             raise PresenterError(
-                f"El diálogo de '{device}' no está abierto. Abrilo con pt_ui_open "
-                "(o usá show=True en la tool que corriste)."
+                f"The dialog for '{device}' is not open. Open it with pt_ui_open "
+                "(or use show=True on the tool you ran)."
             )
         win32.raise_window(hwnd)
         self._sleep(0.15)

@@ -1,8 +1,8 @@
-"""Codificador PNG mínimo (RGB 8 bits), sin dependencias.
+"""Minimal PNG encoder (8-bit RGB), no dependencies.
 
-Las capturas salen de `GetDIBits` como BGRA de arriba a abajo. Pillow no es
-dependencia del proyecto y no vale la pena sumarla para esto: un PNG sin
-filtros comprimido con zlib es un formato de veinte líneas.
+Captures come out of `GetDIBits` as top-down BGRA. Pillow is not a project
+dependency and isn't worth adding for this: an unfiltered zlib-compressed PNG
+is a twenty-line format.
 """
 
 from __future__ import annotations
@@ -21,20 +21,20 @@ def _chunk(tag: bytes, data: bytes) -> bytes:
 
 
 def bgra_to_png(width: int, height: int, bgra: bytes, level: int = 6) -> bytes:
-    """Convierte un buffer BGRA (width*height*4, filas de arriba a abajo) a PNG."""
+    """Convert a BGRA buffer (width*height*4, rows top to bottom) to PNG."""
     if width <= 0 or height <= 0:
-        raise ValueError("dimensiones inválidas")
+        raise ValueError("invalid dimensions")
     if len(bgra) < width * height * 4:
-        raise ValueError("buffer más chico que width*height*4")
+        raise ValueError("buffer smaller than width*height*4")
     stride = width * 4
     rgb_row = width * 3
     raw = bytearray((rgb_row + 1) * height)
     for y in range(height):
         row = bgra[y * stride:(y + 1) * stride]
         out = y * (rgb_row + 1)
-        raw[out] = 0  # filtro "None"
+        raw[out] = 0  # filter "None"
         line = bytearray(rgb_row)
-        # Slicing con paso: el reordenamiento BGRA→RGB corre en C, no píxel a píxel.
+        # Strided slicing: the BGRA→RGB reorder runs in C, not pixel by pixel.
         line[0::3] = row[2::4]
         line[1::3] = row[1::4]
         line[2::3] = row[0::4]
@@ -49,7 +49,7 @@ def bgra_to_png(width: int, height: int, bgra: bytes, level: int = 6) -> bytes:
 
 
 def looks_blank(bgra: bytes, samples: int = 4000) -> bool:
-    """True si la captura es un único color (PrintWindow devuelve negro cuando falla)."""
+    """True if the capture is a single colour (PrintWindow returns black when it fails)."""
     n = len(bgra) // 4
     if n == 0:
         return True

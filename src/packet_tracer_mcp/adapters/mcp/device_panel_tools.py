@@ -1,15 +1,15 @@
-"""Tools del panel de dispositivo: CLI, Command Prompt, IP Configuration, módulos y GUI.
+"""Device-panel tools: CLI, Command Prompt, IP Configuration, modules and GUI.
 
-Todo lo que un usuario haría dentro de la ventana de un dispositivo en PT, por
-la API del Script Engine, SIN tomar el control de la pantalla. Por defecto es
-headless; en modo "ui" (pt_ui_mode) o con show=True además se abre la ventana
-del dispositivo en la pestaña/app que corresponde para que se vea y se pueda
-capturar (pt_ui_capture o capture=True).
+Everything a user would do inside a device's window in PT, through the Script
+Engine API, WITHOUT taking control of the screen. Headless by default; in "ui"
+mode (pt_ui_mode) or with show=True the device's window is also opened on the
+matching tab/app so it can be watched and captured (pt_ui_capture or
+capture=True).
 
-Se registra desde `register_tools` con los helpers del bridge inyectados, así
-que nada de esto depende de la closure de tool_registry.py y es testeable con
-un `send_and_wait` falso. Las apps del Desktop y los servicios de Server-PT
-viven en desktop_service_tools.py.
+Registered from `register_tools` with the bridge helpers injected, so none of
+this depends on tool_registry.py's closure and it is testable with a fake
+`send_and_wait`. The Desktop apps and Server-PT services live in
+desktop_service_tools.py.
 """
 
 from __future__ import annotations
@@ -50,34 +50,34 @@ def register_device_panel_tools(
     ps = PanelSupport(send_and_wait, check_bridge, store, presenter)
 
     # ------------------------------------------------------------------
-    # modo
+    # mode
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_ui_mode(mode: str = "status") -> str:
         """
-        Headless vs UI: decide si las tools del panel de dispositivo además
-        MUESTRAN lo que hacen en la ventana de Packet Tracer.
+        Headless vs UI: decides whether the device-panel tools also SHOW what
+        they do in Packet Tracer's window.
 
-        - "headless" (default): todo por API, no se abre ninguna ventana.
-        - "ui": pt_cli, pt_host_command, pt_host_ip_config, pt_server_*... abren
-          la ventana del dispositivo en la pestaña/app correspondiente (CLI,
-          Desktop > Command Prompt, Desktop > IP Configuration, Services >
-          DHCP...) para verlo o capturarlo.
-        - "status": muestra el modo actual.
+        - "headless" (default): everything through the API, no window opens.
+        - "ui": pt_cli, pt_host_command, pt_host_ip_config, pt_server_*... open
+          the device's window on the matching tab/app (CLI, Desktop > Command
+          Prompt, Desktop > IP Configuration, Services > DHCP...) so it can be
+          watched or captured.
+        - "status": shows the current mode.
 
-        El modo se guarda y sobrevive a reinicios del servidor. Cada tool acepta
-        además show=True/False para una sola llamada. Usalo cuando el usuario
-        diga "mostralo en PT", "quiero capturas", "usá las pestañas" (→ "ui") o
-        "hacelo en segundo plano" (→ "headless").
+        The mode is saved and survives server restarts. Every tool also accepts
+        show=True/False for a single call. Use it when the user says "show it
+        in PT", "I want screenshots", "use the tabs" (→ "ui") or "do it in the
+        background" (→ "headless").
         """
         if (mode or "").strip().lower() in ("", "status", "get"):
             cur = store.get()
             ok, why = is_available()
-            gui = "disponible" if ok else f"NO disponible ({why})"
+            gui = "available" if ok else f"NOT available ({why})"
             return (
-                f"Modo actual: {cur}. GUI de PT: {gui}.\n"
-                "Cambiar: pt_ui_mode('ui') para mostrar las ventanas de los dispositivos, "
-                "pt_ui_mode('headless') para trabajar solo por API. Por llamada: show=True/False."
+                f"Current mode: {cur}. PT GUI: {gui}.\n"
+                "Change it: pt_ui_mode('ui') to show the device windows, "
+                "pt_ui_mode('headless') to work through the API only. Per call: show=True/False."
             )
         try:
             new = store.set(mode)
@@ -85,13 +85,13 @@ def register_device_panel_tools(
             return str(exc)
         if new == UI:
             ok, why = is_available()
-            extra = "" if ok else f"\nAtención: la GUI no está disponible ({why}); las tools seguirán en headless."
-            return ("Modo UI activado: las tools del panel abrirán la ventana del dispositivo en la "
-                    "pestaña/app correspondiente. Usá capture=True o pt_ui_capture para guardar PNGs." + extra)
-        return "Modo headless activado: todo por API, sin abrir ventanas."
+            extra = "" if ok else f"\nNote: the GUI is not available ({why}); the tools will stay headless."
+            return ("UI mode on: the panel tools will open the device's window on the matching "
+                    "tab/app. Use capture=True or pt_ui_capture to save PNGs." + extra)
+        return "Headless mode on: everything through the API, no windows opened."
 
     # ------------------------------------------------------------------
-    # consolas
+    # consoles
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_cli(
@@ -104,30 +104,30 @@ def register_device_panel_tools(
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Teclea comandos en la consola de un router/switch (pestaña CLI) y devuelve
-        la salida de cada uno. Equivale a escribir en el CLI de IOS: enable,
-        configure terminal, interface..., show ip route, ping, copy run start...
+        Types commands into a router/switch console (CLI tab) and returns each
+        one's output. Same as typing in the IOS CLI: enable, configure
+        terminal, interface..., show ip route, ping, copy run start...
 
-        Sin tomar la pantalla: va por la API de PT, y lo tecleado aparece en la
-        pestaña CLI real del dispositivo.
+        Without taking the screen: it goes through PT's API, and what is typed
+        shows up in the device's real CLI tab.
 
-        Parámetros:
-        - device: nombre exacto (pt_query_topology).
-        - commands: lista de comandos, o un bloque de texto con uno por línea.
-          Se teclean en orden, esperando el prompt entre uno y otro.
-        - timeout: segundos máximos por comando (ping/traceroute tardan). Al
-          vencer se aborta con Ctrl+Shift+6.
-        - auto_confirm: pulsa Enter en "[confirm]" y "Destination filename [..]?".
-          Las preguntas [yes/no] o Password: NO se contestan solas: poné la
-          respuesta como el comando siguiente (ej. ["reload", "no", ""]).
-        - show: True/False abre (o no) la ventana del dispositivo en la pestaña
-          CLI. None = según pt_ui_mode.
-        - capture: guarda un PNG de la ventana al terminar (implica show).
+        Parameters:
+        - device: exact name (pt_query_topology).
+        - commands: a list of commands, or a block of text with one per line.
+          Typed in order, waiting for the prompt between them.
+        - timeout: maximum seconds per command (ping/traceroute take a while).
+          When it runs out the command is aborted with Ctrl+Shift+6.
+        - auto_confirm: presses Enter on "[confirm]" and "Destination filename [..]?".
+          [yes/no] and Password: questions are NOT answered automatically: put
+          the answer as the next command (e.g. ["reload", "no", ""]).
+        - show: True/False opens (or not) the device's window on the CLI tab.
+          None = per pt_ui_mode.
+        - capture: saves a PNG of the window when done (implies show).
 
-        Cada comando vuelve marcado: ok, ERROR (% Invalid input...), COMANDO
-        DESCONOCIDO (IOS lo tomó como hostname: se aborta la búsqueda DNS),
-        ESPERA RESPUESTA o TIMEOUT. Un router recién creado se "ceba" solo
-        (contesta 'no' al diálogo inicial).
+        Each command comes back marked: ok, ERROR (% Invalid input...), UNKNOWN
+        COMMAND (IOS took it as a hostname: the DNS lookup is aborted), WAITING
+        FOR ANSWER or TIMEOUT. A freshly created router is primed automatically
+        (answers 'no' to the initial dialog).
         """
         return console_tool_run(ps, device, split_commands(commands), timeout=timeout,
                                 auto_confirm=auto_confirm, show=show, capture=capture,
@@ -144,24 +144,24 @@ def register_device_panel_tools(
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Ejecuta un comando en Desktop > Command Prompt de una PC/Laptop/Server
+        Runs a command in a PC/Laptop/Server's Desktop > Command Prompt
         (ping, ipconfig, ipconfig /all, ipconfig /renew, tracert, arp -a,
-        nslookup, netstat, telnet, ssh -l user ip, ftp...) y devuelve la salida.
+        nslookup, netstat, telnet, ssh -l user ip, ftp...) and returns the output.
 
-        Parámetros:
-        - device: nombre del host.
-        - command: la línea a ejecutar (ej. "ping 192.168.1.1").
-        - inputs: respuestas para lo que el comando pregunte después, en orden
-          (ej. la contraseña de un telnet/ssh y luego comandos del equipo remoto).
-        - timeout: segundos máximos por línea (un ping fallido tarda ~15 s).
-        - show / capture / output_dir: como en pt_cli; abre Desktop > Command Prompt.
+        Parameters:
+        - device: the host's name.
+        - command: the line to run (e.g. "ping 192.168.1.1").
+        - inputs: answers to whatever the command asks afterwards, in order
+          (e.g. a telnet/ssh password, then commands for the remote device).
+        - timeout: maximum seconds per line (a failing ping takes ~15 s).
+        - show / capture / output_dir: as in pt_cli; opens Desktop > Command Prompt.
         """
         cmds = [command] + [str(x) for x in (inputs or [])]
         return console_tool_run(ps, device, cmds, timeout=timeout, auto_confirm=True, show=show,
                                 capture=capture, output_dir=output_dir, prefer_host=True)
 
     # ------------------------------------------------------------------
-    # GUI explícita
+    # explicit GUI
     # ------------------------------------------------------------------
     @mcp.tool()
     def pt_ui_open(
@@ -172,30 +172,30 @@ def register_device_panel_tools(
         scroll_to_end: bool = True,
     ) -> str:
         """
-        Abre la ventana de un dispositivo en PT en una pestaña/app/sección,
-        sin mover el mouse ni teclear (UI Automation + API de PT).
+        Opens a device's window in PT on a tab/app/section, without moving the
+        mouse or typing (UI Automation + PT's API).
 
         - tab: Physical | Config | CLI | Desktop | Services | Programming | Attributes
         - app (Desktop): ip_configuration, command_prompt, terminal, web_browser,
           pc_wireless, email, text_editor, firewall, ipv6_firewall, vpn,
           traffic_generator, mib_browser, pppoe_dialer, dial_up, ip_communicator,
-          tftp, ssh_client, bluetooth, iot_monitor... (implica tab=Desktop)
-        - section: entrada de la lista izquierda de la pestaña: en Config
-          "Settings" o una interfaz ("FastEthernet0"); en Services "DHCP",
-          "DNS", "HTTP", "TFTP", "EMAIL", "FTP"...
+          tftp, ssh_client, bluetooth, iot_monitor... (implies tab=Desktop)
+        - section: an entry in the tab's left-hand list: in Config "Settings"
+          or an interface ("FastEthernet0"); in Services "DHCP", "DNS", "HTTP",
+          "TFTP", "EMAIL", "FTP"...
 
-        Funciona en modo headless también: es una petición explícita de mostrar.
-        Requiere Windows y el extra [ui] (comtypes).
+        Works in headless mode too: it is an explicit request to show.
+        Requires Windows and the [ui] extra (comtypes).
         """
         err = check_bridge()
         if err:
             return err
         notes, hwnd = ps.present(device, tab=tab, app=app, section=section, scroll=scroll_to_end)
-        return ("Listo. " if hwnd else "") + "\n".join(notes)
+        return ("Done. " if hwnd else "") + "\n".join(notes)
 
     @mcp.tool()
     def pt_ui_close(device: str = "") -> str:
-        """Cierra la ventana de un dispositivo en PT, o todas si device está vacío."""
+        """Closes a device's window in PT, or all of them if device is empty."""
         err = check_bridge()
         if err:
             return err
@@ -207,12 +207,12 @@ def register_device_panel_tools(
     @mcp.tool()
     def pt_ui_capture(device: str = "", filename: str = "", output_dir: str = "screenshots") -> str:
         """
-        Guarda un PNG de la ventana de un dispositivo tal como se ve en PT (o de
-        la ventana principal si device está vacío). Funciona aunque la ventana
-        esté tapada. Devuelve la RUTA del archivo, no la imagen.
+        Saves a PNG of a device's window as it looks in PT (or of the main
+        window if device is empty). Works even when the window is covered.
+        Returns the file's PATH, not the image.
 
-        Abrí antes la pestaña/app que querés con pt_ui_open (o show=True en la
-        tool que corriste). Para el canvas lógico sin la interfaz existe
+        Open the tab/app you want first with pt_ui_open (or show=True on the
+        tool you ran). For the logical canvas without the interface there is
         pt_screenshot.
         """
         err = check_bridge()
@@ -222,10 +222,10 @@ def register_device_panel_tools(
         try:
             info = presenter.capture(device.strip(), screenshot_path(name, output_dir))
         except (PresenterError, OSError, ValueError) as exc:
-            return f"No se pudo capturar: {exc}"
-        info["summary"] = f"Captura guardada en {info['path']} ({info['width']}x{info['height']})."
+            return f"Could not capture: {exc}"
+        info["summary"] = f"Capture saved to {info['path']} ({info['width']}x{info['height']})."
         if info.get("blank"):
-            info["summary"] += " Atención: salió de un solo color; reintentá con la ventana visible."
+            info["summary"] += " Note: it came out a single colour; retry with the window visible."
         return json.dumps(info, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------
@@ -249,21 +249,21 @@ def register_device_panel_tools(
         output_dir: str = "screenshots",
     ) -> str:
         """
-        Desktop > IP Configuration (y Config > Global) de una PC/Laptop/Server:
-        IP estática o DHCP, máscara, gateway, DNS, IPv6 automática.
+        Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:
+        static IP or DHCP, mask, gateway, DNS, automatic IPv6.
 
-        Parámetros (vacío = no tocar):
-        - mode: "static" | "dhcp". Con "dhcp" se pide lease y se espera hasta
-          wait_dhcp_s segundos a que llegue.
-        - ip, mask: IPv4 y máscara ("255.255.255.0" o "24").
-        - gateway, dns: IPv4. "0.0.0.0" para borrar.
-        - interface: puerto (default: la primera Ethernet, o Wireless0).
-        - ipv6_mode: "auto" (SLAAC) | "off". PT no permite fijar una IPv6
-          estática en un host por API.
+        Parameters (empty = leave alone):
+        - mode: "static" | "dhcp". With "dhcp" a lease is requested and the
+          tool waits up to wait_dhcp_s seconds for it.
+        - ip, mask: IPv4 and mask ("255.255.255.0" or "24").
+        - gateway, dns: IPv4. "0.0.0.0" to clear.
+        - interface: port (default: the first Ethernet, or Wireless0).
+        - ipv6_mode: "auto" (SLAAC) | "off". PT does not let the API set a
+          static IPv6 on a host.
         - ipv6_gateway, ipv6_dns.
-        - show / capture: abre Desktop > IP Configuration (según pt_ui_mode).
+        - show / capture: opens Desktop > IP Configuration (per pt_ui_mode).
 
-        Para routers/switches usá pt_cli (ip address ... en la interfaz).
+        For routers/switches use pt_cli (ip address ... on the interface).
         """
         res = validate_host_ip_config(
             device, mode=mode, ip=ip, mask=mask, gateway=gateway, dns=dns,
@@ -294,11 +294,11 @@ def register_device_panel_tools(
                     state = again.get("state") or state
             if state.get("ip") in (None, "", "0.0.0.0"):
                 notes.append(
-                    f"DHCP: sin lease tras {wait_dhcp_s:.0f}s. ¿Hay un servidor DHCP alcanzable "
-                    "(router con ip dhcp pool, o Server con pt_server_dhcp)?"
+                    f"DHCP: no lease after {wait_dhcp_s:.0f}s. Is a DHCP server reachable "
+                    "(a router with ip dhcp pool, or a Server with pt_server_dhcp)?"
                 )
-        # Después de aplicar y reabriendo la app: IP Configuration lee los
-        # valores al abrirse y no se refresca si cambian por la API.
+        # After applying, and re-opening the app: IP Configuration reads its
+        # values when opened and does not refresh if the API changes them.
         notes = ps.show_after(device, show, capture, output_dir, "ipconfig",
                               tab="Desktop", app="ip_configuration") + notes
         out = {
@@ -313,17 +313,17 @@ def register_device_panel_tools(
             "summary": f"{device}/{data.get('port')}: {', '.join(data.get('applied', []))} → "
                        f"{state.get('ip')}/{state.get('mask')}"
                        + (" (DHCP)" if state.get("dhcp") else ""),
-            "verify": f"pt_host_command('{device}', 'ipconfig /all') muestra gateway y DNS.",
+            "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the gateway and DNS.",
         }
         return with_notes(out, notes)
 
     @mcp.tool()
     def pt_read_device_panel(device: str) -> str:
         """
-        Lee de una vez lo que muestran las pestañas de un dispositivo (solo
-        lectura): modelo, encendido, si es host, DHCP, por puerto IP/máscara/
-        MAC/estado/IPv6/firewall/ancho de banda, y en servidores qué servicios
-        (DHCP, DNS, HTTP, TFTP, FTP, SYSLOG, EMAIL, NTP) están activos.
+        Reads what a device's tabs show, in one go (read-only): model, power,
+        whether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/
+        bandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,
+        SYSLOG, EMAIL, NTP) are on.
         """
         err = check_bridge()
         if err:
@@ -340,13 +340,13 @@ def register_device_panel_tools(
     @mcp.tool()
     def pt_remove_module(device: str, slot: str, dry_run: bool = False) -> str:
         """
-        Quita el módulo instalado en un slot (pestaña Physical). Apaga el
-        dispositivo, lo quita y lo vuelve a encender, igual que pt_add_module.
-        - slot: STRING, el mismo formato que en pt_add_module ("0/0", "1", "0"...).
+        Removes the module installed in a slot (Physical tab). Powers the device
+        off, removes it and powers it back on, like pt_add_module.
+        - slot: STRING, same format as pt_add_module ("0/0", "1", "0"...).
         """
         slot_s = str(slot).strip()
         if not slot_s:
-            return "Error: slot vacío."
+            return "Error: empty slot."
         js = remove_module_js(device, slot_s)
         if dry_run:
             return json.dumps({"js_payload": js, "sent": False, "dry_run": True}, indent=2)
@@ -355,11 +355,11 @@ def register_device_panel_tools(
             return err
         data, error = ps.call(js, device, 15.0)
         if error:
-            return error if error != "PT respondió: unsupported" else f"'{device}' no admite quitar módulos."
+            return error if error != "PT answered: unsupported" else f"'{device}' does not support removing modules."
         if not data.get("removed"):
-            return f"PT no quitó nada del slot '{slot_s}' de {device} (¿vacío o slot inexistente?)."
+            return f"PT removed nothing from slot '{slot_s}' of {device} (empty, or no such slot?)."
         gone = sorted(set(data["before"].split(",")) - set(data["after"].split(",")))
-        return (f"Módulo quitado de {device} slot {slot_s}. Puertos que desaparecieron: "
-                f"{', '.join(gone) or '(ninguno)'}.")
+        return (f"Module removed from {device} slot {slot_s}. Ports that disappeared: "
+                f"{', '.join(gone) or '(none)'}.")
 
     register_desktop_service_tools(mcp, ps)

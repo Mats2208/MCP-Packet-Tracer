@@ -1,11 +1,11 @@
-"""Win32 por ctypes: ventanas de PT, captura con PrintWindow y clics enviados.
+"""Win32 through ctypes: PT's windows, capture with PrintWindow, and posted clicks.
 
-Nada de esto mueve el cursor ni teclea en la sesión del usuario:
-- La captura usa `PrintWindow(PW_RENDERFULLCONTENT)`, que pinta la ventana en un
-  bitmap aunque esté tapada por otras.
-- El clic es un `PostMessage(WM_LBUTTONDOWN/UP)` a la ventana principal de PT:
-  Qt lo procesa como un clic en esas coordenadas de cliente, pero el puntero
-  real del usuario no se entera (verificado: la posición del cursor no cambia).
+None of this moves the cursor or types into the user's session:
+- Capture uses `PrintWindow(PW_RENDERFULLCONTENT)`, which paints the window
+  into a bitmap even when other windows cover it.
+- The click is a `PostMessage(WM_LBUTTONDOWN/UP)` to PT's main window: Qt
+  handles it as a click at those client coordinates, but the user's real
+  pointer is unaffected (verified: the cursor position does not change).
 """
 
 from __future__ import annotations
@@ -39,12 +39,12 @@ class _BITMAPINFOHEADER(ctypes.Structure):
 
 
 def _load() -> None:
-    """Carga user32/gdi32 con firmas explícitas (los HWND son de 64 bits)."""
+    """Load user32/gdi32 with explicit signatures (HWNDs are 64-bit)."""
     global _loaded, user32, gdi32
     if _loaded:
         return
     if not is_supported():
-        raise OSError("La presentación en la GUI de PT solo está disponible en Windows.")
+        raise OSError("Presenting in PT's GUI is only available on Windows.")
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
     H = wt.HANDLE
@@ -76,8 +76,8 @@ def _load() -> None:
         fn = getattr(lib, name)
         fn.argtypes = args
         fn.restype = res
-    # Coordenadas físicas en monitores con escala: sin esto GetWindowRect y UIA
-    # podrían hablar en unidades distintas.
+    # Physical coordinates on scaled monitors: without this GetWindowRect and
+    # UIA could talk in different units.
     try:
         user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
         user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -90,7 +90,7 @@ _WNDENUMPROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
 
 
 def top_windows(pid: int) -> list[tuple[int, str]]:
-    """Ventanas visibles de primer nivel del proceso `pid`: [(hwnd, título)]."""
+    """Visible top-level windows of process `pid`: [(hwnd, title)]."""
     _load()
     found: list[tuple[int, str]] = []
 
@@ -123,7 +123,7 @@ def main_window(pid: int) -> int | None:
 
 
 def raise_window(hwnd: int) -> None:
-    """Restaura si está minimizada y la sube al frente sin robar el foco del teclado."""
+    """Restore it if minimised and bring it to the front without stealing keyboard focus."""
     _load()
     if user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, _SW_RESTORE)
@@ -132,25 +132,25 @@ def raise_window(hwnd: int) -> None:
 
 
 def capture(hwnd: int) -> tuple[int, int, bytes]:
-    """(ancho, alto, BGRA de arriba a abajo) de la ventana, aunque esté tapada."""
+    """(width, height, top-down BGRA) of the window, even when it is covered."""
     _load()
     r = wt.RECT()
     if not user32.GetWindowRect(hwnd, ctypes.byref(r)):
-        raise OSError("GetWindowRect falló: la ventana ya no existe")
+        raise OSError("GetWindowRect failed: the window no longer exists")
     w, h = r.right - r.left, r.bottom - r.top
     if w <= 0 or h <= 0:
-        raise OSError("la ventana no tiene tamaño (¿minimizada?)")
+        raise OSError("the window has no size (minimised?)")
     hdc = user32.GetWindowDC(hwnd)
     mdc = gdi32.CreateCompatibleDC(hdc)
     bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
     old = gdi32.SelectObject(mdc, bmp)
     try:
         if not user32.PrintWindow(hwnd, mdc, _PW_RENDERFULLCONTENT):
-            raise OSError("PrintWindow falló")
+            raise OSError("PrintWindow failed")
         bih = _BITMAPINFOHEADER(ctypes.sizeof(_BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
         buf = ctypes.create_string_buffer(w * h * 4)
         if gdi32.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bih), 0) != h:
-            raise OSError("GetDIBits no devolvió todas las filas")
+            raise OSError("GetDIBits did not return every row")
         return w, h, buf.raw
     finally:
         gdi32.SelectObject(mdc, old)
@@ -160,7 +160,7 @@ def capture(hwnd: int) -> tuple[int, int, bytes]:
 
 
 def post_click(hwnd: int, screen_x: int, screen_y: int) -> tuple[int, int]:
-    """Clic izquierdo enviado a `hwnd` en un punto de pantalla. Devuelve (x, y) de cliente."""
+    """Left click posted to `hwnd` at a screen point. Returns the client (x, y)."""
     _load()
     pt = wt.POINT(int(screen_x), int(screen_y))
     user32.ScreenToClient(hwnd, ctypes.byref(pt))

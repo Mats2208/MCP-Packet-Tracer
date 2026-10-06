@@ -1,4 +1,4 @@
-"""Plomería común de las tools del panel: llamar a PT, mostrar la GUI, capturar."""
+"""Shared plumbing for the panel tools: call PT, show the GUI, capture."""
 
 from __future__ import annotations
 
@@ -15,32 +15,32 @@ from ...shared.utils import resolve_within, safe_name_component
 
 SendAndWait = Callable[[str, float], Optional[str]]
 
-# Errores que devuelven los JS de host_js/service_js → texto para el modelo.
+# Errors returned by the host_js/service_js JS → text for the model.
 _JS_ERRORS = {
-    "device_not_found": "'{device}' no existe en la topología activa (pt_query_topology).",
-    "port_not_found": "Interfaz no encontrada en '{device}'. Puertos: {ports}",
-    "not_host_port": "'{device}' no es un host (PC/Laptop/Server) o esa interfaz no es de host.",
-    "no_HttpClient": "'{device}' no tiene Web Browser (¿es un host?).",
-    "no_EmailClient": "'{device}' no tiene cliente de Email (¿es un host?).",
-    "no_WirelessClient": "'{device}' no tiene cliente inalámbrico: necesita una NIC wireless "
-                         "(p. ej. pt_add_module con PT-LAPTOP-NM-1W o WMP300N).",
-    "no_DhcpServerMain": "'{device}' no tiene servicio DHCP (usá un Server-PT).",
-    "no_DnsServer": "'{device}' no tiene servicio DNS (usá un Server-PT).",
-    "no_HttpServer": "'{device}' no tiene servicio HTTP (usá un Server-PT).",
-    "no_TftpServer": "'{device}' no tiene servicio TFTP.",
-    "no_FtpServer": "'{device}' no tiene servicio FTP.",
-    "no_SyslogServer": "'{device}' no tiene servicio SYSLOG.",
-    "no_EmailServer": "'{device}' no tiene servicio EMAIL.",
-    "no_rs232": "'{device}' no tiene puerto RS 232 (Terminal solo existe en hosts).",
+    "device_not_found": "'{device}' does not exist in the active topology (pt_query_topology).",
+    "port_not_found": "Interface not found on '{device}'. Ports: {ports}",
+    "not_host_port": "'{device}' is not a host (PC/Laptop/Server) or that interface is not a host port.",
+    "no_HttpClient": "'{device}' has no Web Browser (is it a host?).",
+    "no_EmailClient": "'{device}' has no Email client (is it a host?).",
+    "no_WirelessClient": "'{device}' has no wireless client: it needs a wireless NIC "
+                         "(e.g. pt_add_module with PT-LAPTOP-NM-1W or WMP300N).",
+    "no_DhcpServerMain": "'{device}' has no DHCP service (use a Server-PT).",
+    "no_DnsServer": "'{device}' has no DNS service (use a Server-PT).",
+    "no_HttpServer": "'{device}' has no HTTP service (use a Server-PT).",
+    "no_TftpServer": "'{device}' has no TFTP service.",
+    "no_FtpServer": "'{device}' has no FTP service.",
+    "no_SyslogServer": "'{device}' has no SYSLOG service.",
+    "no_EmailServer": "'{device}' has no EMAIL service.",
+    "no_rs232": "'{device}' has no RS 232 port (Terminal only exists on hosts).",
 }
 
 
 def errors_text(result) -> str:
-    return "Validación fallida:\n" + "\n".join(f"  - {e}" for e in result.errors)
+    return "Validation failed:\n" + "\n".join(f"  - {e}" for e in result.errors)
 
 
 def screenshot_path(filename: str, output_dir: str = "screenshots") -> Path:
-    """Ruta segura para una captura (mismo esquema que pt_screenshot)."""
+    """Safe path for a capture (same scheme as pt_screenshot)."""
     base = Path(safe_name_component(output_dir, fallback="screenshots"))
     base.mkdir(parents=True, exist_ok=True)
     return resolve_within(base, safe_name_component(filename, fallback="capture") + ".png")
@@ -56,21 +56,21 @@ class PanelSupport:
 
     # -- PT ---------------------------------------------------------------
     def call(self, js: str, device: str, timeout: float = 10.0) -> tuple[dict | None, str | None]:
-        """Ejecuta un JS que reporta JSON. (datos, None) o (None, mensaje de error)."""
+        """Run JS that reports JSON. (data, None) or (None, error message)."""
         raw = self.send(js, timeout)
         if raw is None:
-            return None, "Sin respuesta de PT (timeout)."
+            return None, "No answer from PT (timeout)."
         try:
             data = json.loads(raw)
         except ValueError:
-            return None, f"Respuesta inesperada de PT: {raw[:300]}"
+            return None, f"Unexpected reply from PT: {raw[:300]}"
         if not isinstance(data, dict):
-            return None, f"Respuesta inesperada de PT: {raw[:300]}"
+            return None, f"Unexpected reply from PT: {raw[:300]}"
         if not data.get("ok", True):
             err = str(data.get("error", "error"))
             tmpl = _JS_ERRORS.get(err)
             return None, (tmpl.format(device=device, ports=data.get("ports", "?")) if tmpl
-                          else f"PT respondió: {err}")
+                          else f"PT answered: {err}")
         return data, None
 
     # -- GUI --------------------------------------------------------------
@@ -81,15 +81,15 @@ class PanelSupport:
                 scroll: bool = False, reopen: bool = False) -> tuple[list[str], int | None]:
         try:
             if reopen and section:
-                # Las páginas de Services/Config leen los valores al mostrarse:
-                # pasar por otra pestaña y volver las obliga a releer.
+                # Services/Config pages read their values when shown: going to
+                # another tab and back forces them to re-read.
                 self.presenter.open(device, tab="Physical")
             r = self.presenter.open(device, tab=tab, app=app, section=section,
                                     scroll_bottom=scroll, reopen=reopen)
         except PresenterError as exc:
-            return [f"GUI: no se pudo mostrar ({exc}). El trabajo se hizo igual por la API."], None
-        except Exception as exc:  # UIA/COM puede fallar de formas variadas
-            return [f"GUI: error inesperado al mostrar ({type(exc).__name__}: {exc})."], None
+            return [f"GUI: could not show it ({exc}). The work was still done through the API."], None
+        except Exception as exc:  # UIA/COM can fail in many ways
+            return [f"GUI: unexpected error while showing it ({type(exc).__name__}: {exc})."], None
         return ["GUI: " + " → ".join(r["steps"])], r["hwnd"]
 
     def capture(self, device: str, label: str, output_dir: str) -> list[str]:
@@ -97,13 +97,13 @@ class PanelSupport:
         try:
             info = self.presenter.capture(device, screenshot_path(name, output_dir))
         except (PresenterError, OSError, ValueError) as exc:
-            return [f"Captura fallida: {exc}"]
-        warn = "  (¡salió en blanco!)" if info.get("blank") else ""
-        return [f"Captura: {info['path']} ({info['width']}x{info['height']}){warn}"]
+            return [f"Capture failed: {exc}"]
+        warn = "  (it came out blank!)" if info.get("blank") else ""
+        return [f"Capture: {info['path']} ({info['width']}x{info['height']}){warn}"]
 
     def show_after(self, device: str, show: bool | None, capture: bool, output_dir: str,
                    label: str, **where) -> list[str]:
-        """Para paneles de estado: mostrar DESPUÉS de aplicar (y releer), capturar si se pidió."""
+        """For state panels: show AFTER applying (and re-read), capture if asked."""
         if not self.visible(show, capture):
             return []
         notes, hwnd = self.present(device, reopen=True, **where)
@@ -124,10 +124,10 @@ def with_notes(payload: dict | str, notes: list[str]) -> str:
 def console_tool_run(ps: PanelSupport, device: str, cmds: list[str], *, timeout: float,
                      auto_confirm: bool, show: bool | None, capture: bool, output_dir: str,
                      prefer_host: bool, gui_device: str = "", gui_app: str = "") -> str:
-    """Lo común a pt_cli / pt_host_command / pt_terminal.
+    """What pt_cli / pt_host_command / pt_terminal have in common.
 
-    `gui_device`/`gui_app` muestran OTRA ventana que la del dispositivo donde
-    se teclea (pt_terminal: se teclea en el router, se muestra el Terminal de la PC).
+    `gui_device`/`gui_app` show a DIFFERENT window from the device being typed
+    on (pt_terminal: typing goes to the router, the PC's Terminal is shown).
     """
     res = validate_console_commands(device, cmds)
     if not res.is_valid:
@@ -139,7 +139,7 @@ def console_tool_run(ps: PanelSupport, device: str, cmds: list[str], *, timeout:
     hwnd = None
     shown = gui_device or device
     if ps.visible(show, capture):
-        # Las consolas se actualizan en vivo: se abren ANTES, así se ve teclear.
+        # Consoles update live: open them BEFORE, so the typing can be watched.
         if gui_app:
             tab, app = "Desktop", gui_app
         else:

@@ -330,7 +330,7 @@ class TestServiceTools:
     def test_dhcp_rejects_bad_input_before_pt(self, tmp_path):
         call, sent = _tools(tmp_path)
         out = call("pt_server_dhcp", device="Server0", gateway="10.0.0.999")
-        assert "Validación fallida" in out and sent == []
+        assert "Validation failed" in out and sent == []
 
     def test_dhcp_normalizes_mask_and_ranges(self, tmp_path):
         call, sent = _tools(tmp_path)
@@ -359,7 +359,7 @@ class TestServiceTools:
     def test_missing_service_maps_to_a_readable_error(self, tmp_path):
         call, _ = _tools(tmp_path, reply=lambda js: json.dumps(
             {"ok": False, "error": "no_DhcpServerMain"}))
-        assert "no tiene servicio DHCP" in call("pt_server_dhcp", device="PC0")
+        assert "has no DHCP service" in call("pt_server_dhcp", device="PC0")
 
     def test_port_not_found_lists_ports(self, tmp_path):
         call, _ = _tools(tmp_path, reply=lambda js: json.dumps(
@@ -377,12 +377,12 @@ class TestServiceTools:
         call, sent = _tools(tmp_path)
         out = call("pt_server_dns", device="Server0",
                    records=[{"name": "www", "type": "A", "value": "nope"}])
-        assert "Validación fallida" in out and sent == []
+        assert "Validation failed" in out and sent == []
 
     def test_http_page_name_with_newline_is_rejected(self, tmp_path):
         call, sent = _tools(tmp_path)
         out = call("pt_server_http", device="Server0", pages={"in\ndex.html": "x"})
-        assert "Validación fallida" in out and sent == []
+        assert "Validation failed" in out and sent == []
 
     def test_http_page_body_may_be_multiline(self, tmp_path):
         call, sent = _tools(tmp_path)
@@ -392,7 +392,7 @@ class TestServiceTools:
     def test_service_rejects_dhcp_dns_http(self, tmp_path):
         call, sent = _tools(tmp_path)
         out = call("pt_server_service", device="Server0", service="HTTP", enable=True)
-        assert "Validación fallida" in out and sent == []
+        assert "Validation failed" in out and sent == []
 
     def test_service_ftp_users_and_section(self, tmp_path):
         p = FakePresenter()
@@ -406,12 +406,12 @@ class TestServiceTools:
 class TestDesktopTools:
     def test_email_invalid_action(self, tmp_path):
         call, sent = _tools(tmp_path)
-        assert "action inválida" in call("pt_email_client", device="PC0", action="delete")
+        assert "Invalid action" in call("pt_email_client", device="PC0", action="delete")
         assert sent == []
 
     def test_email_send_needs_to(self, tmp_path):
         call, sent = _tools(tmp_path)
-        assert "falta 'to'" in call("pt_email_client", device="PC0", action="send")
+        assert "'to' is missing" in call("pt_email_client", device="PC0", action="send")
         assert sent == []
 
     def test_email_send_and_show(self, tmp_path):
@@ -440,7 +440,7 @@ class TestDesktopTools:
     def test_firewall_on_a_router(self, tmp_path):
         call, _ = _tools(tmp_path, reply=lambda js: json.dumps(
             {"ok": False, "error": "not_host_port", "ports": "GigabitEthernet0/0"}))
-        assert "no es un host" in call("pt_host_firewall", device="R1", ipv4=True)
+        assert "is not a host" in call("pt_host_firewall", device="R1", ipv4=True)
 
 
 def _terminal_reply(peer):
@@ -459,13 +459,13 @@ class TestTerminal:
     def test_without_console_cable(self, tmp_path):
         call, sent = _tools(tmp_path, reply=_terminal_reply(None))
         out = call("pt_terminal", device="PC1", commands=["show clock"])
-        assert "no tiene cable de consola" in out and "cable_type='console'" in out
+        assert "has no console cable" in out and "cable_type='console'" in out
         assert len(sent) == 1
 
     def test_types_on_the_peer_console(self, tmp_path):
         call, sent = _tools(tmp_path, reply=_terminal_reply("R1"))
         out = call("pt_terminal", device="PC1", commands=["show clock"])
-        assert "consola de R1" in out and "now" in out
+        assert "console of R1" in out and "now" in out
         run = next(js for js in sent if "var cmds=" in js)
         assert '"R1"' in run and '"PC1"' not in run
 
@@ -524,14 +524,14 @@ class TestWebBrowser:
     def test_no_answer(self, tmp_path):
         call, _ = _tools(tmp_path, reply=_browser_reply([""]))
         out = call("pt_web_browser", device="PC0", url="http://10.9.9.9", timeout=0.2)
-        assert "sin respuesta" in out
+        assert "no answer" in out
 
     def test_url_with_newline_is_rejected(self, tmp_path):
         call, sent = _tools(tmp_path)
-        assert "Validación fallida" in call("pt_web_browser", device="PC0", url="http://a\nb")
+        assert "Validation failed" in call("pt_web_browser", device="PC0", url="http://a\nb")
         assert sent == []
 
     def test_long_pages_are_cut(self, tmp_path):
         call, _ = _tools(tmp_path, reply=_browser_reply(["", "<p>" + "x" * 9000 + "</p>"]))
         out = json.loads(call("pt_web_browser", device="PC0", url="http://a"))
-        assert out["text"].endswith("(recortado)") and out["html_bytes"] == 9007
+        assert out["text"].endswith("(cut)") and out["html_bytes"] == 9007

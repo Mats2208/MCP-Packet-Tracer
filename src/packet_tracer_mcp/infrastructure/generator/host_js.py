@@ -1,19 +1,19 @@
-"""JS para el panel de un dispositivo: IP Configuration, lectura del panel y módulos.
+"""JS for a device's panel: IP Configuration, reading the panel, and modules.
 
-Todo el JS va en una IIFE (los `return` tempranos no cortan otros comandos del
-mismo lote HTTP) y los datos viajan como UN objeto `json.dumps`: ningún campo
-se interpola a mano.
+All the JS goes in an IIFE (early `return`s don't cut off other commands in the
+same HTTP batch) and the data travels as ONE `json.dumps` object: no field is
+interpolated by hand.
 """
 
 from __future__ import annotations
 
 import json
 
-# Getters que se leen de cada puerto. Cada uno va detrás de un typeof Y de su
-# propio try/catch: la superficie de Port cambia por modelo, y hay getters que
-# existen pero lanzan (en un puerto de router, getIpv6LinkLocal responde
-# "IPC Call ERROR: HostPort - getIpv6LinkLocal implementation error"). Con un
-# solo try para todo el puerto, ese error escondía el puerto entero.
+# Getters read from each port. Each one sits behind a typeof AND its own
+# try/catch: Port's surface changes by model, and some getters exist but throw
+# (on a router port, getIpv6LinkLocal answers
+# "IPC Call ERROR: HostPort - getIpv6LinkLocal implementation error"). With a
+# single try around the whole port, that error hid the entire port.
 _PORT_READ_JS = (
     "function __port(d,n){var p=d.getPort(n);if(!p){return null;}"
     "function v(m){try{return typeof p[m]==='function'?p[m]():null;}catch(e){return null;}}"
@@ -46,10 +46,10 @@ def host_ip_config_js(
     ipv6_gateway: str = "",
     ipv6_dns: str = "",
 ) -> str:
-    """Lo que hace Desktop > IP Configuration (y Config > Global > Gateway/DNS).
+    """What Desktop > IP Configuration does (and Config > Global > Gateway/DNS).
 
-    `port` vacío = la primera interfaz Ethernet (o Wireless0), igual que el
-    configurePcIp de la extensión. `gateway`/`dns` None = no tocar.
+    Empty `port` = the first Ethernet interface (or Wireless0), like the
+    extension's configurePcIp. `gateway`/`dns` None = leave alone.
     """
     cfg = json.dumps({
         "device": device, "port": port, "mode": mode, "ip": ip, "mask": mask,
@@ -96,7 +96,7 @@ def host_ip_config_js(
 
 
 def port_state_js(device: str, port: str) -> str:
-    """Relee un puerto (para esperar el lease de DHCP)."""
+    """Re-read a port (to wait for the DHCP lease)."""
     cfg = json.dumps({"device": device, "port": port})
     return (
         "(function(){"
@@ -107,8 +107,8 @@ def port_state_js(device: str, port: str) -> str:
     )
 
 
-# Procesos de servicio que se reportan si existen. "Aaa" queda afuera a
-# propósito: en PT 9.0.1 getProcess("Aaa") lanza "invalid string position".
+# Service processes reported if present. "Aaa" is left out on purpose: in
+# PT 9.0.1 getProcess("Aaa") throws "invalid string position".
 _SERVICE_PROCS = (
     "DhcpServerMain", "DnsServer", "HttpServer", "HttpsServer", "TftpServer",
     "FtpServer", "SyslogServer", "EmailServer", "NtpServer",
@@ -116,7 +116,7 @@ _SERVICE_PROCS = (
 
 
 def read_device_panel_js(device: str) -> str:
-    """Todo lo que muestran Physical/Config/Desktop/Services, de una vez y de solo lectura."""
+    """Everything Physical/Config/Desktop/Services show, in one go and read-only."""
     cfg = json.dumps({"device": device, "procs": list(_SERVICE_PROCS)})
     return (
         "(function(){"
@@ -146,12 +146,12 @@ def read_device_panel_js(device: str) -> str:
 
 
 def add_module_js(device: str, slot: str, module: str) -> str:
-    """Instala un módulo con el helper `addModule` de la extensión y REPORTA el resultado.
+    """Install a module with the extension's `addModule` helper and REPORT the result.
 
-    El pt_add_module original hacía `return JSON.stringify(...)` sin llamar a
-    reportResult: por HTTP siempre terminaba en timeout aunque el módulo se
-    hubiera instalado, y por archivo devolvía "" (de ahí el "timeout pero
-    funcionó" que documentaba la skill).
+    The original pt_add_module did `return JSON.stringify(...)` without calling
+    reportResult: over HTTP it always ended in a timeout even when the module
+    was installed, and over the file bridge it returned "" (hence the "timeout
+    but it worked" the skill used to document).
     """
     return (
         "(function(){"
@@ -162,7 +162,7 @@ def add_module_js(device: str, slot: str, module: str) -> str:
 
 
 def remove_module_js(device: str, slot: str) -> str:
-    """Quita el módulo de un slot (Physical tab) con el mismo power-cycle que addModule."""
+    """Remove the module in a slot (Physical tab) with the same power-cycle as addModule."""
     cfg = json.dumps({"device": device, "slot": slot})
     return (
         "(function(){"
