@@ -61,6 +61,7 @@ from ...infrastructure.generator.cli_config_generator import (
     generate_pc_config,
 )
 from ...infrastructure.generator.acl_cli_generator import generate_acl_cli
+from .device_panel_tools import register_device_panel_tools
 from ...infrastructure.execution.manual_executor import ManualExecutor
 from ...infrastructure.execution.deploy_executor import DeployExecutor
 from ...infrastructure.execution.live_bridge import (
@@ -4881,3 +4882,12 @@ def register_tools(mcp: FastMCP) -> None:
             "para configurarlo usá CLI IOS."
         )
         return json.dumps(data, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # PANEL DEL DISPOSITIVO (CLI, Command Prompt, IP Configuration, GUI)
+    # ------------------------------------------------------------------
+    # Viven en su propio módulo con los helpers del bridge inyectados: así son
+    # testeables sin PT y este archivo no sigue creciendo.
+    register_device_panel_tools(
+        mcp, send_and_wait=_bridge_send_and_wait, check_bridge=_check_bridge,
+    )

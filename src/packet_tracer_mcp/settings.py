@@ -162,10 +162,39 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
 - NO existe `pt_send_pdu`: PT no permite originar un paquete desde una extensión
   como sí lo hace el botón "Add Simple PDU" de la GUI. Generá tráfico con un ping real.
 
+## Device panel (CLI, Desktop, Services) — headless or UI
+Everything in a device's window is driven through the API, without taking the mouse or keyboard:
+- `pt_cli(device, commands)`: CLI tab of a router/switch. Types one command at a time and waits
+  for the prompt; marks each one ok / ERROR / UNKNOWN COMMAND (the DNS lookup is aborted) /
+  WAITING FOR ANSWER / TIMEOUT. Enter on `[confirm]` and `Destination filename [..]?` is
+  automatic; `[yes/no]` and `Password:` are answered by the next command.
+- `pt_host_command(host, command, inputs)`: Desktop > Command Prompt (ping, ipconfig, tracert,
+  arp -a, nslookup, telnet/ssh with `inputs`).
+- `pt_terminal(pc, commands)`: Desktop > Terminal of a PC with a console cable to a router.
+- `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto), `pt_host_firewall`,
+  `pt_web_browser` (returns the page as text), `pt_email_client`.
+- Server-PT Services: `pt_server_dhcp` (pools, exclusions), `pt_server_dns` (A/CNAME),
+  `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts).
+- `pt_read_device_panel(device)`: reads ports, IPs, MAC, firewall and services in one go.
+- `pt_remove_module(device, slot)`: the inverse of pt_add_module.
+
+Presentation mode (`pt_ui_mode`):
+- "headless" (default): nothing opens on screen.
+- "ui": every tool above also opens the device window on the matching tab/app so the user can
+  watch. If the user says "show it in PT", "I want to see the windows", "take screenshots" →
+  `pt_ui_mode("ui")`; "do it in the background" → "headless".
+- Per call: `show=True/False` wins over the mode; `capture=True` saves a PNG of the window (and
+  shows it). `output_dir` is a folder relative to the project, as in pt_screenshot.
+- `pt_ui_open(device, tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)` to
+  show/capture without doing anything else.
+PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API throws
+"invalid vector subscript"), the Text Editor, the EMAIL service's "Domain Name" and individual
+host-firewall rules. For those, open the window with pt_ui_open and let the user do it.
+
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 61 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 78 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.

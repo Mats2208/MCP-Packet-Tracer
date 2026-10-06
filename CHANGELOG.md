@@ -2,7 +2,39 @@
 
 ## Unreleased
 
+### Added
+
+- **Device-panel control: every tab of a device window, without touching the screen.**
+  17 new tools (61 → 78) drive what a student does inside a device through Packet
+  Tracer's own API: `pt_cli` (IOS CLI tab — one command at a time, waits for the
+  prompt, aborts the DNS hang an IOS typo causes, presses Enter on `[confirm]` and
+  `Destination filename [..]?`, primes a freshly deployed router), `pt_host_command`
+  (Desktop › Command Prompt), `pt_terminal` (a PC's Terminal over its console cable),
+  `pt_host_ip_config`, `pt_host_firewall`, `pt_web_browser`, `pt_email_client`,
+  `pt_read_device_panel`, `pt_remove_module`, and the Server-PT services
+  `pt_server_dhcp`, `pt_server_dns`, `pt_server_http`, `pt_server_service`
+  (TFTP/FTP/SYSLOG/EMAIL). What `pt_cli` types shows up in the real CLI tab.
+- **`pt_server_dhcp` edits a server's DHCP pools** — create, edit and delete pools,
+  exclude ranges, switch the service on/off — through
+  `DhcpServerMain.getDhcpServerProcessByPortName()`. Closes #23.
+- **UI mode.** `pt_ui_mode("headless" | "ui")`: headless (the default) works only
+  through the API; `ui` also opens the device's window on the matching tab, Desktop
+  app or Services page so the user can watch. `show=` overrides it per call and
+  `capture=True` saves a PNG of the window. `pt_ui_open`, `pt_ui_capture` and
+  `pt_ui_close` show or capture a window directly. The mode persists across restarts
+  (`PT_MCP_UI_MODE` overrides it). Windows only; install with
+  `pip install "packet-tracer-mcp[ui]"` (adds `comtypes`). Windows are driven by UI
+  Automation and a click *posted* to the canvas — the real cursor never moves — and
+  only while PT's Select tool is active, since a click with Delete active would
+  delete the device.
+- **MCP prompts** `ui_on`, `ui_off`, `ui_status` (in Claude Code:
+  `/mcp__packet-tracer__ui_on`).
+
 ### Fixed
+
+- **`pt_add_module` always reported a timeout, even when the module was installed.**
+  Its JS used `return` instead of `reportResult`, so the bridge never got an answer.
+  It now reports `installed` / `failed` directly.
 
 - **Un salto de línea en un campo de texto ya no se cuela como comando IOS.**
   `configureIosDevice()` parte el payload por `\n` y manda cada trozo al

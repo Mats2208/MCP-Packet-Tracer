@@ -53,7 +53,7 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (61)
+## Tool catalog (78)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -67,7 +67,7 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 `pt_open_project` replaces the current topology.
 **Live deploy & edit:** `pt_live_deploy` (auto-reconciles dropped devices), `pt_add_device`, `pt_add_link`,
 `pt_delete_link`, `pt_delete_device`, `pt_rename_device`, `pt_move_device`, `pt_set_port`, `pt_send_raw`,
-`pt_add_module`, `pt_install_modules_batch`.
+`pt_add_module`, `pt_remove_module`, `pt_install_modules_batch`.
 **ACL / NAT (live):** `pt_apply_acl`, `pt_apply_acl_object`, `pt_remove_acl`, `pt_remove_acl_object`,
 `pt_apply_nat`, `pt_remove_nat` — all accept `dry_run=True` to preview CLI without touching PT.
 **Config-driven (live, dry_run):** `pt_apply_vlan` (VLAN/trunk/inter-VLAN subinterfaces),
@@ -108,6 +108,21 @@ plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
 There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
 *Add Simple PDU* button does. Generate traffic with a real ping instead.
+**Device panel (CLI / Desktop / Services, live):** `pt_cli(device, commands)` types IOS commands
+in the router's real CLI tab one at a time, waiting for the prompt, and marks each `ok` / `ERROR` /
+`UNKNOWN COMMAND` / `WAITING FOR ANSWER` / `TIMEOUT`; `pt_host_command(host, command, inputs)` is the
+PC's Desktop › Command Prompt (ping, ipconfig, tracert, nslookup, telnet/ssh); `pt_terminal(pc,
+commands)` types on the router at the other end of the PC's console cable. `pt_host_ip_config`
+(static/DHCP/gateway/DNS/IPv6 auto), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
+`pt_email_client`. Server-PT: `pt_server_dhcp` (create/edit/delete pools, exclusions, on/off),
+`pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS),
+`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts).
+`pt_read_device_panel(device)` reads every tab at once (read-only).
+**UI mode:** `pt_ui_mode("headless"|"ui"|"status")` — headless (default) does everything through the
+API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
+`show=True/False` overrides it and `capture=True` saves a PNG (path returned). `pt_ui_open(device,
+tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the user says "show me",
+"screenshots", "use the tabs" → `pt_ui_mode("ui")`. Needs Windows + `pip install packet-tracer-mcp[ui]`.
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Advanced builds (verified live 2026-06-27)
@@ -251,7 +266,8 @@ it as extra CLI with `configureIosDevice(name, cli)`.
 | invent model `"Cisco4500"` | `pt_list_devices` / `pt_get_device_details` first | use real catalog names |
 | invent module `"NM-4T"` | `pt_list_modules(router_model=…)` first | use real module names |
 | raw JS unwrapped | wrap in `try/catch` + `reportResult` | uncaught error freezes the bridge |
-| trust `add_module` "timeout" = failure | verify with `pt_query_topology` | it often succeeds despite timeout |
+| several IOS commands blind through raw `enterCommand` | `pt_cli` (waits for the prompt per command) | a typo hangs the console on a DNS lookup and everything typed after it is dropped |
+| `getProcess("Aaa")` | don't | throws `invalid string position` in PT 9.0.1 |
 
 ## Cables, ports, IP conventions
 
@@ -275,7 +291,8 @@ it as extra CLI with `configureIosDevice(name, cli)`.
 `slot` is a **STRING**. Pick a module whose `compatible_with` includes the model — the MCP **rejects an
 incompatible module up front** when the module declares `compatible_with` (HWIC/NIM/built-ins); generic
 `PT-*` modules have no declared constraint, so choose sensibly there. Always confirm with
-`pt_query_topology` after install; a single `pt_add_module` may report a **timeout yet still succeed**.
+`pt_query_topology` after install. `pt_add_module` reports `installed`/`failed` directly (it used to
+always time out because its JS never called `reportResult`; fixed and verified live 2026-10-07).
 
 | Router family | Module type | Slot (string) | Ports added | Status |
 |---|---|---|---|---|
@@ -285,20 +302,21 @@ incompatible module up front** when the module declares `compatible_with` (HWIC/
 | 2811 / 2620XM / 2621XM | NM (`NM-4A/S`, `NM-2FE2W`,…) | **`"1"`** | `Serial1/0..1/3` | ✅ verified 2811 |
 | Router-PT (generic) | NM (`NM-*`, `PT-ROUTER-NM-*`) | `"1"` | ⚠️ non-standard ids (e.g. `Serial2/0`) | installs, odd port names |
 
-> ⚠️ The `pt_add_module` docstring/SERVER_INSTRUCTIONS say NIM slots are `"0"`/`"1"` — **that is
+> ⚠️ Older docstrings said NIM slots are `"0"`/`"1"` — **that was
 > wrong**; the working slot is **`"0/1"`** (chassis/subslot). HWIC = `"0/x"`, NM = `"1"`, NIM = `"0/1"`.
 > The install *mechanism* (`addModule`) is identical across routers — only the **slot string** differs
 > by family. Always confirm the result with `pt_query_topology`.
 
 Prefer `pt_install_modules_batch` for multiple modules (one power-cycle); individual installs
-power-cycle the device and can exceed the wait window (and often report a timeout despite succeeding).
+power-cycle the device once each. `pt_remove_module(device, slot)` is the inverse and reports which
+ports disappeared.
 
 ## Known rough edges (verified by benchmark against PT 9.0.1)
 
 - **Module compatibility is enforced for modules that declare `compatible_with`** (HWIC/NIM/built-ins
   reject a wrong model); generic `PT-*` modules carry no constraint, so still pick sensibly.
-- **`pt_add_module` (single) can report a timeout but still succeed** — verify ports, don't blindly retry.
-  (`pt_install_modules_batch` no longer guesses: it reports `installed` per module, see round 2 below.)
+- **`pt_add_module` no longer reports a false timeout** (fixed 2026-10-07); `pt_install_modules_batch`
+  reports `installed` per module (see round 2 below).
 - **`three_router_triangle` closes the ring (R3↔R1)** and `hub_spoke` wires R1→every spoke — the
   orchestrator honors the template shape (was a flat chain before). ⚠️ **`hub_spoke` is limited by the
   hub's port count**: a 2911 has 3 Gigabit ports, so it cannot serve 5 spokes plus its own LAN. Asking
@@ -382,6 +400,47 @@ with the default outline.
   overlap, so you do not need to reposition devices by hand after `pt_full_build` — only if you want a
   specific arrangement.
 
+### Device panel — verified against PT 9.0.1 (2026-10-07)
+
+**Consoles**
+- `d.getCommandLine()` is the console line `con0`: on a router it is what the **CLI tab** shows; on a PC
+  it is the *same* line as `d.getCommandPrompt()` (Desktop › Command Prompt). Typing there shows up live
+  in the GUI.
+- `enterCommand(cmd)` output is **synchronous** for show/config/ipconfig (read `getOutput()` right
+  after). `ping`/`tracert`/`nslookup` are **asynchronous** and `getPrompt()` does not change while they
+  run → completion = the prompt reappears at the END of the output, after the echo.
+- **While IOS asks a question, `getPrompt()` returns the question** (`Destination filename
+  [startup-config]? `). Don't treat "prompt is back" as done if the prompt is a `[confirm]`/`[..]?`/
+  `[yes/no]`/`Password:` pattern — press Enter or send the answer.
+- An unknown IOS word is taken as a hostname (`Translating "x"...domain server`): the console hangs and
+  **anything typed meanwhile is dropped, not queued**. Abort with `cl.enterChar(30,0)` (Ctrl+Shift+6);
+  hosts abort with `cl.enterChar(3,0)` (Ctrl+C).
+- `CiscoDevice.enterCommand(cmd, mode)` runs on a **hidden** line — not shown in the CLI tab.
+
+**Processes** (`d.getProcess(name)`, wrap each in try/catch)
+- PC: `HttpClient` (`go(url)` async → `getLastPageContent()`), `EmailClient`, `DhcpClient`, `DnsClient`.
+  No firewall process: the host firewall is `port.setInboundFirewallService(bool)`.
+- Server: `DhcpServerMain.getDhcpServerProcessByPortName(port)` → pools via `getPool/addNewPool/
+  removePool/addExcludedAddress/setEnable`; `DnsServer` (`addARecordToNameServerDb`,
+  `addCNAMEToNameServerDb`, `remove…`, `setEnable`); `HttpServer` (`setPageContents/getPage`);
+  `TftpServer`/`FtpServer` (`setEnabled`; FTP users via `getFtpUserAccountManager().addFtpUser`);
+  `SyslogServer`; `EmailServer` (`addUser/changePassword`, no domain or on/off API).
+- ⚠️ `DnsServer.getIpAddOfDomain` / `isDomainNameExisted` read a different table and return
+  `0.0.0.0`/`false` for records `nslookup` resolves. Confirm a record with
+  `getARecordWithAddress(name, ip)` / `getCNameRecordWithHostname(name, target)` (object or null).
+- ☠️ `getProcess("Aaa")` throws `invalid string position`. **Broken:** `WirelessClientProcess.addProfile
+  / setCurrentProfile*` always throw `invalid vector subscript`; PC `FileManager` has no usable file API.
+- Some port getters exist but throw (router port `getIpv6LinkLocal`) → one try/catch **per getter**.
+
+**GUI (UI mode)**
+- No API opens a device dialog or selects a tab. The MCP posts a click to the device's canvas position
+  (the cursor never moves) only when the canvas tool is **Select** — a click with Delete active would
+  delete the device — then drives tabs/apps with Windows UI Automation.
+- Desktop apps have two title-bar variants (`m_titleBar.m_closeButton` and `m_titleFrame.m_closeBtn`);
+  Email nests a "Configure Mail" panel that must be closed first. `pt_ui_open` handles both.
+- **Consoles update live; state panels don't.** IP Configuration and Services pages read their values
+  when shown, so the tools re-open them after applying a change.
+
 ## Recipes
 
 - *"2 routers, 2 switches, 4 PCs, DHCP, static"* → `pt_full_build(routers=2, switches_per_router=1,
@@ -392,4 +451,8 @@ with the default outline.
   entries=[{action:"deny",protocol:"tcp",source:"any",destination:"host 192.168.0.10",dest_port_op:"eq",
   dest_port:23},{action:"permit",protocol:"ip",source:"any",destination:"any"}],
   binding_interface="GigabitEthernet0/0", binding_direction="in", dry_run=True)` — preview first.
+- Save a router's config → `pt_cli("R1", ["enable", "copy running-config startup-config"])` (Enter on
+  the filename question is automatic).
+- DHCP from a server → `pt_server_dhcp("Server0", gateway="192.168.1.1", dns="192.168.1.20",
+  start_ip="192.168.1.100", mask="24", max_users=50)` then `pt_host_ip_config("PC0", mode="dhcp")`.
 - Read a device's ports safely → `pt_send_raw('try{var d=ipc.network().getDevice("R1");reportResult(d?d.getPorts().join(","):"missing")}catch(e){reportResult("ERR:"+e)}', wait_result=True)`.

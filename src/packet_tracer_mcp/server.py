@@ -12,6 +12,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
+from .adapters.mcp.prompt_registry import register_prompts
 from .adapters.mcp.resource_registry import register_resources
 from .adapters.mcp.tool_registry import register_tools
 from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
@@ -45,6 +46,7 @@ if _lowlevel is not None:
 
 register_tools(mcp)
 register_resources(mcp)
+register_prompts(mcp)
 
 
 def main():

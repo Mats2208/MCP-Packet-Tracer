@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>61 MCP Tools</strong></td>
+<td align="center"><strong>78 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -78,6 +78,8 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | **Live inspection** | `pt_inspect_ports`, `pt_read_vlans`, `pt_device_power` | Per-port protocol/duplex/NAT/ACL state, real VLAN database, power-cycle with read-back |
 | **Packet tracing** | `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` | Step the simulation and read **why** each packet did what it did — PT's own per-OSI-layer decision log, not just pass/fail |
 | **Telemetry** | `pt_apply_netflow` configures a NetFlow exporter directly and reads it back; `pt_read_qos` verifies class-maps and policy-maps | Collector address, UDP port, version, source interface |
+| **Device panel** | `pt_cli`, `pt_host_command`, `pt_terminal`, `pt_host_ip_config`, `pt_web_browser`, `pt_email_client`, `pt_host_firewall`, `pt_server_dhcp` / `_dns` / `_http` / `_service` | Every tab of a device window — IOS CLI, the PC's Command Prompt and Desktop apps, Server-PT Services — driven through PT's API. No mouse, no keyboard, nothing taken over on screen |
+| **UI mode** | `pt_ui_mode`, `pt_ui_open`, `pt_ui_capture` | Headless by default; switch to `ui` and every panel tool also opens the real device window on the right tab so you can watch, with optional PNG captures |
 | **Backup** | `pt_backup_config`, `pt_project_metadata`, `pt_workspace_options` | Real startup-config + serial + config-register; project info; auto-cabling and real-network-access toggles |
 | **Deploy** | Real-time bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
 | **Two channels** | HTTP when the extension window is open, **file-bridge when it's closed** | PT keeps executing with the window minimized/closed |
@@ -92,6 +94,12 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 
 ```bash
 pip install packet-tracer-mcp
+```
+
+For **UI mode** on Windows (opening and capturing the device windows), add the `ui` extra:
+
+```bash
+pip install "packet-tracer-mcp[ui]"
 ```
 
 Or from source, if you want to modify it:
@@ -170,13 +178,29 @@ own **MCP Control Center** extension once — the `.pts` from
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 
+## Device panel and UI mode
+
+Once a topology is live, the agent can work inside each device the way a student would —
+type in a router's **CLI** tab (`pt_cli`), run `ping`/`ipconfig`/`nslookup` from a PC's
+**Command Prompt** (`pt_host_command`), set **IP Configuration**, browse with the **Web
+Browser**, configure a server's **DHCP/DNS/HTTP/FTP/EMAIL** services — all through Packet
+Tracer's own API. What it types appears in the real CLI tab, so you can watch or take over.
+
+It is **headless by default**: nothing opens on screen. Say *"show it in Packet Tracer"* (or
+call `pt_ui_mode("ui")`) and every panel tool also opens the device's window on the matching
+tab or app; `capture=True` saves a PNG of it. The windows are driven with Windows UI
+Automation and a click posted to the canvas — your real mouse and keyboard are never used.
+Claude Code users also get the prompts `/mcp__packet-tracer__ui_on` and `ui_off`.
+
+📖 Tool list → **[Device panel](https://mats2208.github.io/MCP-Packet-Tracer/tools/#device-panel-cli-desktop-and-services)**.
+
 ## Clients
 
 Any MCP client drives this server — Claude Code, Cursor, Claude Desktop, VS Code with
 Copilot, Codex. Nothing in it is client-specific.
 
 There is also one built **on** it: **[PacketSmith](https://github.com/Mats2208/packetsmith)**,
-a terminal app that runs these 61 tools with the network drawn beside the conversation — a
+a terminal app that runs these tools with the network drawn beside the conversation — a
 fabric tree and a canvas plan derived from the `pt_*` results themselves, so a device the
 model *says* it created but did not never shows up.
 
