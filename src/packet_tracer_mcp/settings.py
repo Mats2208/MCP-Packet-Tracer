@@ -144,6 +144,19 @@ Llamadas individuales pueden timear el bootstrap del bridge si el reboot supera 
 - Receta para un diagrama presentable: pt_full_build → pt_add_note por subred y
   enlace → pt_screenshot.
 
+## DHCP en un Server-PT (no en el router)
+- `pt_configure_dhcp_server(device, network, mask, gateway, dns, start_ip, max_users,
+  pool_name="serverPool", enabled=True)`: crea o edita el pool (Services > DHCP de
+  la GUI), enciende el servicio y lo relee. Sin `network` solo lee. `remove=True`
+  borra el pool; acepta `dry_run=True`.
+- El DHCP de un ROUTER es otra cosa: va por CLI (`ip dhcp pool`), que es lo que
+  emite el plan con `dhcp=True`.
+- El servidor necesita IP estática dentro de la subred del pool. PT nunca reparte la
+  IP del servidor, pero SÍ la del gateway si cae en el rango: empezá después del router.
+- Si cambiás un pool, los hosts que ya tenían lease lo conservan (aunque quede fuera
+  del rango). Prender/apagar setDhcpFlag NO renueva: mandá `ipconfig /release` y
+  `ipconfig /renew` por la consola del host.
+
 ## Telemetría y QoS — NO son simétricas
 - `pt_apply_netflow(device, name, destination_ip, ...)`: configura el exportador
   directamente (no por CLI) y lo relee para confirmar. Si el nombre ya existe lo
@@ -165,7 +178,7 @@ Flujo: `pt_simulation_mode(on=True)` → generar tráfico (`pt_verify_connectivi
 ## Importante
 - Para agregar dispositivos individuales usa pt_add_device (valida duplicados y modelo).
 - Para crear links individuales usa pt_add_link (valida dispositivos, puertos, cable type).
-- El MCP tiene 61 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
+- El MCP tiene 62 tools. Usa `pt_full_build` para el caso general (topología nueva con configs).
 - Para crear SOLO topología física sin configurar IPs/OSPF/DHCP, manda `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. y deja `interfaces={}` en cada DevicePlan.
 - Si el usuario pide algo que no está en el catálogo, infórmalo claramente en lugar de inventar.
