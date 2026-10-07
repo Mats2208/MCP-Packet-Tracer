@@ -51,6 +51,11 @@ from ...domain.models.errors import ErrorCode, PlanError
 from ...domain.rules.netflow_rules import (
     validate_netflow, validate_netflow_against_topology,
 )
+from ...domain.models.dhcp_server import DEFAULT_SERVER_POOL, DhcpServerPool
+from ...domain.rules.text_rules import has_control_chars
+from ...domain.rules.dhcp_server_rules import (
+    resolve_range, validate_dhcp_server, validate_dhcp_server_against_topology,
+)
 from ...infrastructure.generator.ptbuilder_generator import (
     generate_ptbuilder_script,
     generate_full_script,
@@ -4782,6 +4787,271 @@ def register_tools(mcp: FastMCP) -> None:
                 f"⚠ '{name}' existe en {device} pero PT lo reporta incompleto: "
                 "sin destino no exporta flujos."
             )
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # DHCP EN SERVER-PT — API nativa, el Server-PT no tiene CLI (issue #23)
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_configure_dhcp_server(
+        device: str,
+        network: str = "",
+        mask: str = "255.255.255.0",
+        gateway: str = "",
+        dns: str = "",
+        start_ip: str = "",
+        max_users: int = 0,
+        pool_name: str = DEFAULT_SERVER_POOL,
+        port: str = "FastEthernet0",
+        enabled: bool = True,
+        drop_factory_pool: bool = True,
+        remove: bool = False,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Crea o edita un pool DHCP en un Server-PT y enciende el servicio.
+
+        Es el equivalente a Services > DHCP de la GUI. No va por CLI (un Server-PT
+        no tiene): se configura por la API nativa y se relee para confirmar. Para
+        DHCP en un ROUTER usá el plan (`dhcp=True`) o CLI `ip dhcp pool`.
+
+        El servidor tiene que tener IP estática dentro de la subred del pool; si no
+        la tiene, la tool avisa (DHCP_SERVER_NO_IP). PT nunca reparte la IP del
+        propio servidor, pero SÍ la del gateway si cae dentro del rango.
+
+        Parámetros:
+        - device: nombre del Server-PT.
+        - network / mask: subred del pool (ej "192.168.10.0", "255.255.255.0").
+          Sin network la tool solo LEE los pools existentes.
+        - gateway: default router que reciben los clientes.
+        - dns: servidor DNS que reciben los clientes (vacío = no se toca).
+        - start_ip: primera IP a repartir. Vacío = el host siguiente al gateway
+          si el gateway es el primero (.1), si no el primer host.
+        - max_users: cantidad de IPs. 0 = hasta el final de la subred.
+          PT calcula el fin del rango solo.
+        - pool_name: default "serverPool", el pool que trae el server de fábrica
+          y el que muestra la GUI. Otro nombre crea un pool nuevo (o edita el que
+          ya existe con ese nombre; nunca duplica).
+        - port: puerto del servidor que atiende (default FastEthernet0).
+        - enabled: estado del servicio DHCP (Services > DHCP > On/Off).
+        - drop_factory_pool: con un pool_name propio, borra el "serverPool" de
+          fábrica SI nunca se configuró (su inicio es la dirección de red). Ese
+          pool se autoajusta a la subred del servidor y reparte desde .1, o sea
+          la IP del gateway — verificado en PT 9.0. Uno configurado no se toca.
+        - remove: si True, borra el pool `pool_name` en vez de configurarlo.
+        - dry_run: si True, solo valida y devuelve el JS sin tocar PT.
+
+        Ejemplo: un server DHCP por LAN, clientes desde la .3:
+          pt_configure_dhcp_server(device="DHCP-A", network="192.168.10.0",
+              gateway="192.168.10.1", dns="8.8.8.8", start_ip="192.168.10.3")
+        """
+        cfg = DhcpServerPool(
+            device=device.strip(), pool_name=pool_name.strip(), port=port.strip(),
+            network=network.strip(), mask=mask.strip(), gateway=gateway.strip(),
+            dns=dns.strip(), start_ip=start_ip.strip(), max_users=max_users,
+        )
+        read_only = not cfg.network and not remove
+
+        errors: list[PlanError] = []
+        warnings: list[PlanError] = []
+        if not read_only and not remove:
+            res = validate_dhcp_server(cfg)
+            errors.extend(res.errors)
+            warnings.extend(res.warnings)
+        elif remove and (not cfg.pool_name or has_control_chars(cfg.pool_name)):
+            errors.append(PlanError(
+                code=ErrorCode.DHCP_INVALID_POOL_NAME, device=cfg.device,
+                message="Nombre de pool inválido para borrar.",
+                suggestion="Pasá el nombre exacto; leelo primero sin network.",
+            ))
+        if has_control_chars(cfg.device) or has_control_chars(cfg.port):
+            errors.append(PlanError(
+                code=ErrorCode.DHCP_SERVER_DEVICE_NOT_FOUND, device=cfg.device,
+                message="El nombre del dispositivo o del puerto tiene saltos de línea.",
+                suggestion="Usá los nombres exactos de pt_query_topology.",
+            ))
+
+        if not errors and _pick_channel() != "":
+            try:
+                topo = validate_dhcp_server_against_topology(cfg, _live_devices())
+                errors.extend(topo.errors)
+                if not read_only and not remove:
+                    warnings.extend(topo.warnings)
+            except Exception as exc:  # pragma: no cover
+                warnings.append(PlanError(
+                    code=ErrorCode.VALIDATION_ERROR, device=cfg.device,
+                    message=f"No se pudo validar contra PT: {exc}",
+                    suggestion="Verificá el bridge con pt_bridge_status.",
+                ))
+
+        expected: dict = {}
+        if read_only:
+            body = ""
+        elif remove:
+            body = f"    __s.removePool({json.dumps(cfg.pool_name)});"
+        elif errors:
+            body = ""
+        else:
+            start, users = resolve_range(cfg)
+            expected = {
+                "network": cfg.network, "mask": cfg.mask, "start": start,
+                "max_users": users,
+            }
+            sets = [
+                f"    __p.setNetworkAddress({json.dumps(cfg.network)});",
+                # setNetworkMask recibe (red, máscara): con un solo argumento PT
+                # contesta "Invalid arguments for IPC call".
+                f"    __p.setNetworkMask({json.dumps(cfg.network)}, {json.dumps(cfg.mask)});",
+            ]
+            if cfg.gateway:
+                expected["gateway"] = cfg.gateway
+                sets.append(f"    __p.setDefaultRouter({json.dumps(cfg.gateway)});")
+            if cfg.dns:
+                expected["dns"] = cfg.dns
+                sets.append(f"    __p.setDnsServerIp({json.dumps(cfg.dns)});")
+            # El orden importa: setMaxUsers recalcula el fin a partir del inicio.
+            sets.append(f"    __p.setStartIp({json.dumps(start)});")
+            sets.append(f"    __p.setMaxUsers({int(users)});")
+            name = json.dumps(cfg.pool_name)
+            drop = ""
+            if drop_factory_pool and cfg.pool_name != DEFAULT_SERVER_POOL:
+                factory = json.dumps(DEFAULT_SERVER_POOL)
+                drop = (
+                    f"    var __f = __s.getPool({factory});"
+                    "    if (__f && String(__f.getDefaultRouter()) === '0.0.0.0'"
+                    "        && (String(__f.getStartIp()) === String(__f.getNetworkAddress())"
+                    "            || String(__f.getStartIp()) === '0.0.0.0')) {"
+                    f"      __s.removePool({factory}); __dropped = true;"
+                    "    }"
+                )
+            body = (
+                f"    var __p = __s.getPool({name});"
+                f"    if (!__p) {{ __s.addPool({name}); __p = __s.getPool({name}); __created = true; }}"
+                "    if (!__p) { __fail = 'PT no creó el pool'; } else {"
+                + "".join(sets) +
+                f"    __s.setEnable({'true' if enabled else 'false'});"
+                + drop +
+                "    }"
+            )
+
+        js = (
+            "try {"
+            f"  var __d = ipc.network().getDevice({json.dumps(cfg.device)});"
+            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
+            "  else {"
+            "    var __m = (typeof __d.getProcess === 'function') ? __d.getProcess('DhcpServerMain') : null;"
+            "    if (!__m) { reportResult(JSON.stringify({ found: true, supported: false })); }"
+            "    else {"
+            f"    var __s = __m.getDhcpServerProcessByPortName({json.dumps(cfg.port)});"
+            "    if (!__s) { reportResult(JSON.stringify({ found: true, supported: true, port_ok: false })); }"
+            "    else {"
+            "    var __created = false; var __dropped = false; var __fail = '';"
+            + body +
+            "    var __pools = [];"
+            "    for (var __i = 0; __i < __s.getPoolCount(); __i++) {"
+            "      var __q = __s.getPoolAt(__i);"
+            "      __pools.push({ name: String(__q.getDhcpPoolName()),"
+            "        network: String(__q.getNetworkAddress()), mask: String(__q.getSubnetMask()),"
+            "        gateway: String(__q.getDefaultRouter()), dns: String(__q.getDnsServerIp()),"
+            "        start: String(__q.getStartIp()), end: String(__q.getEndIp()),"
+            "        max_users: __q.getMaxUsers() });"
+            "    }"
+            "    var __ip = '';"
+            f"    try {{ __ip = String(__d.getPort({json.dumps(cfg.port)}).getIpAddress()); }} catch (__x) {{}}"
+            "    reportResult(JSON.stringify({ found: true, supported: true, port_ok: true,"
+            "      enabled: !!__s.isEnable(), server_ip: __ip, created: __created,"
+            "      dropped_factory_pool: __dropped, error: __fail, pools: __pools }));"
+            "    }"
+            "    }"
+            "  }"
+            "} catch (__e) { reportResult('ERROR:' + __e); }"
+        )
+
+        payload: dict = {
+            "valid": not errors,
+            "errors": [e.to_dict() for e in errors],
+            "warnings": [w.to_dict() for w in warnings],
+            "mode": "read" if read_only else ("remove" if remove else "configure"),
+            "js_payload": js,
+            "dry_run": dry_run,
+            "sent": False,
+        }
+        if errors:
+            payload["summary"] = f"❌ DHCP server: {len(errors)} error(es); no se envió nada."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+        if dry_run:
+            payload["summary"] = "✅ Pool válido. Modo dry_run — NO se envió al bridge."
+            return json.dumps(payload, indent=2, ensure_ascii=False)
+
+        err = _check_bridge()
+        if err:
+            return err
+
+        raw = _bridge_send_and_wait(js, timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Respuesta ilegible de PT: {exc}"
+
+        if not data.get("found"):
+            return (
+                f"'{device}' no existe en la topología activa. "
+                "Usá pt_query_topology para ver los nombres reales."
+            )
+        if not data.get("supported"):
+            return (
+                f"'{device}' no tiene servidor DHCP de Server-PT. Si es un router, "
+                "el DHCP va por CLI (`ip dhcp pool`) o por el plan con dhcp=True."
+            )
+        if not data.get("port_ok"):
+            return f"'{device}' no tiene un servidor DHCP en el puerto '{port}'."
+
+        payload.update(data)
+        payload["sent"] = True
+        # Ya corrió: el JS (~1.5 KB) solo ensucia el contexto. Queda en dry_run.
+        payload.pop("js_payload", None)
+        pools = {p["name"]: p for p in data.get("pools", [])}
+        state = "ON" if data.get("enabled") else "OFF"
+
+        if read_only:
+            payload["summary"] = (
+                f"Solo lectura: {len(pools)} pool(s) en {device}, servicio {state}."
+            )
+        elif remove:
+            gone = cfg.pool_name not in pools
+            payload["summary"] = (
+                f"✅ Pool '{cfg.pool_name}' eliminado de {device}." if gone
+                else f"⚠ PT no borró '{cfg.pool_name}': sigue en la lista de pools."
+            )
+        elif data.get("error"):
+            payload["summary"] = f"❌ {data['error']}."
+        else:
+            got = pools.get(cfg.pool_name, {})
+            mismatches = [
+                f"{k}: pedido {v}, quedó {got.get(k)}"
+                for k, v in expected.items() if str(got.get(k)) != str(v)
+            ]
+            if bool(data.get("enabled")) != enabled:
+                mismatches.append(f"servicio: pedido {'ON' if enabled else 'OFF'}, quedó {state}")
+            payload["mismatches"] = mismatches
+            if mismatches:
+                payload["summary"] = (
+                    f"⚠ '{cfg.pool_name}' aplicado en {device} pero la relectura no "
+                    f"coincide: {'; '.join(mismatches)}."
+                )
+            else:
+                payload["summary"] = (
+                    f"✅ '{cfg.pool_name}' {'creado' if data.get('created') else 'actualizado'} "
+                    f"en {device}: {got.get('start')}-{got.get('end')} "
+                    f"({got.get('max_users')} IPs), gw {got.get('gateway')}, servicio {state}."
+                    + (" Se borró el serverPool de fábrica sin configurar."
+                       if data.get("dropped_factory_pool") else "")
+                )
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
     # ------------------------------------------------------------------

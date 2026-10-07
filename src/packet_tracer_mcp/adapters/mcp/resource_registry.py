@@ -79,6 +79,8 @@ def register_resources(mcp: FastMCP) -> None:
                 "modules": any("module" in n for n in names),
                 "live_deploy": "pt_live_deploy" in names,
                 "raw_js": "pt_send_raw" in names,
+                # DHCP en Server-PT (Services > DHCP); el de router va por CLI.
+                "dhcp_server_pools": "pt_configure_dhcp_server" in names,
             }
         except Exception:
             pass

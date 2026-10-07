@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- **`pt_configure_dhcp_server`: pools DHCP en un Server-PT** (#23, gracias
+  @lucaschefferh). Hasta ahora el MCP solo sabía poner el pool en un router por
+  CLI, y un lab con un servidor DHCP por subred quedaba con los hosts en APIPA
+  hasta crear los pools a mano en Services > DHCP. Parecía que PT no lo permitía:
+  `getProcess("DhcpServerMain")` no tiene ni un método de pools. Están un nivel
+  más abajo, en `getDhcpServerProcessByPortName("FastEthernet0")`. La tool crea o
+  edita el pool, enciende el servicio y relee todos los pools para comparar con lo
+  pedido; sin `network` solo lee, `remove=True` borra y `dry_run` no toca PT.
+  Verificado en PT 9.0 con dos LANs, un Server-PT cada una: los PCs reciben IP,
+  gateway y DNS de su servidor y se hacen ping a través del router.
+- **Lo que hay que saber del DHCP de PT, medido en vivo.** Nunca reparte la IP
+  del propio servidor, pero sí la del gateway si el rango la cubre (la tool lo
+  avisa con `DHCP_SERVER_RANGE_OVERLAP`). Y el `serverPool` de fábrica se
+  reajusta a la subred del servidor con inicio en la dirección de red y sin
+  gateway: al lado de un pool con nombre propio le reparte `.1` a un cliente. Con
+  un nombre propio, la tool lo borra mientras siga sin configurar
+  (`drop_factory_pool=True`); si alguien lo configuró, no lo toca.
+
 ### Fixed
 
 - **Un salto de línea en un campo de texto ya no se cuela como comando IOS.**
