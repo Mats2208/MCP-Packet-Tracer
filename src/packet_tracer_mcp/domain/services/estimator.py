@@ -119,10 +119,10 @@ def _estimate_complexity(req: TopologyRequest) -> str:
     if score <= 10:
         return "simple"
     elif score <= 25:
-        return "moderada"
+        return "moderate"
     elif score <= 50:
-        return "compleja"
-    return "muy compleja"
+        return "complex"
+    return "very complex"
 
 
 def _normalized_total(values: int | list[int], routers: int) -> int:
