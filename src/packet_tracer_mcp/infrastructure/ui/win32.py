@@ -86,7 +86,10 @@ def _load() -> None:
     _loaded = True
 
 
-_WNDENUMPROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+# WINFUNCTYPE only exists on Windows. Elsewhere the module must still import,
+# so is_available() can answer "Windows only" instead of crashing.
+_WNDENUMPROC = (ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+                if hasattr(ctypes, "WINFUNCTYPE") else None)
 
 
 def top_windows(pid: int) -> list[tuple[int, str]]:
