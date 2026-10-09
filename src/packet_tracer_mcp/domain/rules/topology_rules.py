@@ -61,22 +61,22 @@ def validate_connectivity(plan: TopologyPlan) -> list[PlanError]:
     starved = [d for d in unreachable if d.category == "router" and not d.interfaces]
     if starved:
         suggestion = (
-            "El router que hace de hub se quedó sin puertos libres para tantos "
-            "enlaces. Usá un modelo con más puertos, agregá un módulo de "
-            "expansión, o reducí la cantidad de routers."
+            "The hub router ran out of free ports for that many "
+            "links. Use a model with more ports, add an expansion "
+            "module, or reduce the number of routers."
         )
     else:
         suggestion = (
-            f"Agregá un enlace que conecte {unreachable[0].name} con el resto "
-            "de la topología."
+            f"Add a link connecting {unreachable[0].name} to the rest "
+            "of the topology."
         )
 
     return [PlanError(
         code=ErrorCode.TOPOLOGY_DISCONNECTED,
         device=unreachable[0].name,
         message=(
-            f"La topología está partida: {orphan_names} no tiene(n) camino hacia "
-            f"{start}. Los dispositivos aislados no pueden enrutar ni recibir tráfico."
+            f"The topology is split: {orphan_names} has/have no path to "
+            f"{start}. Isolated devices can neither route nor receive traffic."
         ),
         suggestion=suggestion,
     )]
@@ -97,13 +97,13 @@ def validate_routing(plan: TopologyPlan) -> list[PlanError]:
                 code=ErrorCode.OSPF_NO_NETWORKS,
                 device=cfg.router,
                 message=(
-                    f"OSPF proceso {cfg.process_id} en {cfg.router} no anuncia "
-                    "ninguna red."
+                    f"OSPF process {cfg.process_id} on {cfg.router} advertises "
+                    "no network."
                 ),
                 suggestion=(
-                    "Un proceso OSPF sin sentencias `network` no forma "
-                    "adyacencias. Verificá que el router tenga interfaces "
-                    "direccionadas y enlazadas."
+                    "An OSPF process without `network` statements forms no "
+                    "adjacencies. Check that the router has addressed and "
+                    "linked interfaces."
                 ),
             ))
 
@@ -114,12 +114,12 @@ def validate_routing(plan: TopologyPlan) -> list[PlanError]:
                 code=ErrorCode.OSPF_INVALID_ROUTER_ID,
                 device=cfg.router,
                 message=(
-                    f"OSPF en {cfg.router} tiene router-id 0.0.0.0, que IOS "
-                    "rechaza."
+                    f"OSPF on {cfg.router} has router-id 0.0.0.0, which IOS "
+                    "rejects."
                 ),
                 suggestion=(
-                    "El router-id se deriva de las interfaces del router; "
-                    "0.0.0.0 significa que no tiene ninguna direccionada."
+                    "The router-id is derived from the router's interfaces; "
+                    "0.0.0.0 means none of them is addressed."
                 ),
             ))
 
@@ -150,15 +150,15 @@ def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
         code=ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION,
         device=wireless_hosts[0].name,
         message=(
-            f"Hay {len(aps)} access points compartiendo el SSID por defecto y "
-            f"{len(wireless_hosts)} host(s) inalambrico(s). En la vista logica de "
-            "PT el alcance RF es global, asi que cada host puede asociarse a "
-            "CUALQUIERA de ellos y recibir direccion del pool DHCP de otra LAN."
+            f"There are {len(aps)} access points sharing the default SSID and "
+            f"{len(wireless_hosts)} wireless host(s). In PT's logical view the "
+            "RF range is global, so each host can associate with "
+            "ANY of them and get an address from another LAN's DHCP pool."
         ),
         suggestion=(
-            "PT no expone API de SSID, asi que esto no se puede fijar desde el "
-            "plan. Comproba con pt_inspect_ports en que subred quedo cada host "
-            "inalambrico; si necesitas direccionamiento determinista, usa "
-            "wireless_laptops=False y cablea las laptops a su switch."
+            "PT exposes no SSID API, so this cannot be fixed from the "
+            "plan. Check with pt_inspect_ports which subnet each wireless "
+            "host ended up in; for deterministic addressing use "
+            "wireless_laptops=False and cable the laptops to their switch."
         ),
     )]

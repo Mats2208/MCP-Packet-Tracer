@@ -17,16 +17,16 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
             errors.append(PlanError(
                 code=ErrorCode.DEVICE_INVALID_NAME,
                 device=dev.name,
-                message=f"El nombre del dispositivo '{dev.name}' contiene un salto de línea.",
-                suggestion="Usa un nombre de dispositivo de una sola línea.",
+                message=f"The device name '{dev.name}' contains a line break.",
+                suggestion="Use a single-line device name.",
             ))
 
         if dev.name in names_seen:
             errors.append(PlanError(
                 code=ErrorCode.DUPLICATE_DEVICE_NAME,
                 device=dev.name,
-                message=f"Nombre de dispositivo duplicado: '{dev.name}'",
-                suggestion="Renombrar uno de los dispositivos duplicados.",
+                message=f"Duplicate device name: '{dev.name}'",
+                suggestion="Rename one of the duplicate devices.",
             ))
         names_seen.add(dev.name)
 
@@ -35,9 +35,9 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
             errors.append(PlanError(
                 code=ErrorCode.UNKNOWN_DEVICE_MODEL,
                 device=dev.name,
-                message=f"Modelo desconocido '{dev.model}'.",
+                message=f"Unknown model '{dev.model}'.",
                 suggestion=(
-                    "Usar un modelo válido. "
+                    "Use a valid model. "
                     "Routers: 1841, 1941, 2620XM, 2621XM, 2811, 2901, 2911, "
                     "819HG-4G-IOX, 819HGW, 829, CGR1240, ISR4321, ISR4331, Router-PT, Router-PT-Empty. "
                     "Switches: 2950-24, 2950T-24, 2960-24TT, 3560-24PS, 3650-24PS, IE-2000, "
@@ -45,7 +45,7 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
                     "End devices: PC-PT, Server-PT, Laptop-PT, TabletPC-PT, SMARTPHONE-PT, Printer-PT, "
                     "WirelessEndDevice-PT, WiredEndDevice-PT, TV-PT, Home-VoIP-PT, Analog-Phone-PT, "
                     "Embedded-Server-PT. "
-                    "Otros: Cloud-PT, Cloud-PT-Empty, AccessPoint-PT, AccessPoint-PT-A, "
+                    "Others: Cloud-PT, Cloud-PT-Empty, AccessPoint-PT, AccessPoint-PT-A, "
                     "AccessPoint-PT-N, AccessPoint-PT-AC, LAP-PT, 3702i, Hub-PT, Bridge-PT, "
                     "Repeater-PT, CoAxialSplitter-PT, 5505, 5506-X, WLC-PT, WLC-2504, WLC-3504, "
                     "DSL-Modem-PT, Cable-Modem-PT, Linksys-WRT300N, HomeRouter-PT-AC, "

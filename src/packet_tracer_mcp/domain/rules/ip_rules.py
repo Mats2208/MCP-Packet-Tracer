@@ -21,7 +21,7 @@ def validate_ips(plan: TopologyPlan) -> list[PlanError]:
                 errors.append(PlanError(
                     code=ErrorCode.INVALID_IP_ADDRESS,
                     device=dev.name,
-                    message=f"IP inválida '{ip_cidr}' en interfaz {iface}.",
+                    message=f"Invalid IP '{ip_cidr}' on interface {iface}.",
                     suggestion="Verificar formato IP. Ejemplo: 192.168.1.1/24",
                 ))
                 continue
@@ -32,7 +32,7 @@ def validate_ips(plan: TopologyPlan) -> list[PlanError]:
                     code=ErrorCode.IP_CONFLICT,
                     device=dev.name,
                     message=f"IP {ip_str} duplicada entre {all_ips[ip_str]} y {key}.",
-                    suggestion="Reasignar una de las IPs en conflicto.",
+                    suggestion="Reassign one of the conflicting IPs.",
                 ))
             else:
                 all_ips[ip_str] = key
@@ -49,8 +49,8 @@ def validate_dhcp(plan: TopologyPlan) -> list[PlanError]:
             errors.append(PlanError(
                 code=ErrorCode.DHCP_INVALID_POOL_NAME,
                 device=pool.router,
-                message=f"El nombre del pool DHCP '{pool.pool_name}' contiene un salto de línea.",
-                suggestion="Usa un nombre de pool de una sola línea.",
+                message=f"The DHCP pool name '{pool.pool_name}' contains a line break.",
+                suggestion="Use a single-line pool name.",
             ))
 
         router = plan.device_by_name(pool.router)
@@ -59,7 +59,7 @@ def validate_dhcp(plan: TopologyPlan) -> list[PlanError]:
                 code=ErrorCode.DHCP_ROUTER_NOT_FOUND,
                 device=pool.router,
                 message=f"DHCP pool '{pool.pool_name}' referencia router inexistente.",
-                suggestion="Verificar nombre del router.",
+                suggestion="Check the router name.",
             ))
             continue
 
@@ -72,8 +72,8 @@ def validate_dhcp(plan: TopologyPlan) -> list[PlanError]:
             errors.append(PlanError(
                 code=ErrorCode.DHCP_GATEWAY_MISMATCH,
                 device=pool.router,
-                message=f"Gateway {pool.gateway} del pool '{pool.pool_name}' no asignado a interfaz de {pool.router}.",
-                suggestion="Asignar el gateway a una interfaz del router.",
+                message=f"Gateway {pool.gateway} of pool '{pool.pool_name}' is not assigned to an interface of {pool.router}.",
+                suggestion="Assign the gateway to a router interface.",
             ))
 
     return errors

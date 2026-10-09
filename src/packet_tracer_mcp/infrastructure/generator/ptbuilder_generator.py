@@ -136,8 +136,8 @@ def generate_full_script(plan: TopologyPlan) -> str:
 
     configs = generate_all_configs(plan)
     if configs:
-        parts.append("/* === Configuraciones CLI por dispositivo ===")
-        parts.append("Copiar y pegar en la CLI de cada dispositivo. */")
+        parts.append("/* === CLI configuration per device ===")
+        parts.append("Copy and paste into each device's CLI. */")
         for device_name, cli_block in configs.items():
             parts.append(f"/* --- {device_name} ---")
             for line in cli_block.splitlines():

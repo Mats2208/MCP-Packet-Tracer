@@ -124,7 +124,7 @@ def resolve_within(base: Path, *parts: str) -> Path:
     candidate = base_resolved.joinpath(*parts).resolve()
     if candidate != base_resolved and not candidate.is_relative_to(base_resolved):
         raise ValueError(
-            f"Ruta fuera del directorio base: {candidate} no está dentro de {base_resolved}"
+            f"Path outside the base directory: {candidate} is not inside {base_resolved}"
         )
     return candidate
 

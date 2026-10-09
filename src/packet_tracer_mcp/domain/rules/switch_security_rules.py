@@ -25,8 +25,8 @@ def validate_stp(cfg: STPConfig) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.STP_INVALID_PRIORITY,
                 device=cfg.switch,
-                message=f"Prioridad STP {prio} (VLAN {vlan}) inválida.",
-                suggestion="Debe ser 0-61440 y múltiplo de 4096 (ej 4096, 8192, 24576).",
+                message=f"Invalid STP priority {prio} (VLAN {vlan}).",
+                suggestion="It must be 0-61440 and a multiple of 4096 (e.g. 4096, 8192, 24576).",
             ))
     return ValidationResult(errors=errors)
 
@@ -38,8 +38,8 @@ def validate_stp_against_topology(cfg: STPConfig, devices_in_pt: list[dict]) -> 
         errors.append(PlanError(
             code=ErrorCode.STP_SWITCH_NOT_FOUND,
             device=cfg.switch,
-            message=f"Switch '{cfg.switch}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Switch '{cfg.switch}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
     return ValidationResult(errors=errors)
 
@@ -50,8 +50,8 @@ def validate_port_security(cfg: PortSecurityConfig) -> ValidationResult:
         errors.append(PlanError(
             code=ErrorCode.PORTSEC_INVALID_MAX,
             device=cfg.switch,
-            message=f"max_mac {cfg.max_mac} fuera de rango (1-8192).",
-            suggestion="Usa un máximo de direcciones MAC entre 1 y 8192.",
+            message=f"max_mac {cfg.max_mac} out of range (1-8192).",
+            suggestion="Use a maximum MAC address count between 1 and 8192.",
         ))
     for mac in cfg.static_macs:
         cleaned = mac.replace(".", "").replace(":", "").replace("-", "")
@@ -59,8 +59,8 @@ def validate_port_security(cfg: PortSecurityConfig) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.PORTSEC_INVALID_MAC,
                 device=cfg.switch,
-                message=f"MAC '{mac}' inválida.",
-                suggestion="Usa formato IOS aaaa.bbbb.cccc.",
+                message=f"Invalid MAC '{mac}'.",
+                suggestion="Use the IOS format aaaa.bbbb.cccc.",
             ))
     return ValidationResult(errors=errors)
 
@@ -74,14 +74,14 @@ def validate_port_security_against_topology(
         errors.append(PlanError(
             code=ErrorCode.PORTSEC_SWITCH_NOT_FOUND,
             device=cfg.switch,
-            message=f"Switch '{cfg.switch}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Switch '{cfg.switch}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
     elif not _port_in_model(sw, cfg.port):
         errors.append(PlanError(
             code=ErrorCode.PORTSEC_SWITCH_NOT_FOUND,
             device=cfg.switch,
-            message=f"Puerto '{cfg.port}' no existe en {sw.get('model')}.",
-            suggestion="Revisa los puertos con pt_get_device_details.",
+            message=f"Port '{cfg.port}' does not exist on {sw.get('model')}.",
+            suggestion="Check the ports with pt_get_device_details.",
         ))
     return ValidationResult(errors=errors)

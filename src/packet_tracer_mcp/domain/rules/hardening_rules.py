@@ -20,10 +20,10 @@ def _check_no_newlines(
         errors.append(PlanError(
             code=ErrorCode.HARDENING_INVALID_CHARS,
             device=device,
-            message=f"El campo '{field}' contiene un salto de línea.",
+            message=f"The field '{field}' contains a line break.",
             suggestion=(
-                f"Quita los saltos de línea de '{field}' — cada uno se convertiría "
-                "en un comando IOS adicional en el dispositivo."
+                f"Remove the line breaks from '{field}' — each one would become "
+                "an extra IOS command on the device."
             ),
         ))
 
@@ -48,11 +48,11 @@ def validate_hardening(cfg: HardeningConfig) -> ValidationResult:
         errors.append(PlanError(
             code=ErrorCode.HARDENING_INVALID_CHARS,
             device=cfg.device,
-            message="El banner MOTD no puede contener '#'.",
+            message="The MOTD banner cannot contain '#'.",
             suggestion=(
-                "'#' es el delimitador del comando `banner motd`; si aparece en el "
-                "texto, IOS corta el banner ahí y ejecuta el resto como comandos. "
-                "Usa otro carácter."
+                "'#' is the delimiter of the `banner motd` command; if it appears in the "
+                "text, IOS ends the banner there and runs the rest as commands. "
+                "Use another character."
             ),
         ))
 
@@ -61,22 +61,22 @@ def validate_hardening(cfg: HardeningConfig) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.HARDENING_SSH_REQUIRES_DOMAIN,
                 device=cfg.device,
-                message="SSH requiere un domain-name (`ip domain-name`).",
+                message="SSH requires a domain-name (`ip domain-name`).",
                 suggestion="Define ssh.domain (ej 'lab.local').",
             ))
         if cfg.ssh.modulus < 768:
             warnings.append(PlanError(
                 code=ErrorCode.HARDENING_WEAK_MODULUS,
                 device=cfg.device,
-                message=f"Módulo RSA {cfg.ssh.modulus} es débil (<768).",
-                suggestion="Usa 1024 o 2048 para SSH v2.",
+                message=f"RSA modulus {cfg.ssh.modulus} is weak (<768).",
+                suggestion="Use 1024 or 2048 for SSH v2.",
             ))
         if not cfg.users:
             warnings.append(PlanError(
                 code=ErrorCode.VALIDATION_ERROR,
                 device=cfg.device,
-                message="SSH habilitado pero sin usuarios locales — no podrás autenticarte.",
-                suggestion="Agrega al menos un usuario en `users`.",
+                message="SSH enabled but there are no local users — you won't be able to log in.",
+                suggestion="Add at least one user in `users`.",
             ))
 
     return ValidationResult(errors=errors, warnings=warnings)
@@ -90,7 +90,7 @@ def validate_hardening_against_topology(
         errors.append(PlanError(
             code=ErrorCode.HARDENING_DEVICE_NOT_FOUND,
             device=cfg.device,
-            message=f"Dispositivo '{cfg.device}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Device '{cfg.device}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
     return ValidationResult(errors=errors)

@@ -35,7 +35,7 @@ def normalize_format(fmt: str) -> str:
     upper = (fmt or "PNG").strip().upper()
     if upper not in IMAGE_FORMATS:
         raise CanvasImageError(
-            f"Formato '{fmt}' no soportado. Válidos: {', '.join(IMAGE_FORMATS)}."
+            f"Format '{fmt}' is not supported. Valid: {', '.join(IMAGE_FORMATS)}."
         )
     return upper
 
@@ -43,7 +43,7 @@ def normalize_format(fmt: str) -> str:
 def decode_pt_image(raw: str, fmt: str = "PNG") -> bytes:
     """Converts PT's signed byte list into the image's binary data."""
     if not raw or not raw.strip():
-        raise CanvasImageError("PT devolvió una imagen vacía.")
+        raise CanvasImageError("PT returned an empty image.")
 
     out = bytearray()
     for chunk in raw.split(","):
@@ -54,21 +54,21 @@ def decode_pt_image(raw: str, fmt: str = "PNG") -> bytes:
             value = int(chunk)
         except ValueError as exc:
             raise CanvasImageError(
-                f"Valor no numérico en los bytes de la imagen: '{chunk[:20]}'."
+                f"Non-numeric value in the image bytes: '{chunk[:20]}'."
             ) from exc
         if not -128 <= value <= 255:
-            raise CanvasImageError(f"Byte fuera de rango: {value}.")
+            raise CanvasImageError(f"Byte out of range: {value}.")
         # Qt's `byte` is signed; -119 and 137 are the same octet (0x89).
         out.append(value + 256 if value < 0 else value)
 
     if not out:
-        raise CanvasImageError("PT devolvió una imagen sin bytes.")
+        raise CanvasImageError("PT returned an image with no bytes.")
 
     magic = _MAGIC.get(normalize_format(fmt))
     if magic and not bytes(out).startswith(magic):
         raise CanvasImageError(
-            f"Los bytes no corresponden a un {fmt}: empieza con "
-            f"{list(out[:4])} y se esperaba {list(magic)}."
+            f"The bytes are not a {fmt}: they start with "
+            f"{list(out[:4])}, expected {list(magic)}."
         )
     return bytes(out)
 
@@ -77,7 +77,7 @@ def validate_color(r: int, g: int, b: int, a: int) -> None:
     """All four channels range from 0 to 255; PT does not warn if anything else is passed."""
     for name, value in (("r", r), ("g", g), ("b", b), ("a", a)):
         if not 0 <= value <= 255:
-            raise ValueError(f"El canal {name}={value} está fuera de rango (0-255).")
+            raise ValueError(f"Channel {name}={value} is out of range (0-255).")
 
 
 def parse_uuid_list(raw) -> list[str]:

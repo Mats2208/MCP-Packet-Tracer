@@ -54,22 +54,22 @@ def _audit_device(dev: dict) -> list[dict]:
     if not dev.get("enable_secret_set"):
         findings.append(_finding(
             name, "NO_ENABLE_SECRET", "high",
-            "Sin `enable secret`: cualquiera con acceso a la consola entra a modo privilegiado.",
-            "Configurá `enable secret <clave>` (o usá pt_apply_hardening con enable_secret).",
+            "No `enable secret`: anyone with console access gets privileged mode.",
+            "Set `enable secret <key>` (or use pt_apply_hardening with enable_secret).",
         ))
     else:
         algo = dev.get("enable_secret_algo")
         if algo in REVERSIBLE_ALGOS:
             findings.append(_finding(
                 name, "ENABLE_SECRET_REVERSIBLE", "high",
-                f"El `enable secret` está guardado con un algoritmo reversible ({algo}).",
-                "Reconfiguralo con `enable secret` (hash) en vez de `enable password`.",
+                f"The `enable secret` is stored with a reversible algorithm ({algo}).",
+                "Reconfigure it with `enable secret` (hash) instead of `enable password`.",
             ))
         elif algo in WEAK_HASH_ALGOS:
             findings.append(_finding(
                 name, "ENABLE_SECRET_WEAK_ALGO", "medium",
-                "El `enable secret` usa MD5 (type 5), crackeable offline.",
-                "Si el IOS lo soporta, usá `enable algorithm-type scrypt secret <clave>`.",
+                "The `enable secret` uses MD5 (type 5), crackable offline.",
+                "If the IOS supports it, use `enable algorithm-type scrypt secret <key>`.",
             ))
 
     # `enable password` and `enable secret` can coexist; the password is
@@ -77,8 +77,8 @@ def _audit_device(dev: dict) -> list[dict]:
     if dev.get("enable_password_set"):
         findings.append(_finding(
             name, "ENABLE_PASSWORD_PRESENT", "medium",
-            "Hay un `enable password` configurado, que se guarda de forma reversible.",
-            "Borralo con `no enable password` y dejá solo `enable secret`.",
+            "An `enable password` is configured, and it is stored reversibly.",
+            "Remove it with `no enable password` and keep only `enable secret`.",
         ))
 
     # --- Local credentials ---
@@ -89,44 +89,44 @@ def _audit_device(dev: dict) -> list[dict]:
         if ualgo in REVERSIBLE_ALGOS:
             findings.append(_finding(
                 name, "USER_CREDENTIAL_REVERSIBLE", "high",
-                f"El usuario local '{uname}' guarda su credencial de forma reversible ({ualgo}).",
-                f"Recreálo con `username {uname} secret <clave>` en vez de `password`.",
+                f"Local user '{uname}' stores its credential reversibly ({ualgo}).",
+                f"Recreate it with `username {uname} secret <key>` instead of `password`.",
             ))
         elif ualgo in WEAK_HASH_ALGOS:
             findings.append(_finding(
                 name, "USER_CREDENTIAL_WEAK_ALGO", "low",
-                f"El usuario local '{uname}' usa MD5 (type 5).",
-                f"Si el IOS lo soporta: `username {uname} algorithm-type scrypt secret <clave>`.",
+                f"Local user '{uname}' uses MD5 (type 5).",
+                f"If the IOS supports it: `username {uname} algorithm-type scrypt secret <key>`.",
             ))
 
     if not users:
         findings.append(_finding(
             name, "NO_LOCAL_USERS", "low",
-            "No hay usuarios locales: no se puede exigir `login local` en VTY ni usar SSH.",
-            "Creá al menos un usuario con `username <user> secret <clave>`.",
+            "No local users: `login local` on VTY and SSH cannot be used.",
+            "Create at least one user with `username <user> secret <key>`.",
         ))
 
     # --- Global config ---
     if not dev.get("service_password_encryption"):
         findings.append(_finding(
             name, "NO_SERVICE_PASSWORD_ENCRYPTION", "medium",
-            "`service password-encryption` está apagado: las claves quedan en claro en la config.",
-            "Activalo con `service password-encryption` (no reemplaza a `secret`, lo complementa).",
+            "`service password-encryption` is off: passwords stay in clear text in the config.",
+            "Turn it on with `service password-encryption` (it complements `secret`, it doesn't replace it).",
         ))
 
     if not dev.get("banner_set"):
         findings.append(_finding(
             name, "NO_BANNER_MOTD", "low",
-            "Sin banner MOTD. En varias jurisdicciones el aviso legal es requisito para perseguir un acceso no autorizado.",
-            "Configurá `banner motd` (o usá pt_apply_hardening con banner_motd).",
+            "No MOTD banner. In several jurisdictions a legal notice is required to prosecute unauthorized access.",
+            "Set `banner motd` (or use pt_apply_hardening with banner_motd).",
         ))
 
     reg = dev.get("config_register")
     if reg == CONFIG_REGISTER_BYPASS:
         findings.append(_finding(
             name, "CONFIG_REGISTER_BYPASS", "high",
-            f"El config-register es 0x{reg:04x}: en el próximo reboot el equipo IGNORA la startup-config.",
-            "Restauralo con `config-register 0x2102` y guardá la configuración.",
+            f"The config-register is 0x{reg:04x}: on the next reboot the device IGNORES the startup-config.",
+            "Restore it with `config-register 0x2102` and save the configuration.",
         ))
 
     return findings

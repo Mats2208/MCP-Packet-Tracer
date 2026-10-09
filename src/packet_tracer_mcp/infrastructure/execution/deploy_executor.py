@@ -114,21 +114,21 @@ class DeployExecutor(ExecutorBase):
 
         # Step 1: PTBuilder script
         steps.append("=" * 60)
-        steps.append("PASO 1: Crear topologia en Packet Tracer")
+        steps.append("STEP 1: Create the topology in Packet Tracer")
         steps.append("=" * 60)
         if clipboard_ok:
-            steps.append("El script PTBuilder ya esta en tu portapapeles.")
+            steps.append("The PTBuilder script is already on your clipboard.")
             steps.append("")
-            steps.append("  1. Abre Packet Tracer")
-            steps.append("  2. Ve a Extensions > Scripting (o Builder Code Editor)")
-            steps.append("  3. Pega el script (Ctrl+V)")
-            steps.append("  4. Haz clic en 'Run' o presiona el boton de ejecutar")
+            steps.append("  1. Open Packet Tracer")
+            steps.append("  2. Go to Extensions > Scripting (or Builder Code Editor)")
+            steps.append("  3. Paste the script (Ctrl+V)")
+            steps.append("  4. Click 'Run' or press the run button")
             steps.append("")
-            steps.append(f"Los dispositivos y enlaces se crearan automaticamente.")
+            steps.append(f"The devices and links will be created automatically.")
         else:
-            steps.append(f"Abre el archivo: {project_dir / 'topology.js'}")
-            steps.append("Copia su contenido y pegalo en Packet Tracer:")
-            steps.append("  Extensions > Scripting > Pegar > Run")
+            steps.append(f"Open the file: {project_dir / 'topology.js'}")
+            steps.append("Copy its contents and paste them into Packet Tracer:")
+            steps.append("  Extensions > Scripting > Paste > Run")
 
         # Step 2: Configure devices
         routers = [d for d in plan.devices if d.category == "router"]
@@ -137,29 +137,29 @@ class DeployExecutor(ExecutorBase):
         if configs:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 2: Configurar dispositivos")
+            steps.append("STEP 2: Configure the devices")
             steps.append("=" * 60)
 
             for router in routers:
                 if router.name in configs:
                     steps.append(f"")
                     steps.append(f"  {router.name}:")
-                    steps.append(f"    - Doble clic en {router.name} > pestaña CLI")
-                    steps.append(f"    - Pega el contenido de: {project_dir / f'{router.name}_config.txt'}")
+                    steps.append(f"    - Double-click {router.name} > CLI tab")
+                    steps.append(f"    - Paste the contents of: {project_dir / f'{router.name}_config.txt'}")
 
             for switch in switches:
                 if switch.name in configs:
                     steps.append(f"")
                     steps.append(f"  {switch.name}:")
-                    steps.append(f"    - Doble clic en {switch.name} > pestaña CLI")
-                    steps.append(f"    - Pega el contenido de: {project_dir / f'{switch.name}_config.txt'}")
+                    steps.append(f"    - Double-click {switch.name} > CLI tab")
+                    steps.append(f"    - Paste the contents of: {project_dir / f'{switch.name}_config.txt'}")
 
         # Step 3: Configure PCs
         pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
         if pcs:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 3: Configurar hosts (PCs)")
+            steps.append("STEP 3: Configure the hosts (PCs)")
             steps.append("=" * 60)
             for pc in pcs:
                 if plan.dhcp_pools:
@@ -173,9 +173,9 @@ class DeployExecutor(ExecutorBase):
         if plan.validations:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 4: Verificar conectividad")
+            steps.append("STEP 4: Verify connectivity")
             steps.append("=" * 60)
             for v in plan.validations:
-                steps.append(f"  {v.check_type}: {v.from_device} -> {v.to_target} (esperado: {v.expected})")
+                steps.append(f"  {v.check_type}: {v.from_device} -> {v.to_target} (expected: {v.expected})")
 
         return "\n".join(steps)

@@ -28,7 +28,7 @@ class TestAutoFixer:
         fixed_plan, fixes = fix_plan(plan)
         assert len(fixes) >= 1
         assert fixed_plan.links[0].cable == "cross"
-        assert "Cable corregido" in fixes[0]
+        assert "Cable fixed" in fixes[0]
 
     def test_no_fix_needed(self):
         """Un plan correcto no debe recibir fixes."""

@@ -27,7 +27,7 @@ class PlanTopologyDTO(BaseModel):
 
 class FixPlanDTO(BaseModel):
     """DTO for fixing a plan."""
-    plan_json: str = Field(description="JSON serializado del plan")
+    plan_json: str = Field(description="Serialized plan JSON")
 
 
 class ExportDTO(BaseModel):

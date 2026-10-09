@@ -123,10 +123,10 @@ def get_bridge_token(refresh: bool = False) -> str:
         # anyway would mean serving with the door open and telling no one.
         if not _is_valid(env):
             raise BridgeTokenError(
-                f"{_ENV_VAR} no sirve como token: hacen falta al menos "
-                f"{_MIN_LEN} caracteres de [A-Za-z0-9_-], y llegaron {len(env)}. "
-                "Corregilo, o quitá la variable para que el servidor use el "
-                "token de disco."
+                f"{_ENV_VAR} is not usable as a token: it needs at least "
+                f"{_MIN_LEN} characters from [A-Za-z0-9_-], and {len(env)} arrived. "
+                "Fix it, or remove the variable so the server uses the "
+                "token on disk."
             )
         return env
 

@@ -21,9 +21,9 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
     clouds = plan.devices_by_category("cloud")
 
     explanations.append(
-        f"Topología con {len(routers)} router(s), {len(switches)} switch(es), "
-        f"{len(pcs)} PC(s), {len(servers)} servidor(es)"
-        + (f" y conexión WAN" if clouds else "") + "."
+        f"Topology with {len(routers)} router(s), {len(switches)} switch(es), "
+        f"{len(pcs)} PC(s), {len(servers)} server(s)"
+        + (f" and a WAN connection" if clouds else "") + "."
     )
 
     # Subnetting
@@ -39,13 +39,13 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
 
     if lan_subnets:
         explanations.append(
-            f"Se asignaron {len(lan_subnets)} subredes /24 para LANs — "
-            f"cada LAN soporta hasta 254 hosts."
+            f"{len(lan_subnets)} /24 subnets were assigned to LANs — "
+            f"each LAN supports up to 254 hosts."
         )
     if link_subnets:
         explanations.append(
-            f"Los enlaces entre routers usan subredes /30 (punto a punto) — "
-            f"ahorra direcciones IP usando solo 2 hosts por enlace."
+            f"Router-to-router links use /30 subnets (point to point) — "
+            f"saving IP addresses with only 2 hosts per link."
         )
 
     # Cables
@@ -53,20 +53,20 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
     straight_links = [l for l in plan.links if l.cable == "straight"]
     if cross_links:
         explanations.append(
-            f"Se usan {len(cross_links)} cable(s) cruzado(s) entre dispositivos "
-            f"del mismo tipo (router↔router, switch↔switch)."
+            f"{len(cross_links)} crossover cable(s) are used between devices "
+            f"of the same type (router↔router, switch↔switch)."
         )
     if straight_links:
         explanations.append(
-            f"Se usan {len(straight_links)} cable(s) directos entre dispositivos "
-            f"de diferente tipo (router↔switch, switch↔PC)."
+            f"{len(straight_links)} straight-through cable(s) are used between devices "
+            f"of different types (router↔switch, switch↔PC)."
         )
 
     # DHCP
     if plan.dhcp_pools:
         explanations.append(
-            f"Se configuraron {len(plan.dhcp_pools)} pool(s) DHCP — "
-            f"los PCs obtienen IP automáticamente."
+            f"{len(plan.dhcp_pools)} DHCP pool(s) were configured — "
+            f"the PCs get their IP automatically."
         )
         for pool in plan.dhcp_pools:
             explanations.append(
@@ -78,24 +78,24 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
     if plan.static_routes:
         floating = [r for r in plan.static_routes if r.admin_distance != 1]
         primary = [r for r in plan.static_routes if r.admin_distance == 1]
-        msg = f"Se configuraron {len(primary)} ruta(s) estática(s) — cada router sabe cómo alcanzar las LANs de los otros routers."
+        msg = f"{len(primary)} static route(s) were configured — each router knows how to reach the other routers' LANs."
         if floating:
-            msg += f" Además {len(floating)} ruta(s) flotante(s) de respaldo con AD={floating[0].admin_distance}."
+            msg += f" Plus {len(floating)} floating backup route(s) with AD={floating[0].admin_distance}."
         explanations.append(msg)
     if plan.ospf_configs:
         explanations.append(
-            f"Se configuró OSPF (proceso {plan.ospf_configs[0].process_id}) en {len(plan.ospf_configs)} router(s) — "
-            f"las rutas se aprenden dinámicamente mediante LSA."
+            f"OSPF (process {plan.ospf_configs[0].process_id}) was configured on {len(plan.ospf_configs)} router(s) — "
+            f"routes are learned dynamically through LSAs."
         )
     if plan.rip_configs:
         explanations.append(
-            f"Se configuró RIP v{plan.rip_configs[0].version} en {len(plan.rip_configs)} router(s) — "
-            f"protocolo de vector de distancia, no auto-summary activado."
+            f"RIP v{plan.rip_configs[0].version} was configured on {len(plan.rip_configs)} router(s) — "
+            f"a distance-vector protocol, with no auto-summary enabled."
         )
     if plan.eigrp_configs:
         explanations.append(
-            f"Se configuró EIGRP (AS {plan.eigrp_configs[0].as_number}) en {len(plan.eigrp_configs)} router(s) — "
-            f"protocolo avanzado de vector de distancia (Cisco), convergencia rápida."
+            f"EIGRP (AS {plan.eigrp_configs[0].as_number}) was configured on {len(plan.eigrp_configs)} router(s) — "
+            f"an advanced distance-vector protocol (Cisco) with fast convergence."
         )
 
     # Validation

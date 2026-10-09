@@ -54,7 +54,7 @@ class TestDecodePtImage:
 
     def test_wrong_magic_is_caught_before_writing_to_disk(self):
         """Escribir un archivo corrupto y avisar cuando alguien lo abre es peor."""
-        with pytest.raises(CanvasImageError, match="no corresponden"):
+        with pytest.raises(CanvasImageError, match="are not a PNG"):
             decode_pt_image("1,2,3,4,5", "PNG")
 
     def test_decoded_bytes_are_writable_and_round_trip(self, tmp_path: Path):

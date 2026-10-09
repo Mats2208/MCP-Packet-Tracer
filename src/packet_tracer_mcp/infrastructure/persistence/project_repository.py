@@ -46,7 +46,7 @@ class ProjectRepository:
             self.base_dir, safe_name_component(project_name), "plan.json"
         )
         if not plan_path.exists():
-            raise FileNotFoundError(f"Proyecto '{project_name}' no encontrado")
+            raise FileNotFoundError(f"Project '{project_name}' not found")
         return TopologyPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
 
     def list_projects(self) -> list[dict]:

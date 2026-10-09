@@ -168,7 +168,7 @@ def generate_pc_config(device: DevicePlan, use_dhcp: bool | None = None) -> str:
         lines.append(f"Default Gateway: {device.gateway}")
     lines.append("DNS Server: 8.8.8.8")
     if use_dhcp:
-        lines.append("Configurar como DHCP para obtener IP automáticamente.")
+        lines.append("Set to DHCP to get an IP automatically.")
     else:
-        lines.append("Configurar IP estática con los valores anteriores.")
+        lines.append("Set a static IP with the values above.")
     return "\n".join(lines)

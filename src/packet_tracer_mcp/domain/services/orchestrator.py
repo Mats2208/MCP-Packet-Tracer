@@ -222,7 +222,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     router_model_obj = resolve_model(req.router_model or DEFAULT_ROUTER)
     switch_model_obj = resolve_model(req.switch_model or DEFAULT_SWITCH)
     if not router_model_obj or not switch_model_obj:
-        plan.errors.append("Modelo de router o switch no válido")
+        plan.errors.append("Invalid router or switch model")
         return
 
     routers = plan.devices_by_category("router")

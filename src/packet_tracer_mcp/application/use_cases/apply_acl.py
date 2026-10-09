@@ -63,8 +63,8 @@ def validate_against_topology(
         errors.append(PlanError(
             code=ErrorCode.ACL_ROUTER_NOT_FOUND,
             device=plan.router,
-            message=f"Router '{plan.router}' no existe en la topología activa de PT.",
-            suggestion="Llama a pt_query_topology para ver dispositivos disponibles.",
+            message=f"Router '{plan.router}' does not exist in PT's active topology.",
+            suggestion="Call pt_query_topology to see the available devices.",
         ))
         return ValidationResult(errors=errors, warnings=warnings)
 
@@ -82,8 +82,8 @@ def validate_against_topology(
                 errors.append(PlanError(
                     code=ErrorCode.ACL_INTERFACE_NOT_FOUND,
                     device=plan.router,
-                    message=f"Interfaz '{binding.interface}' no existe en {device.get('model')}.",
-                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))} (las sub-interfaces .N son válidas si el puerto base existe)",
+                    message=f"Interface '{binding.interface}' does not exist on {device.get('model')}.",
+                    suggestion=f"Available ports: {', '.join(sorted(valid_ports))} (.N subinterfaces are valid if the base port exists)",
                 ))
 
     return ValidationResult(errors=errors, warnings=warnings)
@@ -132,7 +132,7 @@ def apply_acl_uc(
             warnings.append(PlanError(
                 code=ErrorCode.VALIDATION_ERROR,
                 device=plan.router,
-                message=f"No se pudo consultar topología activa: {exc}. Validación estática aplicada.",
+                message=f"Could not query the active topology: {exc}. Static validation applied.",
             ))
 
     # 4. Always generate the CLI (useful for inspection even if there are errors)
@@ -173,8 +173,8 @@ def remove_acl_uc(
         PlanError(
             code=ErrorCode.ACL_INVALID_NAME,
             device=router,
-            message=f"{label} contiene un salto de línea.",
-            suggestion=f"Usa un valor de una sola línea en {label}.",
+            message=f"{label} contains a line break.",
+            suggestion=f"Use a single-line value in {label}.",
         )
         for label, value in (
             ("name_or_number", str(name_or_number)),

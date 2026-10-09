@@ -49,13 +49,13 @@ def summarize_ports(devices: list[dict]) -> dict:
             if p_linked and not p_up:
                 anomalies.append({
                     "device": dname, "port": pname, "issue": "linked_but_down",
-                    "detail": "Tiene cable pero el puerto está down (¿shutdown o cable incorrecto?).",
+                    "detail": "Cabled but the port is down (shutdown, or the wrong cable?).",
                 })
             # Layer 1 up but protocol down: encapsulation or keepalive.
             elif p_up and not port.get("protocol_up", True):
                 anomalies.append({
                     "device": dname, "port": pname, "issue": "protocol_down",
-                    "detail": "Línea up pero protocolo down (encapsulación o keepalive).",
+                    "detail": "Line up but protocol down (encapsulation or keepalive).",
                 })
 
     return {

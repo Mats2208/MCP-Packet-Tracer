@@ -98,7 +98,7 @@ def apply_nat_uc(
             warnings.append(PlanError(
                 code=ErrorCode.VALIDATION_ERROR,
                 device=config.router,
-                message=f"No se pudo consultar topología activa: {exc}. Validación estática aplicada.",
+                message=f"Could not query the active topology: {exc}. Static validation applied.",
             ))
 
     # 3. Always generate the CLI (useful for inspection even if there are errors)
@@ -150,8 +150,8 @@ def remove_nat_uc(
         PlanError(
             code=ErrorCode.NAT_INVALID_NAME,
             device=router,
-            message=f"{label} contiene un salto de línea.",
-            suggestion=f"Usa un valor de una sola línea en {label}.",
+            message=f"{label} contains a line break.",
+            suggestion=f"Use a single-line value in {label}.",
         )
         for label, value in fields
         if has_control_chars(value)

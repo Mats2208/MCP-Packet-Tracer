@@ -64,7 +64,7 @@ def apply_vlan_uc(
         except Exception as exc:  # pragma: no cover - defensive
             warnings.append(PlanError(
                 code=ErrorCode.VALIDATION_ERROR,
-                message=f"No se pudo validar contra PT: {exc}",
+                message=f"Could not validate against PT: {exc}",
             ))
 
     cli_lines: list[str] = []

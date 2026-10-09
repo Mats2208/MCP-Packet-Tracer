@@ -51,8 +51,8 @@ def _fix_cables(plan: TopologyPlan) -> list[str]:
             old = link.cable
             link.cable = expected
             fixes.append(
-                f"Cable corregido: {link.device_a}↔{link.device_b} "
-                f"de '{old}' a '{expected}'"
+                f"Cable fixed: {link.device_a}↔{link.device_b} "
+                f"from '{old}' to '{expected}'"
             )
     return fixes
 
@@ -79,8 +79,8 @@ def _fix_insufficient_ports(plan: TopologyPlan) -> list[str]:
             old_model = dev.model
             dev.model = "2911"
             fixes.append(
-                f"Router {dev.name} upgradeado de {old_model} a 2911 "
-                f"(necesita {needed} puertos GigE, {old_model} solo tiene {gig_count})"
+                f"Router {dev.name} upgraded from {old_model} to 2911 "
+                f"(needs {needed} GigE ports, {old_model} only has {gig_count})"
             )
 
     return fixes
@@ -128,7 +128,7 @@ def _fix_invalid_ports(plan: TopologyPlan) -> list[str]:
                             if old_port in ifaces:
                                 ifaces[p.full_name] = ifaces.pop(old_port)
                         fixes.append(
-                            f"Puerto corregido: {dev_name} de '{old_port}' a '{p.full_name}'"
+                            f"Port fixed: {dev_name} from '{old_port}' to '{p.full_name}'"
                         )
                         break
 

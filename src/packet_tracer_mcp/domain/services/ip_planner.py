@@ -41,9 +41,9 @@ class IPPlanner:
             return next(self._lan_subnets)
         except StopIteration:
             raise ValueError(
-                f"Se agotaron las subredes /24 de {self._lan_base}: la topología "
-                f"pide más LANs de las que caben. Usá un prefijo más corto "
-                f"(192.168.0.0/16 da 256)."
+                f"Ran out of /24 subnets in {self._lan_base}: the topology "
+                f"needs more LANs than fit. Use a shorter prefix "
+                f"(192.168.0.0/16 gives 256)."
             ) from None
 
     def next_link_subnet(self) -> ipaddress.IPv4Network:
@@ -51,9 +51,9 @@ class IPPlanner:
             return next(self._link_subnets)
         except StopIteration:
             raise ValueError(
-                f"Se agotaron las subredes /30 de {self._link_base}: la topología "
-                f"pide más enlaces router↔router de los que caben. Usá un prefijo "
-                f"más corto (10.0.0.0/16 da 16384)."
+                f"Ran out of /30 subnets in {self._link_base}: the topology "
+                f"needs more router↔router links than fit. Use a "
+                f"shorter prefix (10.0.0.0/16 gives 16384)."
             ) from None
 
     def plan_addressing(

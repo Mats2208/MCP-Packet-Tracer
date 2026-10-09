@@ -110,7 +110,7 @@ def test_generate_pc_config_marks_static_hosts_as_static():
     )
 
     cfg = generate_pc_config(host, use_dhcp=False)
-    assert "Configurar IP estática" in cfg
+    assert "Set a static IP" in cfg
     assert "DHCP" not in cfg.splitlines()[-1]
 
 
@@ -124,7 +124,7 @@ def test_generate_pc_config_marks_dhcp_hosts_as_dhcp():
     )
 
     cfg = generate_pc_config(host, use_dhcp=True)
-    assert "Configurar como DHCP" in cfg
+    assert "Set to DHCP" in cfg
 
 
 def test_query_pt_devices_no_longer_calls_undefined_querytopology():
