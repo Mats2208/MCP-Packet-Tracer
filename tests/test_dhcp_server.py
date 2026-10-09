@@ -7,6 +7,7 @@ itself has no pool methods: you have to go down to
 `getDhcpServerProcessByPortName(port)`.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -174,9 +175,7 @@ class TestToolPayload:
     """
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_goes_through_the_per_port_process(self):
         """The issue's bug: the pool methods are NOT on DhcpServerMain."""

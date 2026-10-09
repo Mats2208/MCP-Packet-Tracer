@@ -5,13 +5,12 @@ que TestReconcileWiring en test_live_reconcile.py. La forma de los datos está
 tomada de una lectura real contra PT 9.0.0.0810.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 
 def _src() -> str:
-    return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-        encoding="utf-8"
-    )
+    return registry_source()
 
 
 class TestBackupConfig:

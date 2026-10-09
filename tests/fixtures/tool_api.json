@@ -1,0 +1,3081 @@
+{
+ "pt_add_device": {
+  "description": "\nAdd a single device to Packet Tracer with validation.\nChecks: name not empty, model exists in catalog, no duplicate name.\n\nParameters:\n- name: device name (e.g. \"R1\", \"SW-Core\", \"PC-Admin\")\n- model: PT model type (e.g. \"2911\", \"2960-24TT\", \"PC-PT\", \"Server-PT\")\n- x: X coordinate on canvas (default 200)\n- y: Y coordinate on canvas (default 200)\n",
+  "inputSchema": {
+   "properties": {
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "x": {
+     "default": 200,
+     "title": "X",
+     "type": "integer"
+    },
+    "y": {
+     "default": 200,
+     "title": "Y",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "name",
+    "model"
+   ],
+   "title": "pt_add_deviceArguments",
+   "type": "object"
+  }
+ },
+ "pt_add_link": {
+  "description": "\nCreate a link between two devices in Packet Tracer with full validation.\nChecks: both devices exist, both ports exist, ports are free, cable type is valid.\nIf cable_type is omitted, it is inferred from the device categories.\n\nParameters:\n- device1: first device name\n- port1: port on device1 (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")\n- device2: second device name\n- port2: port on device2\n- cable_type: cable type (straight, cross, serial, fiber, console, roll, auto, etc.)\n              Common aliases accepted: \"crossover\"→\"cross\", \"rollover\"→\"roll\"\n",
+  "inputSchema": {
+   "properties": {
+    "cable_type": {
+     "default": "",
+     "title": "Cable Type",
+     "type": "string"
+    },
+    "device1": {
+     "title": "Device1",
+     "type": "string"
+    },
+    "device2": {
+     "title": "Device2",
+     "type": "string"
+    },
+    "port1": {
+     "title": "Port1",
+     "type": "string"
+    },
+    "port2": {
+     "title": "Port2",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device1",
+    "port1",
+    "device2",
+    "port2"
+   ],
+   "title": "pt_add_linkArguments",
+   "type": "object"
+  }
+ },
+ "pt_add_module": {
+  "description": "\nInstalls an expansion module on a device in the active topology.\n\nThe runtime patch already injected in PT powers the device off, installs the\nmodule and powers it back on (with skipBoot). You do NOT need to power it off by hand.\n\nParameters:\n- device_name: exact device name in PT (e.g. \"R1\"). Use\n  pt_query_topology to list valid names.\n- slot: the slot identifier as a STRING. The format depends on the\n  device's slot type:\n    * HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n      (verified against PT 9.0.1: the 1941 has 2 slots, not 4)\n      (chassis-slot/hwic-subslot)\n    * NM on 2811/2620XM/Router-PT → \"1\"\n    * NIM on ISR4321/4331   → \"0/1\", \"0/2\"  (chassis/subslot — NOT \"0\"/\"1\")\n    * Cloud-PT/Server-PT/PCs → \"0\", \"1\", ... depending on the available slot\n  An integer is accepted too and converted to a string.\n- module_name: exact module name, e.g. \"HWIC-2T\", \"NM-4A/S\",\n  \"NIM-2T\", \"HWIC-1GE-SFP\". Use pt_list_modules to discover them.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nExample: add 2 serial ports to R1 in HWIC slot 0:\n  pt_add_module(device_name=\"R1\", slot=\"0/0\", module_name=\"HWIC-2T\")\n",
+  "inputSchema": {
+   "properties": {
+    "device_name": {
+     "title": "Device Name",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "module_name": {
+     "title": "Module Name",
+     "type": "string"
+    },
+    "slot": {
+     "title": "Slot",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device_name",
+    "slot",
+    "module_name"
+   ],
+   "title": "pt_add_moduleArguments",
+   "type": "object"
+  }
+ },
+ "pt_add_note": {
+  "description": "\nWrites a text note on PT's canvas.\n\nUse it to document the topology on the diagram itself: label a\nsubnet, mark an OSPF area, name a trunk link. Returns the note's\nid, which can be used to delete it later.\n\nThe coordinates are the same logical-canvas ones that pt_add_device\nand pt_move_device use: routers ~y=100, switches ~y=250, hosts ~y=400.\n\nThe font size is NOT configurable: PT fixes it and uses that parameter\nfor the stacking order, which the tool computes by itself.\n\nParameters:\n- x, y: position on the canvas.\n- text: the note's content.\n\nExample: pt_add_note(x=300, y=100, text=\"LAN 192.168.0.0/24\")\n",
+  "inputSchema": {
+   "properties": {
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "x": {
+     "title": "X",
+     "type": "integer"
+    },
+    "y": {
+     "title": "Y",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "x",
+    "y",
+    "text"
+   ],
+   "title": "pt_add_noteArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_acl": {
+  "description": "\nApplies an Access Control List (ACL) to a router in PT's active topology.\n\nPipeline: builds the plan → static validation (ranges, types, IPs/wildcards,\nunreachable rules) → checks router/interface against PT through the bridge →\ngenerates IOS CLI → sends it through configureIosDevice.\n\nParameters:\n- router: device name in PT (e.g. \"CORE-R1\"). Call\n  pt_query_topology if you are not sure of the exact names.\n- name_or_number: the ACL's IOS identifier.\n    * 1-99 or 1300-1999 → standard\n    * 100-199 or 2000-2699 → extended\n    * any alphanumeric string → named ACL\n- acl_type: \"standard\" or \"extended\". Standard only filters by source.\n  Extended allows source + destination + protocol + ports.\n- entries: list of rules. Each rule is a dict with:\n    * action: \"permit\" | \"deny\" (required)\n    * protocol: \"ip\" | \"icmp\" | \"tcp\" | \"udp\" | ... (default \"ip\")\n    * source: \"any\" | \"host A.B.C.D\" | \"A.B.C.D wildcard\" (required)\n    * destination: same as source (extended only)\n    * source_port_op / source_port: e.g. \"eq\" / 80 (TCP/UDP, optional)\n    * dest_port_op / dest_port / dest_port_end: same (optional)\n    * icmp_type: \"echo\" | \"echo-reply\" | ... (ICMP only)\n    * tcp_flags: [\"established\"] | [\"syn\"] (TCP only, optional)\n    * log: bool (optional)\n    * remark: optional comment\n- binding_interface: if given, applies the ACL to that interface\n  (e.g. \"GigabitEthernet0/0\"). If empty, the ACL is only defined, not applied.\n- binding_direction: \"in\" or \"out\" (default \"in\"). Only applies if\n  binding_interface is set.\n- dry_run: if True, sends NOTHING to the bridge — only validates and returns\n  the CLI/JS payload for inspection.\n\nExample: block ping from 192.168.1.0/24 to 192.168.0.0/24 on CORE-R1:\n  pt_apply_acl(\n      router=\"CORE-R1\",\n      name_or_number=\"101\",\n      acl_type=\"extended\",\n      entries=[\n          {\"action\": \"deny\", \"protocol\": \"icmp\",\n           \"source\": \"192.168.1.0 0.0.0.255\",\n           \"destination\": \"192.168.0.0 0.0.0.255\",\n           \"icmp_type\": \"echo\"},\n          {\"action\": \"permit\", \"protocol\": \"ip\",\n           \"source\": \"any\", \"destination\": \"any\"},\n      ],\n      binding_interface=\"GigabitEthernet0/0\",\n      binding_direction=\"in\",\n  )\n",
+  "inputSchema": {
+   "properties": {
+    "acl_type": {
+     "title": "Acl Type",
+     "type": "string"
+    },
+    "binding_direction": {
+     "default": "in",
+     "title": "Binding Direction",
+     "type": "string"
+    },
+    "binding_interface": {
+     "default": "",
+     "title": "Binding Interface",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "entries": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Entries",
+     "type": "array"
+    },
+    "name_or_number": {
+     "title": "Name Or Number",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "name_or_number",
+    "acl_type",
+    "entries"
+   ],
+   "title": "pt_apply_aclArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_acl_object": {
+  "description": "\nApplies an ACL using PT's object API (AclProcess.addAcl/addStatement)\ninstead of CLI through configureIosDevice.\n\nSame input as pt_apply_acl. It is faster (no CLI parsing) and less\nprone to raising modal popups that break the bridge if a line goes wrong.\n\nLimitation: binding only works on the catalog's physical ports (e.g.\nGigabitEthernet0/0). For sub-interfaces (G0/0/1.20) use pt_apply_acl (CLI),\nsince port.setAclInID only applies to the base port and not the sub-interface.\n\nPipeline: validate the plan → generate statements (without the \"access-list NAME \" prefix)\n→ run addAcl + addStatement one by one + optional binding.\n",
+  "inputSchema": {
+   "properties": {
+    "acl_type": {
+     "title": "Acl Type",
+     "type": "string"
+    },
+    "binding_direction": {
+     "default": "in",
+     "title": "Binding Direction",
+     "type": "string"
+    },
+    "binding_interface": {
+     "default": "",
+     "title": "Binding Interface",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "entries": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Entries",
+     "type": "array"
+    },
+    "name_or_number": {
+     "title": "Name Or Number",
+     "type": "string"
+    },
+    "replace_existing": {
+     "default": true,
+     "title": "Replace Existing",
+     "type": "boolean"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "name_or_number",
+    "acl_type",
+    "entries"
+   ],
+   "title": "pt_apply_acl_objectArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_hardening": {
+  "description": "\nHardens a router/switch in the active topology.\n\nApplies via CLI: hostname, MOTD banner, enable secret, local users, SSH\n(domain-name + RSA keys + `ip ssh version`), service password-encryption, and\nrestricts the vty lines to SSH with local login.\n\nParameters:\n- device: device name in PT.\n- hostname: new hostname (optional).\n- banner_motd: MOTD banner text (without the '#' character).\n- enable_secret: enable password (it is encrypted).\n- users: list of {username, secret, privilege?}. Needed for SSH/local login.\n- ssh: dict {domain?, modulus?, version?, enable?} to enable SSH. Requires\n  at least one user. modulus<768 raises a warning.\n- service_password_encryption: applies `service password-encryption` (default True).\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: full hardening of R1 with SSH:\n  pt_apply_hardening(device=\"R1\", hostname=\"R1\", enable_secret=\"cisco123\",\n    users=[{\"username\":\"admin\",\"secret\":\"adminpass\",\"privilege\":15}],\n    ssh={\"domain\":\"lab.local\",\"modulus\":1024}, dry_run=True)\n",
+  "inputSchema": {
+   "properties": {
+    "banner_motd": {
+     "default": "",
+     "title": "Banner Motd",
+     "type": "string"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "enable_secret": {
+     "default": "",
+     "title": "Enable Secret",
+     "type": "string"
+    },
+    "hostname": {
+     "default": "",
+     "title": "Hostname",
+     "type": "string"
+    },
+    "service_password_encryption": {
+     "default": true,
+     "title": "Service Password Encryption",
+     "type": "boolean"
+    },
+    "ssh": {
+     "anyOf": [
+      {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ssh"
+    },
+    "users": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Users"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_apply_hardeningArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_interface_tuning": {
+  "description": "\nTunes the parameters of a router interface in the active topology.\n\nParameters (all optional except router/interface):\n- router: router name in PT.\n- interface: interface to tune (e.g. \"Serial0/0/0\", \"GigabitEthernet0/0\").\n- clock_rate: ONLY on Serial interfaces (DCE end). E.g. 64000, 2000000.\n  Applying clock_rate to a non-serial interface is a validation error.\n- bandwidth: bandwidth in kbps (`bandwidth N`).\n- ospf_cost / ospf_priority: per-interface OSPF knobs.\n- ospf_hello_interval / ospf_dead_interval: OSPF timers. They must\n  match the neighbour's or the adjacency won't form; the IOS\n  convention is dead = 4 x hello, and dead <= hello is rejected.\n- ospf_md5_key + ospf_md5_key_id: OSPF message-digest authentication\n  (recommended). The id must match the neighbour's.\n- ospf_auth_key: plain-text OSPF authentication. It works, but the\n  key travels readable across the network — a warning is emitted.\n- delay: interface delay (affects the EIGRP metric), in tens of microseconds.\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: authenticate OSPF with MD5 between R1 and its neighbour:\n  pt_apply_interface_tuning(router=\"R1\", interface=\"GigabitEthernet0/0\",\n                            ospf_md5_key_id=1, ospf_md5_key=\"s3cr3t\")\n",
+  "inputSchema": {
+   "properties": {
+    "bandwidth": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Bandwidth"
+    },
+    "clock_rate": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Clock Rate"
+    },
+    "delay": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Delay"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "ospf_auth_key": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Auth Key"
+    },
+    "ospf_cost": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Cost"
+    },
+    "ospf_dead_interval": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Dead Interval"
+    },
+    "ospf_hello_interval": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Hello Interval"
+    },
+    "ospf_md5_key": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Md5 Key"
+    },
+    "ospf_md5_key_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Md5 Key Id"
+    },
+    "ospf_priority": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Priority"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "interface"
+   ],
+   "title": "pt_apply_interface_tuningArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_nat": {
+  "description": "\nApplies NAT or PAT to a router in Packet Tracer's active topology.\n\n── WHEN TO USE EACH MODE ──────────────────────────────────────────────\n\nmode=\"static\"  — static NAT (1 to 1, permanent)\n  Each private IP is ALWAYS mapped to the same public IP.\n  Use it when an internal server (web, FTP, mail) must be\n  reachable from the Internet with a known fixed public IP.\n  Requires: static_mappings = [{\"inside_local\": \"...\", \"inside_global\": \"...\"}]\n\nmode=\"dynamic\" — dynamic NAT (pool of public IPs)\n  The router assigns IPs from the pool on demand. When the host closes\n  the session, the public IP goes back to the pool for another host.\n  Use it when you have MORE public IPs than overload justifies but\n  FEWER than simultaneous internal hosts, and per-IP tracking matters.\n  Requires: inside_networks + pool_start/end/netmask\n\nmode=\"pat\"     — PAT / NAT Overload (many to one with ports)\n  Many internal hosts share ONE single public IP. The router\n  tells the connections apart using unique port numbers.\n  It is the mode almost every home and business router uses.\n  Use it when you have 1 public IP from the ISP and N internal hosts.\n  Sub-modes:\n    use_interface_overload=True  → uses outside_interface's IP directly\n    use_interface_overload=False → uses a pool (typically of 1 IP)\n  Requires: inside_networks (+ pool if use_interface_overload=False)\n\n── PARAMETERS ────────────────────────────────────────────────────────\n\n- router: device name in PT (e.g. \"R1\"). Call\n  pt_query_topology if you don't know the exact name.\n- mode: \"static\" | \"dynamic\" | \"pat\"\n- inside_interface: interface connected to the private LAN (e.g. \"GigabitEthernet0/0\")\n- outside_interface: interface connected to the WAN/Internet (e.g. \"GigabitEthernet0/1\")\n- static_mappings: mode=\"static\" only. List of dicts:\n    [{\"inside_local\": \"192.168.1.10\", \"inside_global\": \"200.1.1.5\"}]\n- inside_networks: dynamic/pat modes. Internal networks to translate, in\n    \"network wildcard\" format (e.g. [\"192.168.1.0 0.0.0.255\"]).\n    They are generated as an inline access-list.\n- acl_number: ACL number or name identifying the inside hosts (default \"1\")\n- pool_name: name of the NAT pool (default \"NAT-POOL\")\n- pool_start / pool_end: first and last IP of the public pool\n- pool_netmask: the pool's mask (mask format, e.g. \"255.255.255.0\")\n- use_interface_overload: PAT only. If True, uses outside_interface's IP\n    instead of a pool. Typical when the ISP assigns 1 IP to the WAN.\n- dry_run: if True, validates and generates the payload without sending it to the bridge.\n\nPAT example with interface overload (the most common case):\n  pt_apply_nat(\n      router=\"R1\",\n      mode=\"pat\",\n      inside_interface=\"GigabitEthernet0/0\",\n      outside_interface=\"GigabitEthernet0/1\",\n      inside_networks=[\"192.168.1.0 0.0.0.255\"],\n      use_interface_overload=True,\n  )\n",
+  "inputSchema": {
+   "properties": {
+    "acl_number": {
+     "default": "1",
+     "title": "Acl Number",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "inside_interface": {
+     "title": "Inside Interface",
+     "type": "string"
+    },
+    "inside_networks": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Inside Networks"
+    },
+    "mode": {
+     "title": "Mode",
+     "type": "string"
+    },
+    "outside_interface": {
+     "title": "Outside Interface",
+     "type": "string"
+    },
+    "pool_end": {
+     "default": "",
+     "title": "Pool End",
+     "type": "string"
+    },
+    "pool_name": {
+     "default": "NAT-POOL",
+     "title": "Pool Name",
+     "type": "string"
+    },
+    "pool_netmask": {
+     "default": "",
+     "title": "Pool Netmask",
+     "type": "string"
+    },
+    "pool_start": {
+     "default": "",
+     "title": "Pool Start",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "static_mappings": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Static Mappings"
+    },
+    "use_interface_overload": {
+     "default": false,
+     "title": "Use Interface Overload",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "router",
+    "mode",
+    "inside_interface",
+    "outside_interface"
+   ],
+   "title": "pt_apply_natArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_netflow": {
+  "description": "\nConfigures a NetFlow exporter on a PT device.\n\nUnlike the rest of the advanced features, NetFlow does NOT go through CLI: it is\nconfigured directly and read back to verify it was applied. If\nthe name already exists, it is reconfigured instead of duplicated.\n\nParameters:\n- device: router where the exporter lives.\n- name: exporter name (e.g. \"COLLECTOR-1\").\n- destination_ip: the collector's IP. Without it the exporter is inert.\n- udp_port: the collector's UDP port (default 2055).\n- version: 9 (templates, recommended) or 5 (fixed format).\n- source_port: source interface; empty = PT picks it.\n- monitors: names of the monitors to associate.\n- remove: if True, deletes the exporter `name` instead of creating it.\n- dry_run: if True, only validates and returns the payload without touching PT.\n\nExample: export to a collector at 192.168.0.50:\n  pt_apply_netflow(device=\"R1\", name=\"COLLECTOR-1\", destination_ip=\"192.168.0.50\")\n",
+  "inputSchema": {
+   "properties": {
+    "destination_ip": {
+     "default": "",
+     "title": "Destination Ip",
+     "type": "string"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "monitors": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Monitors"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "remove": {
+     "default": false,
+     "title": "Remove",
+     "type": "boolean"
+    },
+    "source_port": {
+     "default": "",
+     "title": "Source Port",
+     "type": "string"
+    },
+    "udp_port": {
+     "default": 2055,
+     "title": "Udp Port",
+     "type": "integer"
+    },
+    "version": {
+     "default": 9,
+     "title": "Version",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "device",
+    "name"
+   ],
+   "title": "pt_apply_netflowArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_port_security": {
+  "description": "\nConfigures port-security on a switch's access port.\n\nParameters:\n- switch: switch name in PT.\n- port: access port (e.g. \"FastEthernet0/1\").\n- max_mac: maximum number of allowed MACs (default 1).\n- violation: \"shutdown\" (default) | \"restrict\" | \"protect\".\n- sticky: if True, learns sticky MACs (`mac-address sticky`).\n- static_macs: static MACs in IOS aaaa.bbbb.cccc format.\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: max 2 sticky MACs on SW1's Fa0/1:\n  pt_apply_port_security(switch=\"SW1\", port=\"FastEthernet0/1\", max_mac=2, dry_run=True)\n",
+  "inputSchema": {
+   "properties": {
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "max_mac": {
+     "default": 1,
+     "title": "Max Mac",
+     "type": "integer"
+    },
+    "port": {
+     "title": "Port",
+     "type": "string"
+    },
+    "static_macs": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Static Macs"
+    },
+    "sticky": {
+     "default": true,
+     "title": "Sticky",
+     "type": "boolean"
+    },
+    "switch": {
+     "title": "Switch",
+     "type": "string"
+    },
+    "violation": {
+     "default": "shutdown",
+     "title": "Violation",
+     "type": "string"
+    }
+   },
+   "required": [
+    "switch",
+    "port"
+   ],
+   "title": "pt_apply_port_securityArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_stp": {
+  "description": "\nConfigures Spanning-Tree on a switch in the active topology.\n\nParameters:\n- switch: switch name in PT (e.g. \"SW1\").\n- mode: \"rapid-pvst\" (default) or \"pvst\".\n- root_primary_vlans: list of VLANs where this switch is root primary (generates\n  `spanning-tree vlan N root primary`).\n- priority: dict {vlan_id: priority}. The priority must be 0-61440 and a multiple of 4096.\n- portfast_ports: access ports with `spanning-tree portfast`.\n- bpduguard_ports: ports with `spanning-tree bpduguard enable`.\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: SW1 root for VLAN 10 + portfast on Fa0/1:\n  pt_apply_stp(switch=\"SW1\", root_primary_vlans=[10],\n               portfast_ports=[\"FastEthernet0/1\"], dry_run=True)\n",
+  "inputSchema": {
+   "properties": {
+    "bpduguard_ports": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Bpduguard Ports"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "mode": {
+     "default": "rapid-pvst",
+     "title": "Mode",
+     "type": "string"
+    },
+    "portfast_ports": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Portfast Ports"
+    },
+    "priority": {
+     "anyOf": [
+      {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Priority"
+    },
+    "root_primary_vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Root Primary Vlans"
+    },
+    "switch": {
+     "title": "Switch",
+     "type": "string"
+    }
+   },
+   "required": [
+    "switch"
+   ],
+   "title": "pt_apply_stpArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_vlan": {
+  "description": "\nApplies VLANs / trunks / inter-VLAN routing to an active PT topology.\n\nConfigures the switch (VLAN definitions, access ports, trunks) and optionally\nthe router (.1q subinterfaces for inter-VLAN routing / router-on-a-stick).\nAll through IOS CLI (configureIosDevice). Use pt_query_topology for the real names/ports.\n\nParameters:\n- switch: switch name in PT (e.g. \"SW1\").\n- router: router name (only if you do inter-VLAN routing with subinterfaces).\n- vlans: list of {vlan_id:int, name:str?}. E.g. [{\"vlan_id\":10,\"name\":\"SALES\"}].\n- access_ports: list of {switch, port, vlan_id}. E.g.\n    [{\"switch\":\"SW1\",\"port\":\"FastEthernet0/1\",\"vlan_id\":10}].\n- trunks: list of {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.\n    On a 2960 (dot1q-only) `switchport trunk encapsulation` is NOT emitted; on a 3560 it is.\n- subinterfaces: list of {router, parent_port, vlan_id, ip_cidr}. E.g.\n    [{\"router\":\"R1\",\"parent_port\":\"GigabitEthernet0/0\",\"vlan_id\":10,\"ip_cidr\":\"192.168.10.1/24\"}].\n- dry_run: if True, only validates and returns the CLI/payload without sending.\n\nRouter-on-a-stick example (2 VLANs):\n  pt_apply_vlan(\n    switch=\"SW1\", router=\"R1\",\n    vlans=[{\"vlan_id\":10,\"name\":\"V10\"},{\"vlan_id\":20,\"name\":\"V20\"}],\n    access_ports=[{\"switch\":\"SW1\",\"port\":\"FastEthernet0/1\",\"vlan_id\":10},\n                  {\"switch\":\"SW1\",\"port\":\"FastEthernet0/2\",\"vlan_id\":20}],\n    trunks=[{\"switch\":\"SW1\",\"port\":\"GigabitEthernet0/1\"}],\n    subinterfaces=[{\"router\":\"R1\",\"parent_port\":\"GigabitEthernet0/0\",\"vlan_id\":10,\"ip_cidr\":\"192.168.10.1/24\"},\n                   {\"router\":\"R1\",\"parent_port\":\"GigabitEthernet0/0\",\"vlan_id\":20,\"ip_cidr\":\"192.168.20.1/24\"}],\n    dry_run=True)\n",
+  "inputSchema": {
+   "properties": {
+    "access_ports": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Access Ports"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "router": {
+     "default": "",
+     "title": "Router",
+     "type": "string"
+    },
+    "subinterfaces": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Subinterfaces"
+    },
+    "switch": {
+     "default": "",
+     "title": "Switch",
+     "type": "string"
+    },
+    "trunks": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Trunks"
+    },
+    "vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Vlans"
+    }
+   },
+   "title": "pt_apply_vlanArguments",
+   "type": "object"
+  }
+ },
+ "pt_audit_security": {
+  "description": "\nAudits the REAL security posture of the live devices in PT.\n\nIt does not read the plan: it reads the effective configuration of each router/switch\non the canvas and reports findings with a severity (high/medium/low). Detects\na missing `enable secret`, credentials stored reversibly\n(type 7), `service password-encryption` off, no local\nusers, a missing MOTD banner and config-register at 0x2142 (which discards\nthe startup-config on the next reboot).\n\nPasswords and hashes NEVER leave the device: only the label of the\nalgorithm they are stored with is transmitted.\n\nHosts (PC/Server/Laptop) are skipped: they have no IOS configuration.\n\nParameters:\n- device: if given, audits only that device; empty = all of them.\n\nExample: audit the whole topology:\n  pt_audit_security()\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_audit_securityArguments",
+   "type": "object"
+  }
+ },
+ "pt_backup_config": {
+  "description": "\nBacks up a PT device's startup configuration.\n\nReturns the real startup-config (the one the device rereads on restart),\nplus its serial number, config-register, boot images and uptime.\nUse it to save a known state before touching something, or to\ncompare two devices.\n\nParameters:\n- device: name of the router or switch in PT.\n- include_xml: if True, adds the device's full XML dump\n  (topology + config + modules). It is tens of thousands of characters:\n  useful for archiving, heavy to read.\n\nExample: pt_backup_config(device=\"R1\")\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "include_xml": {
+     "default": false,
+     "title": "Include Xml",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_backup_configArguments",
+   "type": "object"
+  }
+ },
+ "pt_bridge_status": {
+  "description": "\nChecks which channel Packet Tracer is connected through.\n\nThere are two: HTTP (when the MCP Control Center window is open) and\nfile (when it is closed but PT is still open with the extension). With\neither one, deployment works.\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_bridge_statusArguments",
+   "type": "object"
+  }
+ },
+ "pt_clear_annotations": {
+  "description": "\nRemoves the canvas annotations: text notes and drawings.\n\nIt does NOT touch devices or links, only the graphic elements.\n\nPT leaves orphan note ids that it never releases — with no text and that it\nrefuses to delete. They are not a failure: the canvas is visually clean\nanyway, and they are reported separately as `stale_ids`.\n\nParameters:\n- kind: \"all\" (default) removes notes and drawings; \"notes\" only the notes.\n\nExample: pt_clear_annotations()\n",
+  "inputSchema": {
+   "properties": {
+    "kind": {
+     "default": "all",
+     "title": "Kind",
+     "type": "string"
+    }
+   },
+   "title": "pt_clear_annotationsArguments",
+   "type": "object"
+  }
+ },
+ "pt_cli": {
+  "description": "\nTypes commands into a router/switch console (CLI tab) and returns each\none's output. Same as typing in the IOS CLI: enable, configure\nterminal, interface..., show ip route, ping, copy run start...\n\nWithout taking the screen: it goes through PT's API, and what is typed\nshows up in the device's real CLI tab.\n\nParameters:\n- device: exact name (pt_query_topology).\n- commands: a list of commands, or a block of text with one per line.\n  Typed in order, waiting for the prompt between them.\n- timeout: maximum seconds per command (ping/traceroute take a while).\n  When it runs out the command is aborted with Ctrl+Shift+6.\n- auto_confirm: presses Enter on \"[confirm]\" and \"Destination filename [..]?\".\n  [yes/no] and Password: questions are NOT answered automatically: put\n  the answer as the next command (e.g. [\"reload\", \"no\", \"\"]).\n- show: True/False opens (or not) the device's window on the CLI tab.\n  None = per pt_ui_mode.\n- capture: saves a PNG of the window when done (implies show).\n\nEach command comes back marked: ok, ERROR (% Invalid input...), UNKNOWN\nCOMMAND (IOS took it as a hostname: the DNS lookup is aborted), WAITING\nFOR ANSWER or TIMEOUT. A freshly created router is primed automatically\n(answers 'no' to the initial dialog).\n",
+  "inputSchema": {
+   "properties": {
+    "auto_confirm": {
+     "default": true,
+     "title": "Auto Confirm",
+     "type": "boolean"
+    },
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "commands": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "string"
+      }
+     ],
+     "title": "Commands"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "timeout": {
+     "default": 30.0,
+     "title": "Timeout",
+     "type": "number"
+    }
+   },
+   "required": [
+    "device",
+    "commands"
+   ],
+   "title": "pt_cliArguments",
+   "type": "object"
+  }
+ },
+ "pt_configure_dhcp_server": {
+  "description": "\nCreates or edits a DHCP pool on a Server-PT, validated against its\nsubnet, and switches the service on.\n\nThe equivalent of Services > DHCP in the GUI. Not via CLI (a Server-PT\nhas none): configured through the native API and read back to confirm.\nFor DHCP on a ROUTER use the plan (`dhcp=True`) or the CLI `ip dhcp pool`.\nFor exclusion ranges, TFTP/WLC options or showing the Services page on\nscreen, use pt_server_dhcp.\n\nThe server needs a static IP inside the pool's subnet; if it doesn't\nhave one the tool warns (DHCP_SERVER_NO_IP). PT never hands out the\nserver's own IP, but it DOES hand out the gateway's if it is in range.\n\nParameters:\n- device: name of the Server-PT.\n- network / mask: the pool's subnet (e.g. \"192.168.10.0\", \"255.255.255.0\").\n  Without network the tool only READS the existing pools.\n- gateway: default router the clients receive.\n- dns: DNS server the clients receive (empty = left alone).\n- start_ip: first IP to hand out. Empty = the host after the gateway\n  if the gateway is the first one (.1), otherwise the first host.\n- max_users: number of IPs. 0 = up to the end of the subnet.\n  PT computes the end of the range itself.\n- pool_name: default \"serverPool\", the factory pool the GUI shows.\n  Another name creates a new pool (or edits the existing one with that\n  name; never duplicates).\n- port: the server port that answers (default FastEthernet0).\n- enabled: state of the DHCP service (Services > DHCP > On/Off).\n- drop_factory_pool: with a custom pool_name, deletes the factory\n  \"serverPool\" IF it was never configured (its start is the network\n  address). That pool re-fits itself to the server's subnet and hands\n  out from .1, i.e. the gateway's IP — verified in PT 9.0. A configured\n  one is left alone.\n- remove: if True, deletes the pool `pool_name` instead of configuring it.\n- dry_run: if True, only validates and returns the JS without touching PT.\n\nExample: one DHCP server per LAN, clients from .3:\n  pt_configure_dhcp_server(device=\"DHCP-A\", network=\"192.168.10.0\",\n      gateway=\"192.168.10.1\", dns=\"8.8.8.8\", start_ip=\"192.168.10.3\")\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dns": {
+     "default": "",
+     "title": "Dns",
+     "type": "string"
+    },
+    "drop_factory_pool": {
+     "default": true,
+     "title": "Drop Factory Pool",
+     "type": "boolean"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "enabled": {
+     "default": true,
+     "title": "Enabled",
+     "type": "boolean"
+    },
+    "gateway": {
+     "default": "",
+     "title": "Gateway",
+     "type": "string"
+    },
+    "mask": {
+     "default": "255.255.255.0",
+     "title": "Mask",
+     "type": "string"
+    },
+    "max_users": {
+     "default": 0,
+     "title": "Max Users",
+     "type": "integer"
+    },
+    "network": {
+     "default": "",
+     "title": "Network",
+     "type": "string"
+    },
+    "pool_name": {
+     "default": "serverPool",
+     "title": "Pool Name",
+     "type": "string"
+    },
+    "port": {
+     "default": "FastEthernet0",
+     "title": "Port",
+     "type": "string"
+    },
+    "remove": {
+     "default": false,
+     "title": "Remove",
+     "type": "boolean"
+    },
+    "start_ip": {
+     "default": "",
+     "title": "Start Ip",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_configure_dhcp_serverArguments",
+   "type": "object"
+  }
+ },
+ "pt_delete_device": {
+  "description": "\nDelete a device from the active topology in Packet Tracer.\nUses getLogicalWorkspace().removeDevice() and verifies the device is gone.\n\nParameters:\n- device_name: exact device name (e.g. \"R1\", \"PC3\", \"Laptop-WAN\")\n",
+  "inputSchema": {
+   "properties": {
+    "device_name": {
+     "title": "Device Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device_name"
+   ],
+   "title": "pt_delete_deviceArguments",
+   "type": "object"
+  }
+ },
+ "pt_delete_link": {
+  "description": "\nDelete the link connected to a specific interface on a device in PT.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")\n",
+  "inputSchema": {
+   "properties": {
+    "device_name": {
+     "title": "Device Name",
+     "type": "string"
+    },
+    "interface_name": {
+     "title": "Interface Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device_name",
+    "interface_name"
+   ],
+   "title": "pt_delete_linkArguments",
+   "type": "object"
+  }
+ },
+ "pt_deploy": {
+  "description": "\nDeploys a plan to Packet Tracer: copies the script to the Windows\nclipboard, exports the configuration files, and generates\nstep-by-step instructions.\n\nUsage: after pt_full_build or pt_plan_topology, pass the plan JSON\nhere to prepare everything for Packet Tracer.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- project_name: project name\n- output_dir: output directory\n",
+  "inputSchema": {
+   "properties": {
+    "output_dir": {
+     "default": "projects",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    },
+    "project_name": {
+     "default": "topology",
+     "title": "Project Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_deployArguments",
+   "type": "object"
+  }
+ },
+ "pt_device_power": {
+  "description": "\nPowers a device in PT on or off, with a verification read.\n\nUseful to simulate equipment failure and see how routing reacts, or\nto restart a router so it rereads its startup-config.\n\nWorks on every model, PCs included. Hosts have no IOS boot,\nso when powering them on `booting` comes back null; on a router\nor switch the boot is skipped so as not to wait for the full start-up.\n\nParameters:\n- device: device name in PT.\n- on: True powers on (default), False powers off.\n\nExample: simulate R2 going down:\n  pt_device_power(device=\"R2\", on=False)\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "on": {
+     "default": true,
+     "title": "On",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_device_powerArguments",
+   "type": "object"
+  }
+ },
+ "pt_diff": {
+  "description": "\nCompares a plan (JSON from pt_plan_topology) against PT's LIVE topology.\n\nReports: plan devices missing from PT, extra devices in PT,\nand per-interface IP mismatches. Useful to reconcile after a deploy.\nRequires a connected bridge.\n",
+  "inputSchema": {
+   "properties": {
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_diffArguments",
+   "type": "object"
+  }
+ },
+ "pt_email_client": {
+  "description": "\nA host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe EMAIL service's \"Domain Name\" has no API: set it in the server's\nwindow (pt_ui_open(server, tab=\"Services\", section=\"EMAIL\")).\n",
+  "inputSchema": {
+   "properties": {
+    "action": {
+     "default": "configure",
+     "title": "Action",
+     "type": "string"
+    },
+    "address": {
+     "default": "",
+     "title": "Address",
+     "type": "string"
+    },
+    "body": {
+     "default": "",
+     "title": "Body",
+     "type": "string"
+    },
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "name": {
+     "default": "",
+     "title": "Name",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "password": {
+     "default": "",
+     "title": "Password",
+     "type": "string"
+    },
+    "pop3_server": {
+     "default": "",
+     "title": "Pop3 Server",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "smtp_server": {
+     "default": "",
+     "title": "Smtp Server",
+     "type": "string"
+    },
+    "subject": {
+     "default": "",
+     "title": "Subject",
+     "type": "string"
+    },
+    "to": {
+     "default": "",
+     "title": "To",
+     "type": "string"
+    },
+    "username": {
+     "default": "",
+     "title": "Username",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_email_clientArguments",
+   "type": "object"
+  }
+ },
+ "pt_estimate_plan": {
+  "description": "\nQuick estimate (dry-run) without generating a full plan.\nShows how many devices, links and subnets will be created.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router\n- servers: Servers\n- access_points: Access Points (AccessPoint-PT)\n- has_wan: Include WAN\n- dhcp: Configure DHCP\n- routing: static, ospf, eigrp, rip, none\n",
+  "inputSchema": {
+   "properties": {
+    "access_points": {
+     "default": 0,
+     "title": "Access Points",
+     "type": "integer"
+    },
+    "dhcp": {
+     "default": true,
+     "title": "Dhcp",
+     "type": "boolean"
+    },
+    "has_wan": {
+     "default": false,
+     "title": "Has Wan",
+     "type": "boolean"
+    },
+    "laptops_per_lan": {
+     "default": 0,
+     "title": "Laptops Per Lan",
+     "type": "integer"
+    },
+    "pcs_per_lan": {
+     "default": 3,
+     "title": "Pcs Per Lan",
+     "type": "integer"
+    },
+    "routers": {
+     "default": 2,
+     "title": "Routers",
+     "type": "integer"
+    },
+    "routing": {
+     "default": "static",
+     "title": "Routing",
+     "type": "string"
+    },
+    "servers": {
+     "default": 0,
+     "title": "Servers",
+     "type": "integer"
+    },
+    "switches_per_router": {
+     "default": 1,
+     "title": "Switches Per Router",
+     "type": "integer"
+    }
+   },
+   "title": "pt_estimate_planArguments",
+   "type": "object"
+  }
+ },
+ "pt_explain_plan": {
+  "description": "\nExplains the plan's decisions in natural language.\nUseful to understand why certain models, IPs, etc. were chosen.\n\nParameters:\n- plan_json: plan JSON\n",
+  "inputSchema": {
+   "properties": {
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_explain_planArguments",
+   "type": "object"
+  }
+ },
+ "pt_export": {
+  "description": "\nExports the plan to files: JS script, CLI configs and JSON.\n\nParameters:\n- plan_json: plan JSON\n- project_name: project name\n- output_dir: output directory\n",
+  "inputSchema": {
+   "properties": {
+    "output_dir": {
+     "default": "projects",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    },
+    "project_name": {
+     "default": "topology",
+     "title": "Project Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_exportArguments",
+   "type": "object"
+  }
+ },
+ "pt_export_topology": {
+  "description": "\nExport a detailed snapshot of the full topology currently in Packet Tracer.\nReturns JSON with devices (name, model, x/y position, interfaces with IPs)\nand links (endpoints, ports, cable type). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_export_topologyArguments",
+   "type": "object"
+  }
+ },
+ "pt_fix_plan": {
+  "description": "\nTries to fix the plan's errors automatically.\nFixes cables, upgrades routers that lack ports, reassigns ports.\n\nParameters:\n- plan_json: JSON of the plan to fix\n",
+  "inputSchema": {
+   "properties": {
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_fix_planArguments",
+   "type": "object"
+  }
+ },
+ "pt_full_build": {
+  "description": "\nFull pipeline: plans, validates, generates, explains, estimates and deploys.\n\nWith deploy=True (default) the deployment depends on whether there is a channel to PT:\n- If the bridge is connected, the topology is REALLY created in Packet\n  Tracer (same path as pt_live_deploy, with verification and reconcile),\n  and the project files are also exported to disk.\n- If there is no channel, it falls back to manual mode: copies the script to\n  the clipboard and generates step-by-step instructions.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router\n- servers: Servers\n- access_points: Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include WAN\n- dhcp: Configure DHCP\n- routing: static, ospf, eigrp, rip, none\n- router_model: 1941, 2901, 2911, ISR4321\n- switch_model: 2960-24TT, 3560-24PS\n- template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom\n- deploy: If True, copies the script to the clipboard and exports files\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + AP).\n",
+  "inputSchema": {
+   "properties": {
+    "access_points": {
+     "default": 0,
+     "title": "Access Points",
+     "type": "integer"
+    },
+    "deploy": {
+     "default": true,
+     "title": "Deploy",
+     "type": "boolean"
+    },
+    "dhcp": {
+     "default": true,
+     "title": "Dhcp",
+     "type": "boolean"
+    },
+    "dual_stack": {
+     "default": false,
+     "title": "Dual Stack",
+     "type": "boolean"
+    },
+    "eigrp_as": {
+     "default": 100,
+     "title": "Eigrp As",
+     "type": "integer"
+    },
+    "floating_routes": {
+     "default": false,
+     "title": "Floating Routes",
+     "type": "boolean"
+    },
+    "has_wan": {
+     "default": false,
+     "title": "Has Wan",
+     "type": "boolean"
+    },
+    "ipv6_base": {
+     "default": "2001:db8::/32",
+     "title": "Ipv6 Base",
+     "type": "string"
+    },
+    "laptops_per_lan": {
+     "default": 0,
+     "title": "Laptops Per Lan",
+     "type": "integer"
+    },
+    "ospf_process_id": {
+     "default": 1,
+     "title": "Ospf Process Id",
+     "type": "integer"
+    },
+    "pcs_per_lan": {
+     "default": 3,
+     "title": "Pcs Per Lan",
+     "type": "integer"
+    },
+    "router_model": {
+     "default": "2911",
+     "title": "Router Model",
+     "type": "string"
+    },
+    "routers": {
+     "default": 2,
+     "title": "Routers",
+     "type": "integer"
+    },
+    "routing": {
+     "default": "static",
+     "title": "Routing",
+     "type": "string"
+    },
+    "servers": {
+     "default": 0,
+     "title": "Servers",
+     "type": "integer"
+    },
+    "switch_model": {
+     "default": "2960-24TT",
+     "title": "Switch Model",
+     "type": "string"
+    },
+    "switches_per_router": {
+     "default": 1,
+     "title": "Switches Per Router",
+     "type": "integer"
+    },
+    "template": {
+     "default": "multi_lan",
+     "title": "Template",
+     "type": "string"
+    },
+    "vlans": {
+     "default": 0,
+     "title": "Vlans",
+     "type": "integer"
+    },
+    "wireless_laptops": {
+     "default": false,
+     "title": "Wireless Laptops",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_full_buildArguments",
+   "type": "object"
+  }
+ },
+ "pt_generate_configs": {
+  "description": "\nGenerates the CLI (IOS) configurations for every router and switch.\n\nParameters:\n- plan_json: plan JSON\n",
+  "inputSchema": {
+   "properties": {
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_generate_configsArguments",
+   "type": "object"
+  }
+ },
+ "pt_generate_script": {
+  "description": "\nGenerates the PTBuilder JavaScript script.\n\nParameters:\n- plan_json: plan JSON\n- include_configs: if True, includes the CLI configs as comments\n",
+  "inputSchema": {
+   "properties": {
+    "include_configs": {
+     "default": true,
+     "title": "Include Configs",
+     "type": "boolean"
+    },
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_generate_scriptArguments",
+   "type": "object"
+  }
+ },
+ "pt_get_device_details": {
+  "description": "\nShows the details of a specific device model.\n\nAccepts either the exact model name (e.g. '2911', '2960-24TT')\nor a catalog alias (e.g. 'router', 'switch', 'firewall').\n\nParameters:\n- model_name: model name or alias\n",
+  "inputSchema": {
+   "properties": {
+    "model_name": {
+     "title": "Model Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "model_name"
+   ],
+   "title": "pt_get_device_detailsArguments",
+   "type": "object"
+  }
+ },
+ "pt_health_check": {
+  "description": "\nHealth sweep of PT's LIVE topology.\n\nReports: down links (cabled but not up), cabled ports without an IP\n(possibly an unfinished DHCP), and duplicate IPs. Requires a connected bridge.\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_health_checkArguments",
+   "type": "object"
+  }
+ },
+ "pt_host_command": {
+  "description": "\nRuns a command in a PC/Laptop/Server's Desktop > Command Prompt\n(ping, ipconfig, ipconfig /all, ipconfig /renew, tracert, arp -a,\nnslookup, netstat, telnet, ssh -l user ip, ftp...) and returns the output.\n\nParameters:\n- device: the host's name.\n- command: the line to run (e.g. \"ping 192.168.1.1\").\n- inputs: answers to whatever the command asks afterwards, in order\n  (e.g. a telnet/ssh password, then commands for the remote device).\n- timeout: maximum seconds per line (a failing ping takes ~15 s).\n- show / capture / output_dir: as in pt_cli; opens Desktop > Command Prompt.\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "command": {
+     "title": "Command",
+     "type": "string"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "inputs": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Inputs"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "timeout": {
+     "default": 30.0,
+     "title": "Timeout",
+     "type": "number"
+    }
+   },
+   "required": [
+    "device",
+    "command"
+   ],
+   "title": "pt_host_commandArguments",
+   "type": "object"
+  }
+ },
+ "pt_host_firewall": {
+  "description": "\nA host's Desktop > Firewall / IPv6 Firewall: switches the inbound\nfirewall on or off (True/False; None = leave alone). Individual rules\nhave no API in PT; edit them in the window\n(pt_ui_open(host, app=\"firewall\")).\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "interface": {
+     "default": "",
+     "title": "Interface",
+     "type": "string"
+    },
+    "ipv4": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ipv4"
+    },
+    "ipv6": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ipv6"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_host_firewallArguments",
+   "type": "object"
+  }
+ },
+ "pt_host_ip_config": {
+  "description": "\nDesktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dns": {
+     "default": "",
+     "title": "Dns",
+     "type": "string"
+    },
+    "gateway": {
+     "default": "",
+     "title": "Gateway",
+     "type": "string"
+    },
+    "interface": {
+     "default": "",
+     "title": "Interface",
+     "type": "string"
+    },
+    "ip": {
+     "default": "",
+     "title": "Ip",
+     "type": "string"
+    },
+    "ipv6_dns": {
+     "default": "",
+     "title": "Ipv6 Dns",
+     "type": "string"
+    },
+    "ipv6_gateway": {
+     "default": "",
+     "title": "Ipv6 Gateway",
+     "type": "string"
+    },
+    "ipv6_mode": {
+     "default": "",
+     "title": "Ipv6 Mode",
+     "type": "string"
+    },
+    "mask": {
+     "default": "",
+     "title": "Mask",
+     "type": "string"
+    },
+    "mode": {
+     "default": "",
+     "title": "Mode",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "wait_dhcp_s": {
+     "default": 12.0,
+     "title": "Wait Dhcp S",
+     "type": "number"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_host_ip_configArguments",
+   "type": "object"
+  }
+ },
+ "pt_inspect_ports": {
+  "description": "\nReal state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied\nACLs. Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    },
+    "only_linked": {
+     "default": false,
+     "title": "Only Linked",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_inspect_portsArguments",
+   "type": "object"
+  }
+ },
+ "pt_install_modules_batch": {
+  "description": "\nInstalls N modules in a single runCode JS — power-off → addModule×N → power-on.\n\nUseful when several serial modules (HWIC-2T, NIM-2T, etc.) have to go into\nseveral routers at once. PREFER this tool over multiple calls to\npt_add_module: each individual power cycle can pause PT's script engine\nfor > 5s and kill the bridge bootstrap's polling.\n\nParameters:\n- modules: list of dicts with {device, slot, module}. Example for RTR-4 with\n  4 serial ports on a 2911 (which does NOT accept NM-4A/S):\n    [\n      {\"device\": \"RTR-4\", \"slot\": \"0/0\", \"module\": \"HWIC-2T\"},\n      {\"device\": \"RTR-4\", \"slot\": \"0/1\", \"module\": \"HWIC-2T\"}\n    ]\n  → gives Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nSlot rules (string):\n  HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n  NIM on ISR4321/4331    → \"0/1\", \"0/2\"   (chassis/subslot — NOT \"0\"/\"1\")\n  NM on 2811/Router-PT    → \"1\"\n  Cloud-PT / hosts        → \"0\"..\"7\"\n\nReturns JSON with summary, per-module status and js_payload.\n",
+  "inputSchema": {
+   "properties": {
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "modules": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Modules",
+     "type": "array"
+    }
+   },
+   "required": [
+    "modules"
+   ],
+   "title": "pt_install_modules_batchArguments",
+   "type": "object"
+  }
+ },
+ "pt_list_devices": {
+  "description": "\nLists every device available in Packet Tracer with its ports.\nUse this to know which models, ports and cables you can use.\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_list_devicesArguments",
+   "type": "object"
+  }
+ },
+ "pt_list_modules": {
+  "description": "\nLists the expansion modules available in the PT catalog.\n\nWithout filters it returns ALL modules. Useful to find the exact\nnames before calling pt_add_module.\n\nParameters:\n- router_model: if given (e.g. \"2911\", \"ISR4321\"), filters to\n  modules compatible with that router. Includes generic modules\n  (no compatible_with list) and the ones that list that model.\n- category: filters by category (e.g. \"router_hwic\", \"router_nm\",\n  \"router_nim\", \"router_wic\"). Empty = all.\n\nReturns JSON with: name, description, category, ports_added,\ncompatible_with.\n",
+  "inputSchema": {
+   "properties": {
+    "category": {
+     "default": "",
+     "title": "Category",
+     "type": "string"
+    },
+    "router_model": {
+     "default": "",
+     "title": "Router Model",
+     "type": "string"
+    }
+   },
+   "title": "pt_list_modulesArguments",
+   "type": "object"
+  }
+ },
+ "pt_list_projects": {
+  "description": "\nLists the saved projects.\n\nParameters:\n- output_dir: base projects directory\n",
+  "inputSchema": {
+   "properties": {
+    "output_dir": {
+     "default": "projects",
+     "title": "Output Dir",
+     "type": "string"
+    }
+   },
+   "title": "pt_list_projectsArguments",
+   "type": "object"
+  }
+ },
+ "pt_list_templates": {
+  "description": "\nLists every available topology template with its description.\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_list_templatesArguments",
+   "type": "object"
+  }
+ },
+ "pt_live_deploy": {
+  "description": "\nSends commands directly to Packet Tracer in real time.\n\nRequires PT open with the MCP Control Center extension installed. With the\nwindow open HTTP is used; if you close it, the file channel (Script\nEngine) takes over. The bridge starts by itself inside the MCP server.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- command_delay: delay between BATCHES in seconds (default 0.0).\n  Commands are no longer sent one by one: they go in batches that PT runs in\n  a single runCode, where each one carries its own try/catch. Measured\n  against PT 9.0, creating 10 devices + links + configuring IOS in one go\n  takes ~100 ms and the config is applied. Raise it only if your\n  installation chokes.\n",
+  "inputSchema": {
+   "properties": {
+    "command_delay": {
+     "default": 0.0,
+     "title": "Command Delay",
+     "type": "number"
+    },
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_live_deployArguments",
+   "type": "object"
+  }
+ },
+ "pt_load_project": {
+  "description": "\nLoads a saved project.\n\nParameters:\n- project_name: project name\n- output_dir: base projects directory\n",
+  "inputSchema": {
+   "properties": {
+    "output_dir": {
+     "default": "projects",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "project_name": {
+     "title": "Project Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "project_name"
+   ],
+   "title": "pt_load_projectArguments",
+   "type": "object"
+  }
+ },
+ "pt_move_device": {
+  "description": "\nMove a device to new coordinates on the Packet Tracer canvas.\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)\n",
+  "inputSchema": {
+   "properties": {
+    "device_name": {
+     "title": "Device Name",
+     "type": "string"
+    },
+    "x": {
+     "title": "X",
+     "type": "integer"
+    },
+    "y": {
+     "title": "Y",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "device_name",
+    "x",
+    "y"
+   ],
+   "title": "pt_move_deviceArguments",
+   "type": "object"
+  }
+ },
+ "pt_open_project": {
+  "description": "\nOpens a .pkt file in Packet Tracer.\n\nWARNING: it replaces the topology currently open. If it has unsaved\nchanges, save them first with pt_save_project.\n\nParameters:\n- path: full path to the .pkt file\n",
+  "inputSchema": {
+   "properties": {
+    "path": {
+     "title": "Path",
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "title": "pt_open_projectArguments",
+   "type": "object"
+  }
+ },
+ "pt_plan_topology": {
+  "description": "\nGenerates a complete network topology plan for Packet Tracer.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router (0-4)\n- servers: Number of servers\n- access_points: Number of Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include a WAN connection (Cloud)\n- dhcp: Configure DHCP automatically\n- routing: Routing protocol (static, ospf, eigrp, rip, none)\n- router_model: Router model (1941, 2901, 2911, ISR4321)\n- switch_model: Switch model (2960-24TT, 3560-24PS)\n- template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom)\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n  over alternative paths (needs a topology with multiple paths)\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP\n  auto-associated per LAN) instead of a cable.\n\nReturns the full plan JSON.\n",
+  "inputSchema": {
+   "properties": {
+    "access_points": {
+     "default": 0,
+     "title": "Access Points",
+     "type": "integer"
+    },
+    "dhcp": {
+     "default": true,
+     "title": "Dhcp",
+     "type": "boolean"
+    },
+    "dual_stack": {
+     "default": false,
+     "title": "Dual Stack",
+     "type": "boolean"
+    },
+    "eigrp_as": {
+     "default": 100,
+     "title": "Eigrp As",
+     "type": "integer"
+    },
+    "floating_routes": {
+     "default": false,
+     "title": "Floating Routes",
+     "type": "boolean"
+    },
+    "has_wan": {
+     "default": false,
+     "title": "Has Wan",
+     "type": "boolean"
+    },
+    "ipv6_base": {
+     "default": "2001:db8::/32",
+     "title": "Ipv6 Base",
+     "type": "string"
+    },
+    "laptops_per_lan": {
+     "default": 0,
+     "title": "Laptops Per Lan",
+     "type": "integer"
+    },
+    "ospf_process_id": {
+     "default": 1,
+     "title": "Ospf Process Id",
+     "type": "integer"
+    },
+    "pcs_per_lan": {
+     "default": 3,
+     "title": "Pcs Per Lan",
+     "type": "integer"
+    },
+    "router_model": {
+     "default": "2911",
+     "title": "Router Model",
+     "type": "string"
+    },
+    "routers": {
+     "default": 2,
+     "title": "Routers",
+     "type": "integer"
+    },
+    "routing": {
+     "default": "static",
+     "title": "Routing",
+     "type": "string"
+    },
+    "servers": {
+     "default": 0,
+     "title": "Servers",
+     "type": "integer"
+    },
+    "switch_model": {
+     "default": "2960-24TT",
+     "title": "Switch Model",
+     "type": "string"
+    },
+    "switches_per_router": {
+     "default": 1,
+     "title": "Switches Per Router",
+     "type": "integer"
+    },
+    "template": {
+     "default": "multi_lan",
+     "title": "Template",
+     "type": "string"
+    },
+    "vlans": {
+     "default": 0,
+     "title": "Vlans",
+     "type": "integer"
+    },
+    "wireless_laptops": {
+     "default": false,
+     "title": "Wireless Laptops",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_plan_topologyArguments",
+   "type": "object"
+  }
+ },
+ "pt_project_metadata": {
+  "description": "\nReads (and optionally writes) the metadata of the project open in PT.\n\nReturns the saved file, the PT version that wrote it and the\nproject description, together with the device and link counts.\nUseful to know what you are working with before changing anything.\n\nParameters:\n- description: if given, REPLACES the project description.\n  Empty = read only.\n\nExample: pt_project_metadata()\n",
+  "inputSchema": {
+   "properties": {
+    "description": {
+     "default": "",
+     "title": "Description",
+     "type": "string"
+    }
+   },
+   "title": "pt_project_metadataArguments",
+   "type": "object"
+  }
+ },
+ "pt_query_topology": {
+  "description": "\nQuery current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology.\nRequires bridge connected (use pt_bridge_status to verify).\n",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_query_topologyArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_device_panel": {
+  "description": "\nReads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_read_device_panelArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_packet_trace": {
+  "description": "\nReads the simulation's event list: what each packet did and WHY.\n\nBesides the path (device, ingress/egress port, source,\ndestination, traffic type and outcome) it returns the decision log that\nPT generates per OSI layer — the same text as the \"PDU Details\" panel of its\nGUI. That is where the real cause of a failing ping shows up, for\nexample: \"The next-hop IP address is not in the ARP table.\"\n\nRequires Simulation mode with generated traffic (pt_simulation_mode(on=True)\nand then a ping, or pt_simulation_step so the events move on).\n\nParameters:\n- limit: maximum frames to return (1-200, default 20).\n- device: if given, only the frames that went through that device.\n- include_decisions: if False, omits the per-layer log (shorter reply).\n\nExample: see why a ping is dropped:\n  pt_read_packet_trace(limit=10)\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    },
+    "include_decisions": {
+     "default": true,
+     "title": "Include Decisions",
+     "type": "boolean"
+    },
+    "limit": {
+     "default": 20,
+     "title": "Limit",
+     "type": "integer"
+    }
+   },
+   "title": "pt_read_packet_traceArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_qos": {
+  "description": "\nReads a device's REAL QoS configuration: class-maps and policy-maps.\n\nRead only: QoS cannot be created programmatically in PT, so to\nCONFIGURE it you send IOS CLI with pt_send_raw\n(`configureIosDevice`). This tool is for checking that it was applied.\n\nReturns, per class-map, its match type and CLI representation; per\npolicy-map, how many classes it has and which features it uses (bandwidth, priority,\nshaping, fair-queue).\n\nParameters:\n- device: router name in PT.\n\nExample: pt_read_qos(device=\"R1\")\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_read_qosArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_vlans": {
+  "description": "\nReads a switch's REAL VLAN database in PT.\n\nReturns each VLAN with its number, name and whether it is one of PT's\nfactory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan\nwas applied, or to discover what is in a topology you didn't build.\n\nParameters:\n- switch: switch name in PT.\n\nExample: pt_read_vlans(switch=\"SW1\")\n",
+  "inputSchema": {
+   "properties": {
+    "switch": {
+     "title": "Switch",
+     "type": "string"
+    }
+   },
+   "required": [
+    "switch"
+   ],
+   "title": "pt_read_vlansArguments",
+   "type": "object"
+  }
+ },
+ "pt_remove_acl": {
+  "description": "\nRemoves an ACL applied on a router.\n\nIf binding_interface is given, it first removes the binding from the\ninterface (no ip access-group ...) and then deletes the whole ACL\n(no access-list ...).\n\nParameters:\n- router: device name in PT\n- name_or_number: identifier of the ACL to remove\n- binding_interface: optional, interface where it was applied\n- binding_direction: \"in\" or \"out\" (only with binding_interface)\n- dry_run: if True, returns the payload without sending it\n",
+  "inputSchema": {
+   "properties": {
+    "binding_direction": {
+     "default": "in",
+     "title": "Binding Direction",
+     "type": "string"
+    },
+    "binding_interface": {
+     "default": "",
+     "title": "Binding Interface",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "name_or_number": {
+     "title": "Name Or Number",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "name_or_number"
+   ],
+   "title": "pt_remove_aclArguments",
+   "type": "object"
+  }
+ },
+ "pt_remove_acl_object": {
+  "description": "\nRemoves an ACL using the object API (AclProcess.removeAcl + Port.setAclInID=\"\").\n\nAlternative to pt_remove_acl (CLI). If binding_interface is given, it\nfirst clears the port's AclInID/AclOutID and then removes the ACL.\n\nParameters:\n- router: device name in PT\n- name_or_number: identifier of the ACL to remove\n- binding_interface: optional, interface where the binding was\n- binding_direction: \"in\" or \"out\" (only with binding_interface)\n- dry_run: if True, returns the payload without sending it\n",
+  "inputSchema": {
+   "properties": {
+    "binding_direction": {
+     "default": "in",
+     "title": "Binding Direction",
+     "type": "string"
+    },
+    "binding_interface": {
+     "default": "",
+     "title": "Binding Interface",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "name_or_number": {
+     "title": "Name Or Number",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "name_or_number"
+   ],
+   "title": "pt_remove_acl_objectArguments",
+   "type": "object"
+  }
+ },
+ "pt_remove_module": {
+  "description": "\nRemoves the module installed in a slot (Physical tab). Powers the device\noff, removes it and powers it back on, like pt_add_module.\n- slot: STRING, same format as pt_add_module (\"0/0\", \"1\", \"0\"...).\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "slot": {
+     "title": "Slot",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device",
+    "slot"
+   ],
+   "title": "pt_remove_moduleArguments",
+   "type": "object"
+  }
+ },
+ "pt_remove_nat": {
+  "description": "\nRemoves the NAT/PAT configuration from a router.\n\nRemoves the ip nat inside/outside marks from the interfaces and deletes\nthe associated translations, pool and access-list.\n\nParameters:\n- router: device name in PT\n- mode: \"static\" | \"dynamic\" | \"pat\"\n- inside_interface: interface marked as ip nat inside\n- outside_interface: interface marked as ip nat outside\n- acl_number: number/name of the access-list used (default \"1\")\n- pool_name: name of the NAT pool to remove (only dynamic/pat with a pool)\n- static_mappings: mode=\"static\" only. List of dicts with inside_local/inside_global\n    to generate the \"no ip nat inside source static ...\" commands\n- dry_run: if True, returns the payload without sending it\n",
+  "inputSchema": {
+   "properties": {
+    "acl_number": {
+     "default": "1",
+     "title": "Acl Number",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "inside_interface": {
+     "title": "Inside Interface",
+     "type": "string"
+    },
+    "mode": {
+     "title": "Mode",
+     "type": "string"
+    },
+    "outside_interface": {
+     "title": "Outside Interface",
+     "type": "string"
+    },
+    "pool_name": {
+     "default": "",
+     "title": "Pool Name",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "static_mappings": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Static Mappings"
+    }
+   },
+   "required": [
+    "router",
+    "mode",
+    "inside_interface",
+    "outside_interface"
+   ],
+   "title": "pt_remove_natArguments",
+   "type": "object"
+  }
+ },
+ "pt_rename_device": {
+  "description": "\nRename a device in the active Packet Tracer topology.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign\n",
+  "inputSchema": {
+   "properties": {
+    "new_name": {
+     "title": "New Name",
+     "type": "string"
+    },
+    "old_name": {
+     "title": "Old Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "old_name",
+    "new_name"
+   ],
+   "title": "pt_rename_deviceArguments",
+   "type": "object"
+  }
+ },
+ "pt_save_project": {
+  "description": "\nSaves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder.\n",
+  "inputSchema": {
+   "properties": {
+    "directory": {
+     "default": "",
+     "title": "Directory",
+     "type": "string"
+    },
+    "filename": {
+     "title": "Filename",
+     "type": "string"
+    }
+   },
+   "required": [
+    "filename"
+   ],
+   "title": "pt_save_projectArguments",
+   "type": "object"
+  }
+ },
+ "pt_screenshot": {
+  "description": "\nCaptures PT's logical canvas and saves it as an image.\n\nReturns the file's PATH, not the image: a capture weighs tens of\nthousands of bytes and dumping it in the reply would fill the context without\nanyone being able to see it.\n\nPNG compresses a diagram much better than JPG (measured: 33 KB versus\n105 KB for the same canvas), so it is the default.\n\nParameters:\n- filename: file name, without extension. It is sanitised.\n- fmt: PNG (default) | JPG | JPEG | BMP.\n- output_dir: destination folder, relative to the project root.\n\nExample: pt_screenshot(filename=\"lab-ospf\")\n",
+  "inputSchema": {
+   "properties": {
+    "filename": {
+     "default": "topology",
+     "title": "Filename",
+     "type": "string"
+    },
+    "fmt": {
+     "default": "PNG",
+     "title": "Fmt",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "projects",
+     "title": "Output Dir",
+     "type": "string"
+    }
+   },
+   "title": "pt_screenshotArguments",
+   "type": "object"
+  }
+ },
+ "pt_send_raw": {
+  "description": "\nSend arbitrary JavaScript to Packet Tracer via bridge.\nUseful for exploring the IPC API or running custom commands.\n\nIf wait_result=True, reportResult() is auto-injected into scope.\nJust call reportResult(data) in your code — no need to define it.\nExamples:\n  pt_send_raw(\"reportResult(getDevices('router'))\", wait_result=True)\n  pt_send_raw(\"addDevice('TestR','2911',500,300)\")\n\nParameters:\n- js_code: JavaScript to execute in PT's Script Engine\n- wait_result: if True, waits for a response via reportResult()\n",
+  "inputSchema": {
+   "properties": {
+    "js_code": {
+     "title": "Js Code",
+     "type": "string"
+    },
+    "wait_result": {
+     "default": false,
+     "title": "Wait Result",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "js_code"
+   ],
+   "title": "pt_send_rawArguments",
+   "type": "object"
+  }
+ },
+ "pt_server_dhcp": {
+  "description": "\nA Server-PT's Services > DHCP: creates or edits a pool and switches it on.\n\n- pool: name (\"serverPool\" is the factory one: editing it is the most\n  common case). If it doesn't exist it is created with the given values.\n- gateway, dns, start_ip, mask (\"255.255.255.0\" or \"24\"), max_users,\n  tftp, wlc: empty/0 = leave alone.\n- enable: True = Service On (default), False = Off, None = leave alone.\n- remove_pool: deletes that pool.\n- exclude: ranges to exclude, [\"192.168.1.1-192.168.1.9\"].\n- interface: the server's port (default: the first one).\nHosts use it with pt_host_ip_config(mode=\"dhcp\").\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dns": {
+     "default": "",
+     "title": "Dns",
+     "type": "string"
+    },
+    "enable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": true,
+     "title": "Enable"
+    },
+    "exclude": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Exclude"
+    },
+    "gateway": {
+     "default": "",
+     "title": "Gateway",
+     "type": "string"
+    },
+    "interface": {
+     "default": "",
+     "title": "Interface",
+     "type": "string"
+    },
+    "mask": {
+     "default": "",
+     "title": "Mask",
+     "type": "string"
+    },
+    "max_users": {
+     "default": 0,
+     "title": "Max Users",
+     "type": "integer"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "pool": {
+     "default": "serverPool",
+     "title": "Pool",
+     "type": "string"
+    },
+    "remove_pool": {
+     "default": "",
+     "title": "Remove Pool",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "start_ip": {
+     "default": "",
+     "title": "Start Ip",
+     "type": "string"
+    },
+    "tftp": {
+     "default": "",
+     "title": "Tftp",
+     "type": "string"
+    },
+    "wlc": {
+     "default": "",
+     "title": "Wlc",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_server_dhcpArguments",
+   "type": "object"
+  }
+ },
+ "pt_server_dns": {
+  "description": "\nA Server-PT's Services > DNS: adds/removes records and switches the service on.\n\n- records: [{\"name\": \"www.lab.com\", \"type\": \"A\", \"value\": \"192.168.1.20\"},\n            {\"name\": \"web.lab.com\", \"type\": \"CNAME\", \"value\": \"www.lab.com\"}]\n- remove: same shape, to delete.\n- enable: True = On (default), False = Off, None = leave alone.\nThe reply's `stored` says whether each added record is in the server's\ndatabase. Check resolution with pt_host_command(host, \"nslookup www.lab.com\").\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "enable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": true,
+     "title": "Enable"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "records": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Records"
+    },
+    "remove": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Remove"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_server_dnsArguments",
+   "type": "object"
+  }
+ },
+ "pt_server_http": {
+  "description": "\nA Server-PT's Services > HTTP: switches HTTP/HTTPS and edits pages.\n\n- pages: {\"index.html\": \"<html>...</html>\", \"about.html\": \"...\"}\n  (replaces the content; creates the page if it didn't exist).\n- enable / https_enable: True/False/None (None = leave alone).\nCheck it with pt_web_browser(host, \"http://<server ip>\").\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "enable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": true,
+     "title": "Enable"
+    },
+    "https_enable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Https Enable"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "pages": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pages"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_server_httpArguments",
+   "type": "object"
+  }
+ },
+ "pt_server_service": {
+  "description": "\nA Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "enable": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Enable"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "service": {
+     "title": "Service",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "users": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Users"
+    }
+   },
+   "required": [
+    "device",
+    "service"
+   ],
+   "title": "pt_server_serviceArguments",
+   "type": "object"
+  }
+ },
+ "pt_set_port": {
+  "description": "\nSets low-level attributes of a port on a live device in PT.\n\nOnly applies the attributes passed explicitly (parameters with\nsentinel defaults). Useful for adjustments the CLI doesn't expose easily, or\nthat you want to apply without entering `configure terminal`.\n\nParameters:\n- device: device name in PT (e.g. \"R1\")\n- interface: interface name (e.g. \"GigabitEthernet0/0\")\n- bandwidth: bandwidth in kbps (>0 to apply; 0 = don't change)\n- bandwidth_auto: 1 enables BW auto-negotiation, 0 disables it, -1 doesn't change\n- full_duplex: 1 full duplex, 0 half duplex, -1 doesn't change\n- duplex_auto: 1 enables duplex auto-negotiation, 0 disables, -1 doesn't change\n- description: descriptive text (empty = doesn't change)\n- mac_address: MAC in \"AABB.CCDD.EEFF\" format (empty = doesn't change)\n- power: 1 powers the port on, 0 off, -1 doesn't change\n- zone_member: name of the port's security zone, for Zone-Based\n  Firewall (empty = doesn't change). Router interfaces only.\n- proxy_arp: 1 enables Proxy ARP, 0 disables it, -1 doesn't change. Turning it off\n  is common hardening: with Proxy ARP the router answers ARPs that are not\n  its own and leaks information about the topology.\n- ike: 1 enables IKE on the interface (IPsec VPN), 0 disables it,\n  -1 doesn't change.\n\nReturns which attributes were applied (those with a method available in\nthe port's API). If some `setXxx` does not exist on the device's model,\nit is silently ignored and only what took effect is reported.\n",
+  "inputSchema": {
+   "properties": {
+    "bandwidth": {
+     "default": 0,
+     "title": "Bandwidth",
+     "type": "integer"
+    },
+    "bandwidth_auto": {
+     "default": -1,
+     "title": "Bandwidth Auto",
+     "type": "integer"
+    },
+    "description": {
+     "default": "",
+     "title": "Description",
+     "type": "string"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "duplex_auto": {
+     "default": -1,
+     "title": "Duplex Auto",
+     "type": "integer"
+    },
+    "full_duplex": {
+     "default": -1,
+     "title": "Full Duplex",
+     "type": "integer"
+    },
+    "ike": {
+     "default": -1,
+     "title": "Ike",
+     "type": "integer"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "mac_address": {
+     "default": "",
+     "title": "Mac Address",
+     "type": "string"
+    },
+    "power": {
+     "default": -1,
+     "title": "Power",
+     "type": "integer"
+    },
+    "proxy_arp": {
+     "default": -1,
+     "title": "Proxy Arp",
+     "type": "integer"
+    },
+    "zone_member": {
+     "default": "",
+     "title": "Zone Member",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device",
+    "interface"
+   ],
+   "title": "pt_set_portArguments",
+   "type": "object"
+  }
+ },
+ "pt_simulation_mode": {
+  "description": "\nSwitches PT between Realtime and Simulation mode.\n\nIn Simulation mode packets do NOT move on their own: they stay queued in the\nevent list and have to be moved with pt_simulation_step. That is what\nallows reading the path packet by packet with pt_read_packet_trace.\n\nParameters:\n- on: True enters Simulation (default), False goes back to Realtime.\n\nExample: pt_simulation_mode(on=True)\n",
+  "inputSchema": {
+   "properties": {
+    "on": {
+     "default": true,
+     "title": "On",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_simulation_modeArguments",
+   "type": "object"
+  }
+ },
+ "pt_simulation_step": {
+  "description": "\nSteps the simulation forward, back, or resets it.\n\nRequires Simulation mode (pt_simulation_mode(on=True)). Each\nstep moves the packets one event; after stepping, read the result\nwith pt_read_packet_trace.\n\nParameters:\n- action: \"forward\" (default) | \"back\" | \"reset\".\n- times: how many steps to take (1-100, ignored for \"reset\").\n\nExample: step 5 events forward:\n  pt_simulation_step(action=\"forward\", times=5)\n",
+  "inputSchema": {
+   "properties": {
+    "action": {
+     "default": "forward",
+     "title": "Action",
+     "type": "string"
+    },
+    "times": {
+     "default": 1,
+     "title": "Times",
+     "type": "integer"
+    }
+   },
+   "title": "pt_simulation_stepArguments",
+   "type": "object"
+  }
+ },
+ "pt_terminal": {
+  "description": "\nDesktop > Terminal of a PC connected by a CONSOLE cable (RS 232) to a\nrouter/switch: types on that device's console, as from the PC's\nTerminal. This is how labs configure a device \"over the console\".\n\n- device: the PC (or Laptop) that has the console cable.\n- commands, timeout, auto_confirm: as in pt_cli.\n- show/capture: shows the PC's Terminal app (its 9600 8N1 settings\n  window is accepted automatically).\n",
+  "inputSchema": {
+   "properties": {
+    "auto_confirm": {
+     "default": true,
+     "title": "Auto Confirm",
+     "type": "boolean"
+    },
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "commands": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "string"
+      }
+     ],
+     "title": "Commands"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "timeout": {
+     "default": 30.0,
+     "title": "Timeout",
+     "type": "number"
+    }
+   },
+   "required": [
+    "device",
+    "commands"
+   ],
+   "title": "pt_terminalArguments",
+   "type": "object"
+  }
+ },
+ "pt_ui_capture": {
+  "description": "\nSaves a PNG of a device's window as it looks in PT (or of the main\nwindow if device is empty). Works even when the window is covered.\nReturns the file's PATH, not the image.\n\nOpen the tab/app you want first with pt_ui_open (or show=True on the\ntool you ran). For the logical canvas without the interface there is\npt_screenshot.\n",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    },
+    "filename": {
+     "default": "",
+     "title": "Filename",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    }
+   },
+   "title": "pt_ui_captureArguments",
+   "type": "object"
+  }
+ },
+ "pt_ui_close": {
+  "description": "Closes a device's window in PT, or all of them if device is empty.",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_ui_closeArguments",
+   "type": "object"
+  }
+ },
+ "pt_ui_mode": {
+  "description": "\nHeadless vs UI: decides whether the device-panel tools also SHOW what\nthey do in Packet Tracer's window.\n\n- \"headless\" (default): everything through the API, no window opens.\n- \"ui\": pt_cli, pt_host_command, pt_host_ip_config, pt_server_*... open\n  the device's window on the matching tab/app (CLI, Desktop > Command\n  Prompt, Desktop > IP Configuration, Services > DHCP...) so it can be\n  watched or captured.\n- \"status\": shows the current mode.\n\nThe mode is saved and survives server restarts. Every tool also accepts\nshow=True/False for a single call. Use it when the user says \"show it\nin PT\", \"I want screenshots\", \"use the tabs\" (→ \"ui\") or \"do it in the\nbackground\" (→ \"headless\").\n",
+  "inputSchema": {
+   "properties": {
+    "mode": {
+     "default": "status",
+     "title": "Mode",
+     "type": "string"
+    }
+   },
+   "title": "pt_ui_modeArguments",
+   "type": "object"
+  }
+ },
+ "pt_ui_open": {
+  "description": "\nOpens a device's window in PT on a tab/app/section, without moving the\nmouse or typing (UI Automation + PT's API).\n\n- tab: Physical | Config | CLI | Desktop | Services | Programming | Attributes\n- app (Desktop): ip_configuration, command_prompt, terminal, web_browser,\n  pc_wireless, email, text_editor, firewall, ipv6_firewall, vpn,\n  traffic_generator, mib_browser, pppoe_dialer, dial_up, ip_communicator,\n  tftp, ssh_client, bluetooth, iot_monitor... (implies tab=Desktop)\n- section: an entry in the tab's left-hand list: in Config \"Settings\"\n  or an interface (\"FastEthernet0\"); in Services \"DHCP\", \"DNS\", \"HTTP\",\n  \"TFTP\", \"EMAIL\", \"FTP\"...\n\nWorks in headless mode too: it is an explicit request to show.\nRequires Windows and the [ui] extra (comtypes).\n",
+  "inputSchema": {
+   "properties": {
+    "app": {
+     "default": "",
+     "title": "App",
+     "type": "string"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "scroll_to_end": {
+     "default": true,
+     "title": "Scroll To End",
+     "type": "boolean"
+    },
+    "section": {
+     "default": "",
+     "title": "Section",
+     "type": "string"
+    },
+    "tab": {
+     "default": "",
+     "title": "Tab",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_ui_openArguments",
+   "type": "object"
+  }
+ },
+ "pt_validate_plan": {
+  "description": "\nValidates a topology plan. Returns typed errors and warnings.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology)\n",
+  "inputSchema": {
+   "properties": {
+    "plan_json": {
+     "title": "Plan Json",
+     "type": "string"
+    }
+   },
+   "required": [
+    "plan_json"
+   ],
+   "title": "pt_validate_planArguments",
+   "type": "object"
+  }
+ },
+ "pt_verify_connectivity": {
+  "description": "\nRuns a REAL ping from a device in PT and returns the result.\n\nUnlike validations that are only printed as \"check it by\nhand\", this runs `ping` on the device's console and parses the real\noutput: how many packets arrived. Use it to confirm that a freshly\ndeployed topology really has connectivity.\n\nWorks with hosts (PC/Server/Laptop, format \"Packets: Sent=..\") and with\nIOS devices (router/switch, format \"Success rate is N percent\").\n\nParameters:\n- from_device: name of the device the ping starts from\n- to_ip: destination IP\n- count: reserved; PT uses its default per type (PC 4, IOS 5). A \"-n\"\n  flag would break on IOS, so it is not forced for now.\n- timeout_s: maximum wait (default 20s). A FAILED ping takes longer\n  than a successful one: each packet waits for its own timeout before\n  being declared lost (~13s measured for 4 lost packets).\n",
+  "inputSchema": {
+   "properties": {
+    "count": {
+     "default": 4,
+     "title": "Count",
+     "type": "integer"
+    },
+    "from_device": {
+     "title": "From Device",
+     "type": "string"
+    },
+    "timeout_s": {
+     "default": 20.0,
+     "title": "Timeout S",
+     "type": "number"
+    },
+    "to_ip": {
+     "title": "To Ip",
+     "type": "string"
+    }
+   },
+   "required": [
+    "from_device",
+    "to_ip"
+   ],
+   "title": "pt_verify_connectivityArguments",
+   "type": "object"
+  }
+ },
+ "pt_web_browser": {
+  "description": "\nA host's Desktop > Web Browser: opens a URL (http://IP, http://name\nwith DNS, https://...) and returns the text of the page it received.\n\nIn UI mode (or show=True) the window's own browser does the\nnavigation, so the capture shows the rendered page.\n",
+  "inputSchema": {
+   "properties": {
+    "capture": {
+     "default": false,
+     "title": "Capture",
+     "type": "boolean"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "output_dir": {
+     "default": "screenshots",
+     "title": "Output Dir",
+     "type": "string"
+    },
+    "show": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Show"
+    },
+    "timeout": {
+     "default": 10.0,
+     "title": "Timeout",
+     "type": "number"
+    },
+    "url": {
+     "title": "Url",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device",
+    "url"
+   ],
+   "title": "pt_web_browserArguments",
+   "type": "object"
+  }
+ },
+ "pt_workspace_options": {
+  "description": "\nReads and adjusts PT workspace options that affect how it behaves.\n\nWithout arguments it is read-only. The flags are tri-state: 1 enables,\n0 disables, -1 (default) leaves alone.\n\nParameters:\n- auto_cabling: PT's auto-cabling picks the cable and the port for you.\n  Turn it off before building topologies by script if you want exact\n  control over which port is used.\n- external_network_access: lets PT reach the machine's REAL\n  network. Off by default; turning it on takes traffic out of the simulator.\n- show_port_labels / show_link_lights / show_device_labels: what is shown on\n  the canvas. It matters for a capture to be readable.\n\nExample: turn auto-cabling off before a scripted deploy:\n  pt_workspace_options(auto_cabling=0)\n",
+  "inputSchema": {
+   "properties": {
+    "auto_cabling": {
+     "default": -1,
+     "title": "Auto Cabling",
+     "type": "integer"
+    },
+    "external_network_access": {
+     "default": -1,
+     "title": "External Network Access",
+     "type": "integer"
+    },
+    "show_device_labels": {
+     "default": -1,
+     "title": "Show Device Labels",
+     "type": "integer"
+    },
+    "show_link_lights": {
+     "default": -1,
+     "title": "Show Link Lights",
+     "type": "integer"
+    },
+    "show_port_labels": {
+     "default": -1,
+     "title": "Show Port Labels",
+     "type": "integer"
+    }
+   },
+   "title": "pt_workspace_optionsArguments",
+   "type": "object"
+  }
+ }
+}

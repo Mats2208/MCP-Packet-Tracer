@@ -1,5 +1,6 @@
 """Test de integración: full build completo."""
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -70,9 +71,7 @@ class TestFullBuildLiveDeploy:
     """
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_deploy_branches_on_live_channel(self):
         src = self._src()

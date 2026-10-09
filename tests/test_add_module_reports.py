@@ -8,6 +8,7 @@ la advertencia de la skill "puede reportar timeout pero haber funcionado".
 
 from __future__ import annotations
 
+from tests._registry_src import registry_source
 import json
 import re
 from pathlib import Path
@@ -16,7 +17,7 @@ from src.packet_tracer_mcp.infrastructure.generator.host_js import add_module_js
 
 
 def _tool_source(name: str) -> str:
-    src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
+    src = registry_source()
     start = src.index(f"def {name}(")
     nxt = re.search(r"\n    @mcp\.tool\(\)", src[start:])
     return src[start:start + nxt.start()] if nxt else src[start:]

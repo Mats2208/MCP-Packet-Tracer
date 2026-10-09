@@ -49,7 +49,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "pyflakes>=3"]
 # UI mode (open/capture the device windows): Windows UI Automation through
 # comtypes. Optional: without it everything still works headless.
 ui = ["comtypes>=1.4; sys_platform == 'win32'"]

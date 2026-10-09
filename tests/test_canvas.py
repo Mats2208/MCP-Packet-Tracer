@@ -5,6 +5,7 @@ devolvió los bytes en decimal separados por coma y CON SIGNO, empezando por
 `-119,80,78,71,13,10,26,10` — que es la firma PNG `89 50 4E 47 0D 0A 1A 0A`.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -108,9 +109,7 @@ class TestCanvasTools:
     por texto igual que TestReconcileWiring en test_live_reconcile.py."""
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_no_draw_tool_is_shipped(self):
         """drawCircle/drawLine no se exponen: el tercer argumento resulto ser el

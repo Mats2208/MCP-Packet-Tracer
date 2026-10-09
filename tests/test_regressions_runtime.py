@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests._registry_src import registry_source
 import json
 import shutil
 from pathlib import Path
@@ -134,8 +135,7 @@ def test_query_pt_devices_no_longer_calls_undefined_querytopology():
     con JS inline real (JSON.stringify). Este guard evita reintroducir el bug.
     """
     src = (
-        Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py")
-        .read_text(encoding="utf-8")
+        registry_source()
     )
     assert '"queryTopology()"' not in src, "la llamada muerta a queryTopology() volvió"
     assert "_LIVE_DEVICES_JS" in src
@@ -163,9 +163,7 @@ class TestSetPortSecurityKnobs:
     """
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_each_setter_is_feature_detected(self):
         """Solo existen en puertos de router: en un switch o host lanzarían."""

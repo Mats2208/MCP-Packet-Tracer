@@ -6,6 +6,7 @@ mientras sale primero el ARP broadcast (type 5) — y cada uno trae su log de
 decisiones por capa OSI.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -142,9 +143,7 @@ class TestSimulationReaders:
     por texto, igual que TestReconcileWiring en test_live_reconcile.py."""
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_uses_pts_misspelled_decision_getter(self):
         """PT expone `getFrameDecsionAt`, con el typo. Corregirlo rompe la lectura."""
