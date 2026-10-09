@@ -5,7 +5,7 @@
 ### Added
 
 - **Device-panel control: every tab of a device window, without touching the screen.**
-  17 new tools (61 → 78) drive what a student does inside a device through Packet
+  17 new tools (62 → 79 with upstream's `pt_configure_dhcp_server`) drive what a student does inside a device through Packet
   Tracer's own API: `pt_cli` (IOS CLI tab — one command at a time, waits for the
   prompt, aborts the DNS hang an IOS typo causes, presses Enter on `[confirm]` and
   `Destination filename [..]?`, primes a freshly deployed router), `pt_host_command`
@@ -16,7 +16,7 @@
   (TFTP/FTP/SYSLOG/EMAIL). What `pt_cli` types shows up in the real CLI tab.
 - **`pt_server_dhcp` edits a server's DHCP pools** — create, edit and delete pools,
   exclude ranges, switch the service on/off — through
-  `DhcpServerMain.getDhcpServerProcessByPortName()`. Closes #23.
+  `DhcpServerMain.getDhcpServerProcessByPortName()`.
 - **UI mode.** `pt_ui_mode("headless" | "ui")`: headless (the default) works only
   through the API; `ui` also opens the device's window on the matching tab, Desktop
   app or Services page so the user can watch. `show=` overrides it per call and
@@ -29,6 +29,23 @@
   delete the device.
 - **MCP prompts** `ui_on`, `ui_off`, `ui_status` (in Claude Code:
   `/mcp__packet-tracer__ui_on`).
+- **`pt_configure_dhcp_server`: DHCP pools on a Server-PT** (upstream #23, thanks
+  @lucaschefferh). Until now the MCP could only put the pool on a router via CLI, and a
+  lab with one DHCP server per subnet left the hosts on APIPA until the pools were
+  created by hand in Services > DHCP. The tool creates or edits the pool after
+  validating it against the subnet, switches the service on and reads every pool back
+  to compare with what was asked; without `network` it only reads, `remove=True`
+  deletes and `dry_run` doesn't touch PT. Verified upstream in PT 9.0 with two LANs and
+  one Server-PT each: the PCs get IP, gateway and DNS from their server and ping each
+  other through the router. `pt_server_dhcp` remains the panel-style tool (exclusions,
+  TFTP/WLC, UI mode).
+- **What to know about PT's DHCP, measured live.** It never leases the server's own IP,
+  but it does lease the gateway's if the range covers it (the tool warns with
+  `DHCP_SERVER_RANGE_OVERLAP`). And the factory `serverPool` re-fits itself to the
+  server's subnet with its start at the network address and no gateway: next to a
+  custom-named pool it hands `.1` to a client. With a custom name the tool deletes it
+  while it is still unconfigured (`drop_factory_pool=True`); a configured one is left
+  alone.
 
 ### Fixed
 

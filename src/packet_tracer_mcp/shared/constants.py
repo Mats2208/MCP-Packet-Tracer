@@ -39,7 +39,7 @@ CAPABILITIES = {
                  # dispositivo. Verificadas contra PT 9.0.0.0810.
                  "security_audit", "port_inspect", "vlan_read", "device_power",
                  "simulation_mode", "simulation_step", "packet_trace",
-                 "netflow", "qos_read",
+                 "netflow", "qos_read", "dhcp_server_pools",
                  "config_backup", "project_metadata", "workspace_options",
                  "screenshot", "canvas_annotations"],
     # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool

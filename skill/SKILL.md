@@ -53,7 +53,7 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
 
-## Tool catalog (78)
+## Tool catalog (79)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -98,6 +98,11 @@ config-register, boot images), `pt_project_metadata(description="")` (saved file
 description, device/link count; pass `description` to set it), `pt_workspace_options(...)` — tri-state
 flags, `-1` leaves a setting alone. Turn `auto_cabling=0` before a scripted build if you need links on
 exact interfaces, and check `external_network_access` before assuming traffic stays in the simulator.
+**DHCP on a Server-PT:** `pt_configure_dhcp_server(device, network, mask, gateway, dns, start_ip,
+max_users, pool_name="serverPool", port="FastEthernet0", enabled, drop_factory_pool, remove, dry_run)`
+creates/edits a pool on a **server** (GUI: Services > DHCP), turns the service on and reads every pool
+back. Without `network` it only reads. Router DHCP is a different thing: IOS CLI `ip dhcp pool`, which
+is what `dhcp=True` in the planner emits. Give the server a static IP inside the pool's subnet first.
 **Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
 monitors, remove, dry_run)` configures a NetFlow exporter directly (not via CLI) and reads it back to
 confirm. `pt_read_qos(device)` is **read-only**: QoS cannot be created programmatically, so author
@@ -183,6 +188,24 @@ If a method is not here, do **not** assume it exists.
 - `ap.addAcl(name)` · `ap.getAcl(name)` → acl|null · `ap.removeAcl(name)`
 - `acl.addStatement(str)` → bool · `acl.getCommandCount()` → int
 
+**DHCP server (Server-PT only)** — verified PT 9.0 + IpcAPI reference (`class_dhcp_server_process`)
+- `var s = d.getProcess("DhcpServerMain").getDhcpServerProcessByPortName("FastEthernet0");`
+  `getProcess("DhcpServerMain")` is **null** on routers, switches and PCs; a wrong port name → null.
+  ⚠️ `DhcpServerMain` itself has **no** pool methods (`getPoolCount` etc. are undefined there) —
+  that is why issue #23 concluded it was impossible. They live one level down, on `s`.
+- `s.addPool(name)` (a repeated name does not duplicate) · `s.getPool(name)` → pool|null ·
+  `s.removePool(name)` · `s.getPoolCount()` / `s.getPoolAt(i)` · `s.setEnable(bool)` / `s.isEnable()` ·
+  `s.addExcludedAddress(ip, ip)`. Avoid `addNewPool(...)`: 8 unnamed arguments in the reference.
+- Pool: `setNetworkAddress(ip)` · **`setNetworkMask(network, mask)` — TWO args**, one arg throws
+  `Invalid arguments for IPC call` · `setDefaultRouter(ip)` · `setDnsServerIp(ip)` · `setStartIp(ip)` ·
+  `setMaxUsers(n)` (recomputes the end from the start, so set start first) · `setEndIp(ip)`.
+  Getters: `getDhcpPoolName/getNetworkAddress/getSubnetMask/getDefaultRouter/getDnsServerIp/
+  getStartIp/getEndIp/getMaxUsers`. There is **no** setter for TFTP, WLC or domain name.
+- Behaviour measured live: PT never leases the server's own IP, but **does** lease the gateway's
+  if the range covers it. The factory `serverPool` re-fits itself to the server's subnet with
+  start = network address and no gateway, so next to a named pool it hands out `.1`.
+  After changing a pool, clients keep their old lease — even one outside the new range. Toggling `setDhcpFlag` does not renew; run `ipconfig /release` then `ipconfig /renew` on the host console.
+
 **Cable enum ints (for `lw.createLink`)**: straight 8100 · cross 8101 · roll 8102 · fiber 8103 ·
 phone 8104 · cable 8105 · serial 8106 · auto 8107 · console 8108 · wireless 8109 · coaxial 8110 ·
 octal 8111 · cellular 8112 · usb 8113 · custom_io 8114.
@@ -261,6 +284,7 @@ it as extra CLI with `configureIosDevice(name, cli)`.
 |---|---|---|
 | `getDevice("R1")` | `ipc.network().getDevice("R1")` (or `getDevices("")` to list) | no global `getDevice` → ReferenceError → freeze |
 | `d.getPorts().size()` / `.at(i)` / `.getName()` | `d.getPorts()[i]` (string array) | getPorts returns strings |
+| `getProcess("DhcpServerMain").getPoolCount()` | `getProcess("DhcpServerMain").getDhcpServerProcessByPortName("FastEthernet0").getPoolCount()` (or `pt_configure_dhcp_server`) | the pools live on the per-port process |
 | `pt_add_module(slot=0)` | `slot="0"` (string) | int slot silently fails (`===` compare) |
 | cable `"crossover"` | `"cross"` | alias works but `cross` is canonical |
 | invent model `"Cisco4500"` | `pt_list_devices` / `pt_get_device_details` first | use real catalog names |

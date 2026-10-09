@@ -18,7 +18,7 @@
 
 <table>
 <tr>
-<td align="center"><strong>78 MCP Tools</strong></td>
+<td align="center"><strong>79 MCP Tools</strong></td>
 <td align="center"><strong>5 MCP Resources</strong></td>
 <td align="center"><strong>74 Device Models</strong></td>
 <td align="center"><strong>151 Modules</strong></td>
@@ -66,7 +66,7 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 | | Feature | Details |
 |---|---------|---------|
 | **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
-| **IP / DHCP** | Auto /24 LANs + /30 links, DHCP pools | Sequential, gateway at `.1` |
+| **IP / DHCP** | Auto /24 LANs + /30 links, DHCP pools on routers; `pt_configure_dhcp_server` for a dedicated **Server-PT** per subnet | Sequential, gateway at `.1` |
 | **Routing** | Static · OSPF · EIGRP · RIP | Full IOS generation |
 | **Switching** | VLANs, trunks, **inter-VLAN routing** (router-on-a-stick), STP, port-security | `.1q` subinterfaces + per-VLAN DHCP |
 | **Security** | Device hardening (SSH, local users, enable-secret, banner), ACL/NAT | On live devices via the bridge |

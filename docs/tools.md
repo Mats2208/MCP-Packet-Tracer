@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **78 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -141,6 +141,28 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
 | `pt_apply_interface_tuning` | Serial clock-rate (DCE), bandwidth, per-interface OSPF/EIGRP knobs. |
 
 All accept `dry_run=True` to preview the generated CLI without touching PT.
+
+## Server services
+
+| Tool | What it does |
+|------|--------------|
+| `pt_configure_dhcp_server` | Create, edit or remove a DHCP pool on a **Server-PT** (the GUI's Services > DHCP) and switch the service on or off — network, mask, gateway, DNS, start IP, max users — then read every pool back. Without `network` it only reads. |
+
+!!! note "Router DHCP and server DHCP are two different things"
+    A router's pool is IOS CLI (`ip dhcp pool`), which is what `dhcp=True` in the
+    planner emits. A Server-PT has no CLI: its pools live behind
+    `getProcess("DhcpServerMain").getDhcpServerProcessByPortName("FastEthernet0")`,
+    one level below where it looks — `DhcpServerMain` itself has no pool methods.
+
+    Give the server a static IP inside the pool's subnet first. Packet Tracer never
+    leases the server's own address, but it **will** lease the gateway's if the
+    range covers it, so start the range after the router. And if you name your own
+    pool, the factory `serverPool` adapts itself to the server's subnet and starts
+    leasing from `.1` — the tool deletes it while it is still unconfigured
+    (`drop_factory_pool=True`).
+
+    Changing a pool does not move hosts that already hold a lease, even one now
+    outside the range: run `ipconfig /release` and `ipconfig /renew` on them.
 
 ## Verification
 

@@ -144,6 +144,21 @@ device once each.
 - Recipe for a presentable diagram: pt_full_build → pt_add_note per subnet and
   link → pt_screenshot.
 
+## DHCP on a Server-PT (not on the router)
+- `pt_configure_dhcp_server(device, network, mask, gateway, dns, start_ip, max_users,
+  pool_name="serverPool", enabled=True)`: creates or edits the pool (the GUI's
+  Services > DHCP) after validating it against the subnet, switches the service on and
+  reads it back. Without `network` it only reads. `remove=True` deletes the pool;
+  accepts `dry_run=True`. `pt_server_dhcp` does the same panel-style and also handles
+  exclusion ranges, TFTP/WLC and showing the Services page (UI mode).
+- A ROUTER's DHCP is a different thing: it goes through the CLI (`ip dhcp pool`), which is
+  what the plan emits with `dhcp=True`.
+- The server needs a static IP inside the pool's subnet. PT never hands out the server's
+  IP, but it DOES hand out the gateway's if it is in range: start after the router.
+- If you change a pool, hosts that already had a lease keep it (even outside the range).
+  Toggling setDhcpFlag does NOT renew: send `ipconfig /release` and `ipconfig /renew`
+  through the host's console (pt_host_command).
+
 ## Telemetry and QoS — they are NOT symmetric
 - `pt_apply_netflow(device, name, destination_ip, ...)`: configures the exporter
   directly (not via CLI) and reads it back to confirm. If the name already exists it
@@ -194,7 +209,7 @@ host-firewall rules. For those, open the window with pt_ui_open and let the user
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 78 tools. Use `pt_full_build` for the general case (new topology with configs).
+- The MCP has 79 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.
