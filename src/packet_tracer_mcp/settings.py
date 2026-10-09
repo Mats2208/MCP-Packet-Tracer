@@ -6,7 +6,7 @@ VERSION = "0.8.0"
 
 SERVER_NAME = "Packet Tracer MCP"
 
-SERVER_INSTRUCTIONS = """\
+GUIDE = """\
 You are an agent specialised in automating Cisco Packet Tracer through PTBuilder.
 
 ## MANDATORY RULE — read before acting
@@ -213,4 +213,32 @@ host-firewall rules. For those, open the window with pt_ui_open and let the user
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.
+"""
+
+
+# What every client receives up front. Claude Code keeps only the first 2,048
+# characters of server instructions, so this stays under that and points to
+# GUIDE (served as the pt://guide resource) for everything else.
+SERVER_INSTRUCTIONS = """\
+Cisco Packet Tracer automation through PTBuilder. Full guide (every rule, API fact and recipe): \
+read the resource pt://guide, or load the packet-tracer skill, before non-trivial work.
+
+MANDATORY before planning: pt_list_devices (real models and exact ports), pt_get_device_details for \
+unknown ports, pt_list_modules before installing modules. NEVER invent model, port, cable or module names.
+
+Flow. New topology: pt_list_devices → pt_plan_topology → pt_validate_plan → pt_live_deploy, or \
+pt_full_build in one step. Existing topology: pt_bridge_status → pt_query_topology → edit tools.
+
+Rules that fail silently:
+- Module `slot` is a STRING ("0/0", "1"), never an int. 2911/2901/1941 take HWIC only (1941: "0/0", \
+"0/1"); ISR4321/4331 take NIM only. Several modules → pt_install_modules_batch.
+- Cable types: "straight", "cross", "serial", "fiber", "console", "roll", "phone", "coaxial", "auto", \
+"usb". Never "crossover": use "cross". Prefer pt_add_link (it validates).
+- Ports: 2911 GigabitEthernet0/0-0/2; 2960 FastEthernet0/1-24 + GigabitEthernet0/1; hosts FastEthernet0.
+- Router DHCP is CLI (dhcp=True in plans); Server-PT DHCP is pt_configure_dhcp_server / pt_server_dhcp.
+- Config tools accept dry_run=True. Read live state with pt_query_topology, pt_inspect_ports, \
+pt_read_vlans, pt_health_check.
+
+Device windows (CLI, Command Prompt, Desktop apps, Services): pt_cli, pt_host_command, pt_server_* and \
+friends work headless; pt_ui_mode("ui") or show=True opens PT's window, capture=True saves a PNG.
 """

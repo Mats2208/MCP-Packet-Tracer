@@ -13,6 +13,7 @@ from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...shared.constants import CAPABILITIES
 from ...shared.utils import reply_json
+from ...settings import GUIDE
 
 
 def register_resources(mcp: FastMCP) -> None:
@@ -55,6 +56,12 @@ def register_resources(mcp: FastMCP) -> None:
                 "tags": list(t.tags),
             })
         return reply_json(data)
+
+    @mcp.resource("pt://guide")
+    def resource_guide() -> str:
+        """Full usage guide: every rule, verified PT API fact and recipe (the short
+        server instructions point here)."""
+        return GUIDE
 
     @mcp.resource("pt://capabilities")
     async def resource_capabilities() -> str:
