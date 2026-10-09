@@ -30,55 +30,25 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Applies an Access Control List (ACL) to a router in PT's active topology.
+        Applies an ACL to a router in PT's active topology: validates (ranges, types,
+        IPs/wildcards, unreachable rules), checks router/interface against PT, generates IOS CLI and
+        sends it through configureIosDevice.
 
-        Pipeline: builds the plan → static validation (ranges, types, IPs/wildcards,
-        unreachable rules) → checks router/interface against PT through the bridge →
-        generates IOS CLI → sends it through configureIosDevice.
+        - router: device name in PT (see pt_query_topology).
+        - name_or_number: 1-99/1300-1999 standard, 100-199/2000-2699 extended, any word = named ACL.
+        - acl_type: "standard" (source only) or "extended" (source, destination, protocol, ports).
+        - entries: list of dicts:
+            action "permit"|"deny" (required); protocol "ip"|"icmp"|"tcp"|"udp"|... (default "ip");
+            source "any" | "host A.B.C.D" | "A.B.C.D wildcard" (required); destination (extended);
+            source_port_op/source_port, dest_port_op/dest_port/dest_port_end (TCP/UDP, e.g. "eq"/80);
+            icmp_type ("echo", "echo-reply", ...); tcp_flags (["established"]); log (bool); remark.
+        - binding_interface: apply the ACL to this interface; empty = only define it.
+        - binding_direction: "in" (default) or "out"; used only with binding_interface.
+        - dry_run: validate and return the CLI/JS without sending.
 
-        Parameters:
-        - router: device name in PT (e.g. "CORE-R1"). Call
-          pt_query_topology if you are not sure of the exact names.
-        - name_or_number: the ACL's IOS identifier.
-            * 1-99 or 1300-1999 → standard
-            * 100-199 or 2000-2699 → extended
-            * any alphanumeric string → named ACL
-        - acl_type: "standard" or "extended". Standard only filters by source.
-          Extended allows source + destination + protocol + ports.
-        - entries: list of rules. Each rule is a dict with:
-            * action: "permit" | "deny" (required)
-            * protocol: "ip" | "icmp" | "tcp" | "udp" | ... (default "ip")
-            * source: "any" | "host A.B.C.D" | "A.B.C.D wildcard" (required)
-            * destination: same as source (extended only)
-            * source_port_op / source_port: e.g. "eq" / 80 (TCP/UDP, optional)
-            * dest_port_op / dest_port / dest_port_end: same (optional)
-            * icmp_type: "echo" | "echo-reply" | ... (ICMP only)
-            * tcp_flags: ["established"] | ["syn"] (TCP only, optional)
-            * log: bool (optional)
-            * remark: optional comment
-        - binding_interface: if given, applies the ACL to that interface
-          (e.g. "GigabitEthernet0/0"). If empty, the ACL is only defined, not applied.
-        - binding_direction: "in" or "out" (default "in"). Only applies if
-          binding_interface is set.
-        - dry_run: if True, sends NOTHING to the bridge — only validates and returns
-          the CLI/JS payload for inspection.
-
-        Example: block ping from 192.168.1.0/24 to 192.168.0.0/24 on CORE-R1:
-          pt_apply_acl(
-              router="CORE-R1",
-              name_or_number="101",
-              acl_type="extended",
-              entries=[
-                  {"action": "deny", "protocol": "icmp",
-                   "source": "192.168.1.0 0.0.0.255",
-                   "destination": "192.168.0.0 0.0.0.255",
-                   "icmp_type": "echo"},
-                  {"action": "permit", "protocol": "ip",
-                   "source": "any", "destination": "any"},
-              ],
-              binding_interface="GigabitEthernet0/0",
-              binding_direction="in",
-          )
+        Example entry: {"action": "deny", "protocol": "icmp", "source": "192.168.1.0 0.0.0.255",
+        "destination": "192.168.0.0 0.0.0.255", "icmp_type": "echo"}.
+        Full example: resource pt://guide, "Tool notes".
         """
         plan = build_acl_plan(router, name_or_number, acl_type, entries)
         binding = None

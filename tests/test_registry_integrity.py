@@ -69,3 +69,10 @@ def test_registry_is_small():
     assert len(modules) >= 13
     for path in modules:
         assert len(path.read_text(encoding="utf-8")) < 32000, path.name
+
+
+def test_descriptions_are_capped():
+    """A loaded tool's description is context the model carries; long notes live in pt://guide."""
+    long = {name: len(t["description"] or "") for name, t in tool_api().items()
+            if len(t["description"] or "") > 1500}
+    assert long == {}

@@ -134,35 +134,21 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Full pipeline: plans, validates, generates, explains, estimates and deploys.
 
-        With deploy=True (default) the deployment depends on whether there is a channel to PT:
-        - If the bridge is connected, the topology is REALLY created in Packet
-          Tracer (same path as pt_live_deploy, with verification and reconcile),
-          and the project files are also exported to disk.
-        - If there is no channel, it falls back to manual mode: copies the script to
-          the clipboard and generates step-by-step instructions.
+        deploy=True (default): with a channel to PT the topology is REALLY created (same path as
+        pt_live_deploy, with verification and reconcile) and project files are exported; with no
+        channel it falls back to manual mode (script to clipboard + step-by-step instructions).
 
         Parameters:
-        - routers: Number of routers (1-20)
-        - pcs_per_lan: PCs per LAN
-        - laptops_per_lan: Laptops per LAN (Laptop-PT)
-        - switches_per_router: Switches per router
-        - servers: Servers
-        - access_points: Access Points (AccessPoint-PT), one per LAN
-        - has_wan: Include WAN
-        - dhcp: Configure DHCP
-        - routing: static, ospf, eigrp, rip, none
-        - router_model: 1941, 2901, 2911, ISR4321
-        - switch_model: 2960-24TT, 3560-24PS
-        - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
-          branch_office, router_on_a_stick, three_router_triangle, custom
-        - deploy: If True, copies the script to the clipboard and exports files
-        - floating_routes: If True with routing=static, adds backup routes with AD=254
-        - ospf_process_id: OSPF process ID (1-65535, default 1)
-        - eigrp_as: EIGRP AS number (1-65535, default 100)
-        - vlans: router_on_a_stick only. Number of VLANs to spread across the PCs (0 = default 2).
-        - dual_stack: If True, adds IPv6 (routers via CLI, hosts via SLAAC).
-        - ipv6_base: Base IPv6 prefix for dual-stack (default "2001:db8::/32").
-        - wireless_laptops: If True, laptops connect over WiFi (wireless NIC + AP).
+        - routers (1-20), pcs_per_lan, laptops_per_lan (Laptop-PT), switches_per_router, servers,
+          access_points (AccessPoint-PT, one per LAN), has_wan, dhcp.
+        - routing: static, ospf, eigrp, rip, none. ospf_process_id (1-65535, default 1),
+          eigrp_as (1-65535, default 100), floating_routes (static only: backup routes, AD 254).
+        - router_model: 1941, 2901, 2911, ISR4321. switch_model: 2960-24TT, 3560-24PS.
+        - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke, branch_office,
+          router_on_a_stick, three_router_triangle, custom.
+        - vlans: router_on_a_stick only; VLANs spread across the PCs (0 = default 2).
+        - dual_stack: add IPv6 (routers via CLI, hosts via SLAAC); ipv6_base (default "2001:db8::/32").
+        - wireless_laptops: laptops connect over WiFi (wireless NIC + AP).
         """
         request = TopologyRequest(
             template=TopologyTemplate(template),

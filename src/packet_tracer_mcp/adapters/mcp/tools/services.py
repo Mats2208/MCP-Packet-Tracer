@@ -208,45 +208,28 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Creates or edits a DHCP pool on a Server-PT, validated against its
-        subnet, and switches the service on.
+        Creates or edits a DHCP pool on a Server-PT (GUI: Services > DHCP), validated against
+        its subnet, switches the service on and reads every pool back. No CLI (a Server-PT has none).
+        Router DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions, TFTP/WLC or showing the
+        page on screen: pt_server_dhcp.
 
-        The equivalent of Services > DHCP in the GUI. Not via CLI (a Server-PT
-        has none): configured through the native API and read back to confirm.
-        For DHCP on a ROUTER use the plan (`dhcp=True`) or the CLI `ip dhcp pool`.
-        For exclusion ranges, TFTP/WLC options or showing the Services page on
-        screen, use pt_server_dhcp.
+        The server needs a static IP inside the pool's subnet (else warning DHCP_SERVER_NO_IP). PT
+        never leases the server's own IP but DOES lease the gateway's if the range covers it.
 
-        The server needs a static IP inside the pool's subnet; if it doesn't
-        have one the tool warns (DHCP_SERVER_NO_IP). PT never hands out the
-        server's own IP, but it DOES hand out the gateway's if it is in range.
+        - device: the Server-PT.
+        - network / mask: pool subnet ("192.168.10.0", "255.255.255.0"). No network = read-only.
+        - gateway / dns: what clients receive (empty dns = left alone).
+        - start_ip: first IP handed out; empty = after a .1 gateway, else the first host.
+        - max_users: number of IPs; 0 = to the end of the subnet.
+        - pool_name: default "serverPool" (the factory pool the GUI shows); another name creates or
+          edits that pool, never duplicates.
+        - port: serving port (default FastEthernet0). enabled: service On/Off.
+        - drop_factory_pool: with a custom pool_name, delete the factory serverPool if it was never
+          configured (it would hand out .1, the gateway).
+        - remove: delete pool_name instead. dry_run: validate and return the JS only.
 
-        Parameters:
-        - device: name of the Server-PT.
-        - network / mask: the pool's subnet (e.g. "192.168.10.0", "255.255.255.0").
-          Without network the tool only READS the existing pools.
-        - gateway: default router the clients receive.
-        - dns: DNS server the clients receive (empty = left alone).
-        - start_ip: first IP to hand out. Empty = the host after the gateway
-          if the gateway is the first one (.1), otherwise the first host.
-        - max_users: number of IPs. 0 = up to the end of the subnet.
-          PT computes the end of the range itself.
-        - pool_name: default "serverPool", the factory pool the GUI shows.
-          Another name creates a new pool (or edits the existing one with that
-          name; never duplicates).
-        - port: the server port that answers (default FastEthernet0).
-        - enabled: state of the DHCP service (Services > DHCP > On/Off).
-        - drop_factory_pool: with a custom pool_name, deletes the factory
-          "serverPool" IF it was never configured (its start is the network
-          address). That pool re-fits itself to the server's subnet and hands
-          out from .1, i.e. the gateway's IP — verified in PT 9.0. A configured
-          one is left alone.
-        - remove: if True, deletes the pool `pool_name` instead of configuring it.
-        - dry_run: if True, only validates and returns the JS without touching PT.
-
-        Example: one DHCP server per LAN, clients from .3:
-          pt_configure_dhcp_server(device="DHCP-A", network="192.168.10.0",
-              gateway="192.168.10.1", dns="8.8.8.8", start_ip="192.168.10.3")
+        Example: pt_configure_dhcp_server(device="DHCP-A", network="192.168.10.0",
+        gateway="192.168.10.1", dns="8.8.8.8", start_ip="192.168.10.3")
         """
         cfg = DhcpServerPool(
             device=device.strip(), pool_name=pool_name.strip(), port=port.strip(),

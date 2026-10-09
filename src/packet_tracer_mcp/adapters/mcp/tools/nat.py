@@ -35,62 +35,24 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Applies NAT or PAT to a router in Packet Tracer's active topology.
+        Applies NAT or PAT to a router in PT's active topology (IOS CLI through the bridge).
 
-        ── WHEN TO USE EACH MODE ──────────────────────────────────────────────
+        - router: device name in PT (e.g. "R1"; see pt_query_topology).
+        - mode: "static" (1:1 fixed mapping, e.g. a server reachable from outside),
+          "dynamic" (pool of public IPs) or "pat" (overload: many hosts share one public IP,
+          the usual case).
+        - inside_interface / outside_interface: LAN-side and WAN-side interfaces.
+        - static_mappings: static only. [{"inside_local": "192.168.1.10", "inside_global": "200.1.1.5"}]
+        - inside_networks: dynamic/pat. "network wildcard" strings, e.g. ["192.168.1.0 0.0.0.255"]
+          (not CIDR); emitted as an inline access-list.
+        - acl_number: ACL number or name for the inside hosts (default "1").
+        - pool_name, pool_start, pool_end, pool_netmask ("255.255.255.0" form): the public pool
+          (dynamic, or pat without interface overload).
+        - use_interface_overload: pat only. True = use outside_interface's IP instead of a pool.
+        - dry_run: validate and return the payload without sending.
 
-        mode="static"  — static NAT (1 to 1, permanent)
-          Each private IP is ALWAYS mapped to the same public IP.
-          Use it when an internal server (web, FTP, mail) must be
-          reachable from the Internet with a known fixed public IP.
-          Requires: static_mappings = [{"inside_local": "...", "inside_global": "..."}]
-
-        mode="dynamic" — dynamic NAT (pool of public IPs)
-          The router assigns IPs from the pool on demand. When the host closes
-          the session, the public IP goes back to the pool for another host.
-          Use it when you have MORE public IPs than overload justifies but
-          FEWER than simultaneous internal hosts, and per-IP tracking matters.
-          Requires: inside_networks + pool_start/end/netmask
-
-        mode="pat"     — PAT / NAT Overload (many to one with ports)
-          Many internal hosts share ONE single public IP. The router
-          tells the connections apart using unique port numbers.
-          It is the mode almost every home and business router uses.
-          Use it when you have 1 public IP from the ISP and N internal hosts.
-          Sub-modes:
-            use_interface_overload=True  → uses outside_interface's IP directly
-            use_interface_overload=False → uses a pool (typically of 1 IP)
-          Requires: inside_networks (+ pool if use_interface_overload=False)
-
-        ── PARAMETERS ────────────────────────────────────────────────────────
-
-        - router: device name in PT (e.g. "R1"). Call
-          pt_query_topology if you don't know the exact name.
-        - mode: "static" | "dynamic" | "pat"
-        - inside_interface: interface connected to the private LAN (e.g. "GigabitEthernet0/0")
-        - outside_interface: interface connected to the WAN/Internet (e.g. "GigabitEthernet0/1")
-        - static_mappings: mode="static" only. List of dicts:
-            [{"inside_local": "192.168.1.10", "inside_global": "200.1.1.5"}]
-        - inside_networks: dynamic/pat modes. Internal networks to translate, in
-            "network wildcard" format (e.g. ["192.168.1.0 0.0.0.255"]).
-            They are generated as an inline access-list.
-        - acl_number: ACL number or name identifying the inside hosts (default "1")
-        - pool_name: name of the NAT pool (default "NAT-POOL")
-        - pool_start / pool_end: first and last IP of the public pool
-        - pool_netmask: the pool's mask (mask format, e.g. "255.255.255.0")
-        - use_interface_overload: PAT only. If True, uses outside_interface's IP
-            instead of a pool. Typical when the ISP assigns 1 IP to the WAN.
-        - dry_run: if True, validates and generates the payload without sending it to the bridge.
-
-        PAT example with interface overload (the most common case):
-          pt_apply_nat(
-              router="R1",
-              mode="pat",
-              inside_interface="GigabitEthernet0/0",
-              outside_interface="GigabitEthernet0/1",
-              inside_networks=["192.168.1.0 0.0.0.255"],
-              use_interface_overload=True,
-          )
+        Typical PAT: mode="pat", inside_networks=["192.168.1.0 0.0.0.255"], use_interface_overload=True.
+        Mode guidance and a full example: resource pt://guide, "Tool notes".
         """
         config = build_nat_config(
             router=router,

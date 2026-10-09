@@ -34,34 +34,20 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Applies VLANs / trunks / inter-VLAN routing to an active PT topology.
+        Applies VLANs / trunks / inter-VLAN routing to the active PT topology through IOS CLI:
+        switch side (VLANs, access ports, trunks) and optionally router side (.1q subinterfaces,
+        router-on-a-stick). Use pt_query_topology for the real names/ports.
 
-        Configures the switch (VLAN definitions, access ports, trunks) and optionally
-        the router (.1q subinterfaces for inter-VLAN routing / router-on-a-stick).
-        All through IOS CLI (configureIosDevice). Use pt_query_topology for the real names/ports.
+        - switch: switch name (e.g. "SW1"). router: only for subinterfaces.
+        - vlans: [{"vlan_id": 10, "name": "SALES"}] (name optional).
+        - access_ports: [{"switch": "SW1", "port": "FastEthernet0/1", "vlan_id": 10}].
+        - trunks: [{"switch", "port", "allowed_vlans"?, "native_vlan"?, "encapsulation"?}]. A 2960
+          (dot1q only) gets no `switchport trunk encapsulation`; a 3560 does.
+        - subinterfaces: [{"router": "R1", "parent_port": "GigabitEthernet0/0", "vlan_id": 10,
+          "ip_cidr": "192.168.10.1/24"}].
+        - dry_run: validate and return the CLI/payload without sending.
 
-        Parameters:
-        - switch: switch name in PT (e.g. "SW1").
-        - router: router name (only if you do inter-VLAN routing with subinterfaces).
-        - vlans: list of {vlan_id:int, name:str?}. E.g. [{"vlan_id":10,"name":"SALES"}].
-        - access_ports: list of {switch, port, vlan_id}. E.g.
-            [{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10}].
-        - trunks: list of {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.
-            On a 2960 (dot1q-only) `switchport trunk encapsulation` is NOT emitted; on a 3560 it is.
-        - subinterfaces: list of {router, parent_port, vlan_id, ip_cidr}. E.g.
-            [{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"}].
-        - dry_run: if True, only validates and returns the CLI/payload without sending.
-
-        Router-on-a-stick example (2 VLANs):
-          pt_apply_vlan(
-            switch="SW1", router="R1",
-            vlans=[{"vlan_id":10,"name":"V10"},{"vlan_id":20,"name":"V20"}],
-            access_ports=[{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10},
-                          {"switch":"SW1","port":"FastEthernet0/2","vlan_id":20}],
-            trunks=[{"switch":"SW1","port":"GigabitEthernet0/1"}],
-            subinterfaces=[{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"},
-                           {"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":20,"ip_cidr":"192.168.20.1/24"}],
-            dry_run=True)
+        Router-on-a-stick example: resource pt://guide, "Tool notes".
         """
         plan = build_vlan_plan(
             switch=switch, router=router, vlans=vlans,

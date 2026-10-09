@@ -216,6 +216,225 @@ host-firewall rules. For those, open the window with pt_ui_open and let the user
 """
 
 
+# Long tool descriptions, shortened inline (descriptions are capped at 1,500 chars).
+GUIDE += """
+## Tool notes
+Full descriptions of tools whose inline description is shortened.
+
+### pt_apply_nat
+Applies NAT or PAT to a router in Packet Tracer's active topology.
+
+── WHEN TO USE EACH MODE ──────────────────────────────────────────────
+
+mode="static"  — static NAT (1 to 1, permanent)
+  Each private IP is ALWAYS mapped to the same public IP.
+  Use it when an internal server (web, FTP, mail) must be
+  reachable from the Internet with a known fixed public IP.
+  Requires: static_mappings = [{"inside_local": "...", "inside_global": "..."}]
+
+mode="dynamic" — dynamic NAT (pool of public IPs)
+  The router assigns IPs from the pool on demand. When the host closes
+  the session, the public IP goes back to the pool for another host.
+  Use it when you have MORE public IPs than overload justifies but
+  FEWER than simultaneous internal hosts, and per-IP tracking matters.
+  Requires: inside_networks + pool_start/end/netmask
+
+mode="pat"     — PAT / NAT Overload (many to one with ports)
+  Many internal hosts share ONE single public IP. The router
+  tells the connections apart using unique port numbers.
+  It is the mode almost every home and business router uses.
+  Use it when you have 1 public IP from the ISP and N internal hosts.
+  Sub-modes:
+    use_interface_overload=True  → uses outside_interface's IP directly
+    use_interface_overload=False → uses a pool (typically of 1 IP)
+  Requires: inside_networks (+ pool if use_interface_overload=False)
+
+── PARAMETERS ────────────────────────────────────────────────────────
+
+- router: device name in PT (e.g. "R1"). Call
+  pt_query_topology if you don't know the exact name.
+- mode: "static" | "dynamic" | "pat"
+- inside_interface: interface connected to the private LAN (e.g. "GigabitEthernet0/0")
+- outside_interface: interface connected to the WAN/Internet (e.g. "GigabitEthernet0/1")
+- static_mappings: mode="static" only. List of dicts:
+    [{"inside_local": "192.168.1.10", "inside_global": "200.1.1.5"}]
+- inside_networks: dynamic/pat modes. Internal networks to translate, in
+    "network wildcard" format (e.g. ["192.168.1.0 0.0.0.255"]).
+    They are generated as an inline access-list.
+- acl_number: ACL number or name identifying the inside hosts (default "1")
+- pool_name: name of the NAT pool (default "NAT-POOL")
+- pool_start / pool_end: first and last IP of the public pool
+- pool_netmask: the pool's mask (mask format, e.g. "255.255.255.0")
+- use_interface_overload: PAT only. If True, uses outside_interface's IP
+    instead of a pool. Typical when the ISP assigns 1 IP to the WAN.
+- dry_run: if True, validates and generates the payload without sending it to the bridge.
+
+PAT example with interface overload (the most common case):
+  pt_apply_nat(
+      router="R1",
+      mode="pat",
+      inside_interface="GigabitEthernet0/0",
+      outside_interface="GigabitEthernet0/1",
+      inside_networks=["192.168.1.0 0.0.0.255"],
+      use_interface_overload=True,
+  )
+
+### pt_apply_acl
+Applies an Access Control List (ACL) to a router in PT's active topology.
+
+Pipeline: builds the plan → static validation (ranges, types, IPs/wildcards,
+unreachable rules) → checks router/interface against PT through the bridge →
+generates IOS CLI → sends it through configureIosDevice.
+
+Parameters:
+- router: device name in PT (e.g. "CORE-R1"). Call
+  pt_query_topology if you are not sure of the exact names.
+- name_or_number: the ACL's IOS identifier.
+    * 1-99 or 1300-1999 → standard
+    * 100-199 or 2000-2699 → extended
+    * any alphanumeric string → named ACL
+- acl_type: "standard" or "extended". Standard only filters by source.
+  Extended allows source + destination + protocol + ports.
+- entries: list of rules. Each rule is a dict with:
+    * action: "permit" | "deny" (required)
+    * protocol: "ip" | "icmp" | "tcp" | "udp" | ... (default "ip")
+    * source: "any" | "host A.B.C.D" | "A.B.C.D wildcard" (required)
+    * destination: same as source (extended only)
+    * source_port_op / source_port: e.g. "eq" / 80 (TCP/UDP, optional)
+    * dest_port_op / dest_port / dest_port_end: same (optional)
+    * icmp_type: "echo" | "echo-reply" | ... (ICMP only)
+    * tcp_flags: ["established"] | ["syn"] (TCP only, optional)
+    * log: bool (optional)
+    * remark: optional comment
+- binding_interface: if given, applies the ACL to that interface
+  (e.g. "GigabitEthernet0/0"). If empty, the ACL is only defined, not applied.
+- binding_direction: "in" or "out" (default "in"). Only applies if
+  binding_interface is set.
+- dry_run: if True, sends NOTHING to the bridge — only validates and returns
+  the CLI/JS payload for inspection.
+
+Example: block ping from 192.168.1.0/24 to 192.168.0.0/24 on CORE-R1:
+  pt_apply_acl(
+      router="CORE-R1",
+      name_or_number="101",
+      acl_type="extended",
+      entries=[
+          {"action": "deny", "protocol": "icmp",
+           "source": "192.168.1.0 0.0.0.255",
+           "destination": "192.168.0.0 0.0.0.255",
+           "icmp_type": "echo"},
+          {"action": "permit", "protocol": "ip",
+           "source": "any", "destination": "any"},
+      ],
+      binding_interface="GigabitEthernet0/0",
+      binding_direction="in",
+  )
+
+### pt_configure_dhcp_server
+Creates or edits a DHCP pool on a Server-PT, validated against its
+subnet, and switches the service on.
+
+The equivalent of Services > DHCP in the GUI. Not via CLI (a Server-PT
+has none): configured through the native API and read back to confirm.
+For DHCP on a ROUTER use the plan (`dhcp=True`) or the CLI `ip dhcp pool`.
+For exclusion ranges, TFTP/WLC options or showing the Services page on
+screen, use pt_server_dhcp.
+
+The server needs a static IP inside the pool's subnet; if it doesn't
+have one the tool warns (DHCP_SERVER_NO_IP). PT never hands out the
+server's own IP, but it DOES hand out the gateway's if it is in range.
+
+Parameters:
+- device: name of the Server-PT.
+- network / mask: the pool's subnet (e.g. "192.168.10.0", "255.255.255.0").
+  Without network the tool only READS the existing pools.
+- gateway: default router the clients receive.
+- dns: DNS server the clients receive (empty = left alone).
+- start_ip: first IP to hand out. Empty = the host after the gateway
+  if the gateway is the first one (.1), otherwise the first host.
+- max_users: number of IPs. 0 = up to the end of the subnet.
+  PT computes the end of the range itself.
+- pool_name: default "serverPool", the factory pool the GUI shows.
+  Another name creates a new pool (or edits the existing one with that
+  name; never duplicates).
+- port: the server port that answers (default FastEthernet0).
+- enabled: state of the DHCP service (Services > DHCP > On/Off).
+- drop_factory_pool: with a custom pool_name, deletes the factory
+  "serverPool" IF it was never configured (its start is the network
+  address). That pool re-fits itself to the server's subnet and hands
+  out from .1, i.e. the gateway's IP — verified in PT 9.0. A configured
+  one is left alone.
+- remove: if True, deletes the pool `pool_name` instead of configuring it.
+- dry_run: if True, only validates and returns the JS without touching PT.
+
+Example: one DHCP server per LAN, clients from .3:
+  pt_configure_dhcp_server(device="DHCP-A", network="192.168.10.0",
+      gateway="192.168.10.1", dns="8.8.8.8", start_ip="192.168.10.3")
+
+### pt_apply_vlan
+Applies VLANs / trunks / inter-VLAN routing to an active PT topology.
+
+Configures the switch (VLAN definitions, access ports, trunks) and optionally
+the router (.1q subinterfaces for inter-VLAN routing / router-on-a-stick).
+All through IOS CLI (configureIosDevice). Use pt_query_topology for the real names/ports.
+
+Parameters:
+- switch: switch name in PT (e.g. "SW1").
+- router: router name (only if you do inter-VLAN routing with subinterfaces).
+- vlans: list of {vlan_id:int, name:str?}. E.g. [{"vlan_id":10,"name":"SALES"}].
+- access_ports: list of {switch, port, vlan_id}. E.g.
+    [{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10}].
+- trunks: list of {switch, port, allowed_vlans:[..]?, native_vlan:int?, encapsulation:str?}.
+    On a 2960 (dot1q-only) `switchport trunk encapsulation` is NOT emitted; on a 3560 it is.
+- subinterfaces: list of {router, parent_port, vlan_id, ip_cidr}. E.g.
+    [{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"}].
+- dry_run: if True, only validates and returns the CLI/payload without sending.
+
+Router-on-a-stick example (2 VLANs):
+  pt_apply_vlan(
+    switch="SW1", router="R1",
+    vlans=[{"vlan_id":10,"name":"V10"},{"vlan_id":20,"name":"V20"}],
+    access_ports=[{"switch":"SW1","port":"FastEthernet0/1","vlan_id":10},
+                  {"switch":"SW1","port":"FastEthernet0/2","vlan_id":20}],
+    trunks=[{"switch":"SW1","port":"GigabitEthernet0/1"}],
+    subinterfaces=[{"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":10,"ip_cidr":"192.168.10.1/24"},
+                   {"router":"R1","parent_port":"GigabitEthernet0/0","vlan_id":20,"ip_cidr":"192.168.20.1/24"}],
+    dry_run=True)
+
+### pt_full_build
+Full pipeline: plans, validates, generates, explains, estimates and deploys.
+
+With deploy=True (default) the deployment depends on whether there is a channel to PT:
+- If the bridge is connected, the topology is REALLY created in Packet
+  Tracer (same path as pt_live_deploy, with verification and reconcile),
+  and the project files are also exported to disk.
+- If there is no channel, it falls back to manual mode: copies the script to
+  the clipboard and generates step-by-step instructions.
+
+Parameters:
+- routers: Number of routers (1-20)
+- pcs_per_lan: PCs per LAN
+- laptops_per_lan: Laptops per LAN (Laptop-PT)
+- switches_per_router: Switches per router
+- servers: Servers
+- access_points: Access Points (AccessPoint-PT), one per LAN
+- has_wan: Include WAN
+- dhcp: Configure DHCP
+- routing: static, ospf, eigrp, rip, none
+- router_model: 1941, 2901, 2911, ISR4321
+- switch_model: 2960-24TT, 3560-24PS
+- template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
+  branch_office, router_on_a_stick, three_router_triangle, custom
+- deploy: If True, copies the script to the clipboard and exports files
+- floating_routes: If True with routing=static, adds backup routes with AD=254
+- ospf_process_id: OSPF process ID (1-65535, default 1)
+- eigrp_as: EIGRP AS number (1-65535, default 100)
+- vlans: router_on_a_stick only. Number of VLANs to spread across the PCs (0 = default 2).
+- dual_stack: If True, adds IPv6 (routers via CLI, hosts via SLAAC).
+- ipv6_base: Base IPv6 prefix for dual-stack (default "2001:db8::/32").
+- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + AP).
+"""
+
 # What every client receives up front. Claude Code keeps only the first 2,048
 # characters of server instructions, so this stays under that and points to
 # GUIDE (served as the pt://guide resource) for everything else.
