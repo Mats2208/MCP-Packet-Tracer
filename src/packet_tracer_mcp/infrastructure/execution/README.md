@@ -1,8 +1,8 @@
 # infrastructure/execution/
 
-Estrategias de despliegue de topologías. Implementan diferentes formas de llevar un `TopologyPlan` a Packet Tracer o a disco.
+Topology deployment strategies. They implement different ways of getting a `TopologyPlan` into Packet Tracer or onto disk.
 
-## Arquitectura
+## Architecture
 
 ```
 ExecutorBase (ABC)
@@ -18,13 +18,13 @@ Canales hacia Packet Tracer (el servidor elige UNO por comando):
 bridge_token.py → token local auto-generado que autentica el bridge HTTP
 ```
 
-**Enrutado de canal:** el servidor decide por comando (ver `_pick_channel` en
-`adapters/mcp/tool_registry.py`) si el comando viaja por HTTP o por el buzón de archivos.
-Nunca usa ambos a la vez. El envío del plan al desplegar se hace por lotes.
+**Channel routing:** the server decides per command (see `_pick_channel` in
+`adapters/mcp/tool_registry.py`) whether the command travels over HTTP or through the file
+mailbox. It never uses both at once. Sending the plan when deploying is done in batches.
 
-## Archivos
+## Files
 
-### `executor_base.py` — Clase base abstracta
+### `executor_base.py` — Abstract base class
 
 ```python
 class ExecutorBase(ABC):
@@ -32,34 +32,34 @@ class ExecutorBase(ABC):
     def is_available() → bool                  # Abstract
 ```
 
-Contrato que todos los executors deben cumplir.
+Contract that all executors must fulfill.
 
 ---
 
-### `manual_executor.py` — Exportación a disco
+### `manual_executor.py` — Export to disk
 
-Exporta todos los artefactos del plan como archivos al sistema de archivos.
+Exports all of the plan's artifacts as files to the file system.
 
 ```python
 class ManualExecutor(ExecutorBase):
     def execute(plan, project_name) → dict
-    def is_available() → True  # Siempre disponible
+    def is_available() → True  # Always available
 ```
 
-**Archivos generados:**
-| Archivo | Contenido |
+**Generated files:**
+| File | Content |
 |---------|-----------|
-| `topology.js` | Script PTBuilder básico (addDevice + addLink) |
-| `full_build.js` | Script completo con configuraciones |
-| `{Device}_config.txt` | Config CLI por dispositivo (R1, SW1, etc.) |
-| `plan.json` | Plan completo serializado |
-| `metadata.json` | Metadata del proyecto (nombre, fecha, conteos) |
+| `topology.js` | Basic PTBuilder script (addDevice + addLink) |
+| `full_build.js` | Full script with configurations |
+| `{Device}_config.txt` | CLI config per device (R1, SW1, etc.) |
+| `plan.json` | Full serialized plan |
+| `metadata.json` | Project metadata (name, date, counts) |
 
 ---
 
-### `deploy_executor.py` — Despliegue con clipboard
+### `deploy_executor.py` — Deployment with clipboard
 
-Extiende la exportación a disco agregando copia al portapapeles y generación de instrucciones paso a paso.
+Extends disk export by adding a clipboard copy and step-by-step instruction generation.
 
 ```python
 class DeployExecutor(ExecutorBase):
@@ -67,19 +67,19 @@ class DeployExecutor(ExecutorBase):
     def execute(plan, project_name) → dict
 ```
 
-**Flujo:**
-1. Genera scripts y configs (igual que ManualExecutor)
-2. Copia `topology.js` al portapapeles (solo Windows vía `clip.exe`)
-3. Guarda todos los archivos a disco
-4. Genera instrucciones paso a paso para el usuario
+**Flow:**
+1. Generates scripts and configs (same as ManualExecutor)
+2. Copies `topology.js` to the clipboard (Windows only, via `clip.exe`)
+3. Saves all files to disk
+4. Generates step-by-step instructions for the user
 
-**Nota:** La función de clipboard solo funciona en Windows. En macOS/Linux, los archivos se exportan pero el clipboard se omite.
+**Note:** The clipboard function only works on Windows. On macOS/Linux, the files are exported but the clipboard step is skipped.
 
 ---
 
-### `live_bridge.py` — HTTP Bridge para Packet Tracer (~300 líneas)
+### `live_bridge.py` — HTTP Bridge for Packet Tracer (~300 lines)
 
-Servidor HTTP local que permite comunicación bidireccional entre Python y Packet Tracer en tiempo real.
+Local HTTP server that enables real-time bidirectional communication between Python and Packet Tracer.
 
 ```python
 class PTCommandBridge:
@@ -96,27 +96,27 @@ def next_rid() → str                          # id de operación, pid + contad
 def report_result_js(port, token, rid) → str  # el rid viaja dentro del JS
 ```
 
-El adaptador MCP habla con el bridge **por HTTP**, no llamando métodos de la
-instancia: el bridge puede haberlo arrancado otro proceso.
+The MCP adapter talks to the bridge **over HTTP**, not by calling methods on the
+instance: the bridge may have been started by another process.
 
-**Endpoints HTTP:**
-| Método | Ruta | Descripción |
+**HTTP endpoints:**
+| Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/next` | PTBuilder polling — retorna el lote de comandos JS de la cola |
-| `GET` | `/ping` | Health check básico (sin token, no filtra el secreto) |
-| `GET` | `/status` | Estado detallado del bridge |
-| `GET` | `/result` | Recoge el resultado de `?rid=…`, esperando hasta `?wait=…` segundos |
-| `POST` | `/result` | PTBuilder envía el resultado de `?rid=…` |
-| `POST` | `/queue` | Encola un comando JS externamente |
+| `GET` | `/next` | PTBuilder polling — returns the batch of JS commands from the queue |
+| `GET` | `/ping` | Basic health check (no token, does not leak the secret) |
+| `GET` | `/status` | Detailed bridge status |
+| `GET` | `/result` | Collects the result for `?rid=…`, waiting up to `?wait=…` seconds |
+| `POST` | `/result` | PTBuilder sends the result for `?rid=…` |
+| `POST` | `/queue` | Enqueues a JS command externally |
 
-**Correlación por `rid`:** cada operación genera el suyo (`next_rid()`), viaja
-dentro del JS inyectado y PT lo devuelve al postear. Antes los resultados eran
-una cola FIFO global y el handler esperaba 9 s fijos, así que una operación
-lenta se daba por fallida *y* su resultado tardío quedaba huérfano para que se
-lo llevara la siguiente. La extensión nunca construye la URL de `/result` —solo
-ejecuta el JS que le llega—, por eso el cambio no tocó el `.pts`.
+**Correlation by `rid`:** each operation generates its own (`next_rid()`), travels
+inside the injected JS, and PT returns it when posting. Previously the results were
+a single global FIFO queue and the handler waited a fixed 9 s, so a slow operation
+was marked as failed *and* its late result was left orphaned for the next operation
+to pick up. The extension never builds the `/result` URL — it only runs the JS it
+receives — so this change did not touch the `.pts`.
 
-**Diseño:**
+**Design:**
 ```
 Python (PTCommandBridge)         PT Builder (QWebEngine)
        ↓                              ↓
@@ -127,18 +127,18 @@ Python (PTCommandBridge)         PT Builder (QWebEngine)
                                POST /result ──→ callback
 ```
 
-**Autenticación:** el bridge HTTP requiere un token local auto-generado (ver
-`bridge_token.py`). No hay bootstrap pegado a mano ni "pairing" por HTTP — la extensión
-lee el token desde disco.
+**Authentication:** the HTTP bridge requires an auto-generated local token (see
+`bridge_token.py`). There is no hand-pasted bootstrap or "pairing" over HTTP — the extension
+reads the token from disk.
 
 ---
 
-### `file_bridge.py` — Buzón de archivos (canal offline)
+### `file_bridge.py` — File mailbox (offline channel)
 
-Canal alternativo al HTTP para cuando la ventana de la extensión está cerrada. En lugar de
-un servidor HTTP, usa un buzón de archivos bajo `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`:
-el servidor escribe un `req_*.js`, el Script Engine de PT lo lee, lo ejecuta y deja la
-respuesta en un `res_*.txt`.
+Alternative channel to HTTP for when the extension window is closed. Instead of an HTTP
+server, it uses a file mailbox under `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`: the server
+writes a `req_*.js`, PT's Script Engine reads it, runs it and leaves the response in a
+`res_*.txt`.
 
 ```python
 class FileBridge:
@@ -146,13 +146,13 @@ class FileBridge:
     def send_and_wait(js_code, timeout) → str | None
 ```
 
-Coexiste con el bridge HTTP; el servidor elige un canal por comando (`_pick_channel`),
-nunca ambos.
+Coexists with the HTTP bridge; the server picks one channel per command (`_pick_channel`),
+never both.
 
 ---
 
-### `bridge_token.py` — Token local del bridge HTTP
+### `bridge_token.py` — Local token for the HTTP bridge
 
-Genera y persiste un token local (bajo `%LOCALAPPDATA%`) que autentica las peticiones al
-bridge HTTP. Se auto-genera; no requiere pegar un bootstrap ni parear manualmente. Tanto el
-servidor como la extensión lo leen desde disco.
+Generates and persists a local token (under `%LOCALAPPDATA%`) that authenticates requests to
+the HTTP bridge. It is auto-generated; no bootstrap paste or manual pairing is needed. Both
+the server and the extension read it from disk.

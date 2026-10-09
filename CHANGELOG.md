@@ -4,25 +4,72 @@
 
 ### Added
 
-- **`pt_configure_dhcp_server`: pools DHCP en un Server-PT** (#23, gracias
-  @lucaschefferh). Hasta ahora el MCP solo sabía poner el pool en un router por
-  CLI, y un lab con un servidor DHCP por subred quedaba con los hosts en APIPA
-  hasta crear los pools a mano en Services > DHCP. Parecía que PT no lo permitía:
-  `getProcess("DhcpServerMain")` no tiene ni un método de pools. Están un nivel
-  más abajo, en `getDhcpServerProcessByPortName("FastEthernet0")`. La tool crea o
-  edita el pool, enciende el servicio y relee todos los pools para comparar con lo
-  pedido; sin `network` solo lee, `remove=True` borra y `dry_run` no toca PT.
-  Verificado en PT 9.0 con dos LANs, un Server-PT cada una: los PCs reciben IP,
-  gateway y DNS de su servidor y se hacen ping a través del router.
-- **Lo que hay que saber del DHCP de PT, medido en vivo.** Nunca reparte la IP
-  del propio servidor, pero sí la del gateway si el rango la cubre (la tool lo
-  avisa con `DHCP_SERVER_RANGE_OVERLAP`). Y el `serverPool` de fábrica se
-  reajusta a la subred del servidor con inicio en la dirección de red y sin
-  gateway: al lado de un pool con nombre propio le reparte `.1` a un cliente. Con
-  un nombre propio, la tool lo borra mientras siga sin configurar
-  (`drop_factory_pool=True`); si alguien lo configuró, no lo toca.
+- **Device-panel control: every tab of a device window, without touching the screen.**
+  17 new tools (62 → 79 with upstream's `pt_configure_dhcp_server`) drive what a student does inside a device through Packet
+  Tracer's own API: `pt_cli` (IOS CLI tab — one command at a time, waits for the
+  prompt, aborts the DNS hang an IOS typo causes, presses Enter on `[confirm]` and
+  `Destination filename [..]?`, primes a freshly deployed router), `pt_host_command`
+  (Desktop › Command Prompt), `pt_terminal` (a PC's Terminal over its console cable),
+  `pt_host_ip_config`, `pt_host_firewall`, `pt_web_browser`, `pt_email_client`,
+  `pt_read_device_panel`, `pt_remove_module`, and the Server-PT services
+  `pt_server_dhcp`, `pt_server_dns`, `pt_server_http`, `pt_server_service`
+  (TFTP/FTP/SYSLOG/EMAIL). What `pt_cli` types shows up in the real CLI tab.
+- **`pt_server_dhcp` edits a server's DHCP pools** — create, edit and delete pools,
+  exclude ranges, switch the service on/off — through
+  `DhcpServerMain.getDhcpServerProcessByPortName()`.
+- **UI mode.** `pt_ui_mode("headless" | "ui")`: headless (the default) works only
+  through the API; `ui` also opens the device's window on the matching tab, Desktop
+  app or Services page so the user can watch. `show=` overrides it per call and
+  `capture=True` saves a PNG of the window. `pt_ui_open`, `pt_ui_capture` and
+  `pt_ui_close` show or capture a window directly. The mode persists across restarts
+  (`PT_MCP_UI_MODE` overrides it). Windows only; install with
+  `pip install "packet-tracer-mcp[ui]"` (adds `comtypes`). Windows are driven by UI
+  Automation and a click *posted* to the canvas — the real cursor never moves — and
+  only while PT's Select tool is active, since a click with Delete active would
+  delete the device.
+- **MCP prompts** `ui_on`, `ui_off`, `ui_status` (in Claude Code:
+  `/mcp__packet-tracer__ui_on`).
+- **`pt_configure_dhcp_server`: DHCP pools on a Server-PT** (upstream #23, thanks
+  @lucaschefferh). Until now the MCP could only put the pool on a router via CLI, and a
+  lab with one DHCP server per subnet left the hosts on APIPA until the pools were
+  created by hand in Services > DHCP. The tool creates or edits the pool after
+  validating it against the subnet, switches the service on and reads every pool back
+  to compare with what was asked; without `network` it only reads, `remove=True`
+  deletes and `dry_run` doesn't touch PT. Verified upstream in PT 9.0 with two LANs and
+  one Server-PT each: the PCs get IP, gateway and DNS from their server and ping each
+  other through the router. `pt_server_dhcp` remains the panel-style tool (exclusions,
+  TFTP/WLC, UI mode).
+- **What to know about PT's DHCP, measured live.** It never leases the server's own IP,
+  but it does lease the gateway's if the range covers it (the tool warns with
+  `DHCP_SERVER_RANGE_OVERLAP`). And the factory `serverPool` re-fits itself to the
+  server's subnet with its start at the network address and no gateway: next to a
+  custom-named pool it hands `.1` to a client. With a custom name the tool deletes it
+  while it is still unconfigured (`drop_factory_pool=True`); a configured one is left
+  alone.
+
+
+### Changed
+
+- **A tool layer that costs far less context.** `tool_registry.py` (221 KB, every tool a closure)
+  is now a 1 KB orchestrator over `adapters/mcp/tools/<topic>.py` modules, each with
+  `register(mcp, ctx)`, sharing one `BridgeContext` (`adapters/mcp/bridge_context.py`). Tool
+  replies are compact JSON (`reply_json`, generated JS dropped once sent). The server
+  instructions fit the 2,048 characters Claude Code keeps (they were 12,761, so 84% never
+  arrived); the full text is the `pt://guide` resource. Tool descriptions are capped at 1,500
+  characters, and the skill is a small core plus `skill/reference/*.md` read on demand.
+  `CODEMAP.md` is a generated tool → file index. New guards: a pyflakes undefined-name test and a
+  tool-API snapshot (`tests/fixtures/tool_api.json`, regenerate with `UPDATE_TOOL_API=1`).
+- **The codebase is English.** Code, comments, docstrings, runtime messages, generated IOS/PTBuilder
+  text, module READMEs and extension/workflow comments. Visible changes: `pt_verify_connectivity`
+  says `CONNECTIVITY OK` / `PARTIAL CONNECTIVITY (packet loss)` / `NO CONNECTIVITY`, estimator
+  complexity is `simple / moderate / complex / very complex`, template tags are English.
+  `AGENTS.md` asks agents to write the repo in English and answer users in their own language.
 
 ### Fixed
+
+- **`pt_add_module` always reported a timeout, even when the module was installed.**
+  Its JS used `return` instead of `reportResult`, so the bridge never got an answer.
+  It now reports `installed` / `failed` directly.
 
 - **Un salto de línea en un campo de texto ya no se cuela como comando IOS.**
   `configureIosDevice()` parte el payload por `\n` y manda cada trozo al

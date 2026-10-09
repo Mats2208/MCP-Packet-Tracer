@@ -1,9 +1,9 @@
-"""Exportador NetFlow sobre un dispositivo de PT.
+"""NetFlow exporter on a PT device.
 
-A diferencia del resto de las features avanzadas, NetFlow NO se aplica por CLI:
-la API nativa de PT expone `NFExporterManager.createNFExporter(name)` y los
-setters del exportador, así que se configura por objeto y se puede releer para
-verificar (`isFullyConfigured()`).
+Unlike the rest of the advanced features, NetFlow is NOT applied via CLI:
+PT's native API exposes `NFExporterManager.createNFExporter(name)` and the
+exporter's setters, so it is configured as an object and can be read back to
+verify it (`isFullyConfigured()`).
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 
 
 class NetflowExporter(BaseModel):
-    """Un exportador NetFlow: a dónde manda los flujos el dispositivo."""
+    """A NetFlow exporter: where the device sends its flows."""
 
     device: str
     name: str
     destination_ip: str = ""
     udp_port: int = 2055
     version: int = 9
-    source_port: str = ""            # interfaz de origen; vacío = la elige PT
+    source_port: str = ""            # source interface; empty = PT picks it
     monitors: list[str] = Field(default_factory=list)

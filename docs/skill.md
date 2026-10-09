@@ -31,21 +31,21 @@ in **every** project where you use the MCP.
 
     ```bash
     mkdir -p ~/.claude/skills/packet-tracer
-    cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+    cp -r skill/. ~/.claude/skills/packet-tracer/
     ```
 
 === "Windows PowerShell"
 
     ```powershell
     New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+    Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
     ```
 
 === "Windows cmd.exe"
 
     ```bat
     mkdir "%USERPROFILE%\.claude\skills\packet-tracer" 2>nul
-    copy skill\SKILL.md "%USERPROFILE%\.claude\skills\packet-tracer\SKILL.md"
+    xcopy /E /I /Y skill "%USERPROFILE%\.claude\skills\packet-tracer"
     ```
 
 Then run **`/reload-skills`** in Claude Code (or restart it). Verify with **`/skills`** — you should

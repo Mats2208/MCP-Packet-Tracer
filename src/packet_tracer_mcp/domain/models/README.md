@@ -1,141 +1,141 @@
 # domain/models/
 
-Modelos Pydantic que definen el contrato de datos del sistema. Son el lenguaje compartido entre todas las capas.
+Pydantic models that define the system's data contract. They are the shared language across all layers.
 
-## Archivos
+## Files
 
 ### `requests.py` — TopologyRequest
 
-Modelo de entrada del LLM — define qué topología construir.
+Input model from the LLM — defines which topology to build.
 
-| Campo | Tipo | Default | Descripción |
+| Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `template` | `TopologyTemplate` | `multi_lan` | Plantilla base de la topología |
-| `routers` | `int (1–20)` | `2` | Número de routers |
-| `switches_per_router` | `int (0–4)` | `1` | Switches conectados a cada router |
-| `pcs_per_lan` | `list[int] \| int` | `3` | PCs por LAN (int se replica a cada router) |
-| `laptops_per_lan` | `list[int] \| int` | `0` | Laptops por LAN |
-| `servers` | `int (0–10)` | `0` | Servidores en la primera LAN |
+| `template` | `TopologyTemplate` | `multi_lan` | Base template of the topology |
+| `routers` | `int (1–20)` | `2` | Number of routers |
+| `switches_per_router` | `int (0–4)` | `1` | Switches connected to each router |
+| `pcs_per_lan` | `list[int] \| int` | `3` | PCs per LAN (an int is replicated to each router) |
+| `laptops_per_lan` | `list[int] \| int` | `0` | Laptops per LAN |
+| `servers` | `int (0–10)` | `0` | Servers in the first LAN |
 | `access_points` | `int (0–10)` | `0` | Access Points |
-| `has_wan` | `bool` | `False` | Incluir nube WAN conectada al primer router |
-| `dhcp` | `bool` | `True` | Habilitar configuración DHCP en routers |
-| `routing` | `RoutingProtocol` | `static` | Protocolo de enrutamiento |
-| `router_model` | `str` | `"2911"` | Modelo de router a utilizar |
-| `switch_model` | `str` | `"2960-24TT"` | Modelo de switch a utilizar |
-| `base_network` | `str` | `"192.168.0.0/16"` | Red base para LANs (/24) |
-| `inter_router_network` | `str` | `"10.0.0.0/16"` | Red base para enlaces inter-router (/30) |
-| `floating_routes` | `bool` | `False` | Generar rutas estáticas de respaldo (AD=254) |
-| `ospf_process_id` | `int` | `1` | ID de proceso OSPF |
-| `eigrp_as` | `int` | `100` | AS number de EIGRP |
+| `has_wan` | `bool` | `False` | Include a WAN cloud connected to the first router |
+| `dhcp` | `bool` | `True` | Enable DHCP configuration on routers |
+| `routing` | `RoutingProtocol` | `static` | Routing protocol |
+| `router_model` | `str` | `"2911"` | Router model to use |
+| `switch_model` | `str` | `"2960-24TT"` | Switch model to use |
+| `base_network` | `str` | `"192.168.0.0/16"` | Base network for LANs (/24) |
+| `inter_router_network` | `str` | `"10.0.0.0/16"` | Base network for inter-router links (/30) |
+| `floating_routes` | `bool` | `False` | Generate backup static routes (AD=254) |
+| `ospf_process_id` | `int` | `1` | OSPF process ID |
+| `eigrp_as` | `int` | `100` | EIGRP AS number |
 
 ---
 
-### `plans.py` — Modelos del plan
+### `plans.py` — Plan models
 
-Resultado completo y validado de la planificación. `TopologyPlan` es el modelo central del sistema.
+Complete, validated result of the planning. `TopologyPlan` is the central model of the system.
 
 #### `DevicePlan`
-Representa un dispositivo concreto en la topología.
+Represents a concrete device in the topology.
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |-------|------|-------------|
-| `name` | `str` | Nombre único (ej: `R1`, `SW1`, `PC1`) |
-| `model` | `str` | Modelo del catálogo (ej: `2911`, `PC-PT`) |
-| `category` | `DeviceCategory` | Categoría (router, switch, pc, etc.) |
-| `role` | `DeviceRole \| None` | Rol semántico (core_router, access_switch, etc.) |
-| `x`, `y` | `int` | Posición en el canvas de Packet Tracer |
-| `interfaces` | `dict[str, str]` | Mapa interface → IP/CIDR (ej: `{"GigabitEthernet0/0": "192.168.1.1/24"}`) |
-| `gateway` | `str \| None` | Gateway por defecto (solo PCs/servers) |
+| `name` | `str` | Unique name (e.g. `R1`, `SW1`, `PC1`) |
+| `model` | `str` | Catalog model (e.g. `2911`, `PC-PT`) |
+| `category` | `DeviceCategory` | Category (router, switch, pc, etc.) |
+| `role` | `DeviceRole \| None` | Semantic role (core_router, access_switch, etc.) |
+| `x`, `y` | `int` | Position on the Packet Tracer canvas |
+| `interfaces` | `dict[str, str]` | Map of interface → IP/CIDR (e.g. `{"GigabitEthernet0/0": "192.168.1.1/24"}`) |
+| `gateway` | `str \| None` | Default gateway (PCs/servers only) |
 
 #### `LinkPlan`
-Conexión física entre dos dispositivos.
+Physical connection between two devices.
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |-------|------|-------------|
-| `from_device` | `str` | Nombre del dispositivo A |
-| `from_port` | `str` | Puerto en dispositivo A |
-| `to_device` | `str` | Nombre del dispositivo B |
-| `to_port` | `str` | Puerto en dispositivo B |
-| `cable_type` | `CableType` | Tipo de cable (straight, cross, etc.) |
+| `from_device` | `str` | Name of device A |
+| `from_port` | `str` | Port on device A |
+| `to_device` | `str` | Name of device B |
+| `to_port` | `str` | Port on device B |
+| `cable_type` | `CableType` | Cable type (straight, cross, etc.) |
 
 #### `DHCPPool`
-Configuración de pool DHCP en un router.
+DHCP pool configuration on a router.
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |-------|------|-------------|
-| `pool_name` | `str` | Nombre del pool (ej: `LAN1_POOL`) |
-| `router` | `str` | Router que sirve el pool |
-| `network` | `str` | Red del pool (ej: `192.168.1.0`) |
-| `mask` | `str` | Máscara (ej: `255.255.255.0`) |
-| `gateway` | `str` | Gateway del pool (ej: `192.168.1.1`) |
-| `dns` | `str` | Servidor DNS (default `8.8.8.8`) |
-| `excluded_start` | `str` | Inicio del rango excluido |
-| `excluded_end` | `str` | Fin del rango excluido |
+| `pool_name` | `str` | Pool name (e.g. `LAN1_POOL`) |
+| `router` | `str` | Router serving the pool |
+| `network` | `str` | Pool network (e.g. `192.168.1.0`) |
+| `mask` | `str` | Mask (e.g. `255.255.255.0`) |
+| `gateway` | `str` | Pool gateway (e.g. `192.168.1.1`) |
+| `dns` | `str` | DNS server (default `8.8.8.8`) |
+| `excluded_start` | `str` | Start of the excluded range |
+| `excluded_end` | `str` | End of the excluded range |
 
 #### `StaticRoute`
-Ruta estática para un router.
+Static route for a router.
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |-------|------|-------------|
-| `destination` | `str` | Red destino |
-| `mask` | `str` | Máscara de destino |
-| `next_hop` | `str` | IP del siguiente salto |
-| `admin_distance` | `int \| None` | Distancia administrativa (254 para floating) |
+| `destination` | `str` | Destination network |
+| `mask` | `str` | Destination mask |
+| `next_hop` | `str` | Next-hop IP |
+| `admin_distance` | `int \| None` | Administrative distance (254 for floating) |
 
 #### `OSPFConfig`, `RIPConfig`, `EIGRPConfig`
-Configuración de protocolos de enrutamiento dinámico por router.
+Dynamic routing protocol configuration per router.
 
 #### `ValidationCheck`
-Test de verificación post-despliegue (ping tests).
+Post-deployment verification test (ping tests).
 
 #### `TopologyPlan`
-Modelo central que agrupa todo el plan:
+Central model that groups the whole plan:
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |-------|------|-------------|
-| `name` | `str` | Nombre de la topología |
-| `devices` | `list[DevicePlan]` | Todos los dispositivos |
-| `links` | `list[LinkPlan]` | Todos los enlaces |
-| `dhcp_pools` | `list[DHCPPool]` | Pools DHCP |
-| `static_routes` | `dict[str, list[StaticRoute]]` | Rutas por router |
-| `ospf_configs` | `dict[str, OSPFConfig]` | Config OSPF por router |
-| `rip_configs` | `dict[str, RIPConfig]` | Config RIP por router |
-| `eigrp_configs` | `dict[str, EIGRPConfig]` | Config EIGRP por router |
-| `validations` | `list[ValidationCheck]` | Tests de verificación |
-| `errors` | `list[dict]` | Errores de validación |
-| `warnings` | `list[dict]` | Advertencias |
-| `is_valid` | `bool` | Estado de validación |
+| `name` | `str` | Name of the topology |
+| `devices` | `list[DevicePlan]` | All devices |
+| `links` | `list[LinkPlan]` | All links |
+| `dhcp_pools` | `list[DHCPPool]` | DHCP pools |
+| `static_routes` | `dict[str, list[StaticRoute]]` | Routes per router |
+| `ospf_configs` | `dict[str, OSPFConfig]` | OSPF config per router |
+| `rip_configs` | `dict[str, RIPConfig]` | RIP config per router |
+| `eigrp_configs` | `dict[str, EIGRPConfig]` | EIGRP config per router |
+| `validations` | `list[ValidationCheck]` | Verification tests |
+| `errors` | `list[dict]` | Validation errors |
+| `warnings` | `list[dict]` | Warnings |
+| `is_valid` | `bool` | Validation status |
 
-**Métodos:** `device_by_name(name)`, `devices_by_category(category)`
+**Methods:** `device_by_name(name)`, `devices_by_category(category)`
 
 ---
 
-### `errors.py` — Taxonomía de errores
+### `errors.py` — Error taxonomy
 
-Sistema tipado de errores con 18 códigos agrupados por categoría.
+Typed error system with 18 codes grouped by category.
 
 #### `ErrorCode` (Enum)
-| Código | Categoría | Descripción |
+| Code | Category | Description |
 |--------|-----------|-------------|
-| `UNKNOWN_DEVICE_MODEL` | Dispositivo | Modelo no existe en catálogo |
-| `DUPLICATE_DEVICE_NAME` | Dispositivo | Nombre duplicado |
-| `INSUFFICIENT_PORTS` | Dispositivo | No hay suficientes puertos |
-| `DEVICE_NOT_FOUND` | Link | Dispositivo referenciado no existe |
-| `INVALID_PORT` | Link | Puerto no existe en el modelo |
-| `PORT_ALREADY_USED` | Link | Puerto ya ocupado por otro link |
-| `INVALID_CABLE_TYPE` | Link | Tipo de cable desconocido |
-| `INVALID_IP_ADDRESS` | IP | Dirección IP inválida |
-| `SUBNET_OVERLAP` | IP | Subredes solapadas |
-| `IP_CONFLICT` | IP | IP duplicada |
-| `DHCP_ROUTER_NOT_FOUND` | DHCP | Router del pool no existe |
-| `DHCP_GATEWAY_MISMATCH` | DHCP | Gateway no coincide con interface |
-| `UNSUPPORTED_ROUTING_PROTOCOL` | Routing | Protocolo no soportado |
-| `TEMPLATE_CONSTRAINT_VIOLATION` | Template | Parámetros violan restricciones |
-| `INVALID_INTERFACE_ASSIGNMENT` | IP | Interface inválida |
-| `VALIDATION_ERROR` | General | Error genérico de validación |
+| `UNKNOWN_DEVICE_MODEL` | Device | Model does not exist in the catalog |
+| `DUPLICATE_DEVICE_NAME` | Device | Duplicate name |
+| `INSUFFICIENT_PORTS` | Device | Not enough ports |
+| `DEVICE_NOT_FOUND` | Link | Referenced device does not exist |
+| `INVALID_PORT` | Link | Port does not exist on the model |
+| `PORT_ALREADY_USED` | Link | Port already used by another link |
+| `INVALID_CABLE_TYPE` | Link | Unknown cable type |
+| `INVALID_IP_ADDRESS` | IP | Invalid IP address |
+| `SUBNET_OVERLAP` | IP | Overlapping subnets |
+| `IP_CONFLICT` | IP | Duplicate IP |
+| `DHCP_ROUTER_NOT_FOUND` | DHCP | Pool's router does not exist |
+| `DHCP_GATEWAY_MISMATCH` | DHCP | Gateway does not match an interface |
+| `UNSUPPORTED_ROUTING_PROTOCOL` | Routing | Unsupported routing protocol |
+| `TEMPLATE_CONSTRAINT_VIOLATION` | Template | Parameters violate constraints |
+| `INVALID_INTERFACE_ASSIGNMENT` | IP | Invalid interface |
+| `VALIDATION_ERROR` | General | Generic validation error |
 
 #### `PlanError`
-Error individual: `code`, `message`, `device`, `suggestion`, `to_dict()`.
+Individual error: `code`, `message`, `device`, `suggestion`, `to_dict()`.
 
 #### `ValidationResult`
-Colección de errores y warnings con propiedad `is_valid` (True si no hay errores).
+Collection of errors and warnings with an `is_valid` property (True if there are no errors).

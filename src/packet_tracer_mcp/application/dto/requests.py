@@ -1,4 +1,4 @@
-"""DTOs de entrada para la capa de aplicación."""
+"""Input DTOs for the application layer."""
 
 from __future__ import annotations
 from pydantic import BaseModel, Field
@@ -6,7 +6,7 @@ from ...shared.enums import RoutingProtocol, TopologyTemplate
 
 
 class PlanTopologyDTO(BaseModel):
-    """DTO para planificar una topología."""
+    """DTO for planning a topology."""
     routers: int = Field(ge=1, le=20, default=2)
     pcs_per_lan: int | list[int] = 2
     switches_per_router: int = Field(ge=0, le=4, default=1)
@@ -26,12 +26,12 @@ class PlanTopologyDTO(BaseModel):
 
 
 class FixPlanDTO(BaseModel):
-    """DTO para corregir un plan."""
-    plan_json: str = Field(description="JSON serializado del plan")
+    """DTO for fixing a plan."""
+    plan_json: str = Field(description="Serialized plan JSON")
 
 
 class ExportDTO(BaseModel):
-    """DTO para exportar artefactos."""
+    """DTO for exporting artifacts."""
     plan_json: str
     project_name: str | None = None
     output_dir: str = "projects"

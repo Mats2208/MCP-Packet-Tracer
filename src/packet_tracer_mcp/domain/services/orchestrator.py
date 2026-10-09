@@ -1,8 +1,8 @@
 """
-Orquestador principal.
+Main orchestrator.
 
-Traduce un TopologyRequest a un TopologyPlan completo
-con dispositivos, enlaces, IPs, DHCP y rutas, todo validado.
+Translates a TopologyRequest into a complete TopologyPlan
+with devices, links, IPs, DHCP and routes, all validated.
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ from ...shared.constants import (
 
 def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, ValidationResult]:
     """
-    Pipeline completo. Retorna (plan, validation_result).
+    Full pipeline. Returns (plan, validation_result).
     """
     plan = TopologyPlan()
 
-    # Respetar las restricciones de la plantilla (ej router_on_a_stick y star son
-    # 1 router por definición). Clampamos para que el default routers=2 no rompa la forma.
+    # Respect the template's constraints (e.g. router_on_a_stick and star are
+    # 1 router by definition). Clamp so the default routers=2 does not break the shape.
     from ...infrastructure.catalog.templates import get_template
     try:
         spec = get_template(request.template)
@@ -87,13 +87,13 @@ def _normalize_laptops(req: TopologyRequest) -> list[int]:
 
 
 def _wifi_lan_indices(req: TopologyRequest, laptops_list: list[int]) -> list[int]:
-    """LANs que necesitan AP propio: las que tienen laptops inalambricas.
+    """LANs that need their own AP: those that have wireless laptops.
 
-    Antes se creaba UN solo AP para toda la topologia, cableado al switch de la
-    primera LAN. Como en la vista logica el alcance RF es global, las laptops de
-    TODAS las LANs se asociaban a ese AP y terminaban con IP del pool DHCP de la
-    LAN 1 -- verificado contra PT 9.0.1: LT9, planificada en la LAN 5, recibia
-    192.168.0.5/24. Un AP por LAN deja a cada laptop en la subred que le toca.
+    Previously ONE single AP was created for the whole topology, cabled to the switch
+    of the first LAN. Since in the logical view the RF range is global, the laptops of
+    ALL LANs associated with that AP and ended up with an IP from the LAN 1 DHCP pool
+    -- verified against PT 9.0.1: LT9, planned for LAN 5, received 192.168.0.5/24. One
+    AP per LAN puts each laptop on the subnet it belongs to.
     """
     if not req.wireless_laptops or req.access_points:
         return []
@@ -102,18 +102,18 @@ def _wifi_lan_indices(req: TopologyRequest, laptops_list: list[int]) -> list[int
 
 def _layout_metrics(req: TopologyRequest, pcs_list: list[int],
                     laptops_list: list[int]) -> tuple[int, int]:
-    """(x inicial, ancho de columna) para que ninguna LAN se salga ni se pise.
+    """(initial x, column width) so that no LAN overflows or overlaps another.
 
-    El ancho fijo de 250 px alcanzaba para 3 hosts por LAN. Con 4 el cluster
-    (4 x 80 = 320) desbordaba su columna y se metia en la LAN vecina, y como el
-    cluster se centra, el primer host caia en x=-60: fuera del canvas.
+    The fixed 250 px width was enough for 3 hosts per LAN. With 4, the cluster
+    (4 x 80 = 320) overflowed its column and spilled into the neighboring LAN, and since
+    the cluster is centered, the first host fell at x=-60: outside the canvas.
     """
     per_lan = [max(p, l) for p, l in zip(pcs_list, laptops_list)]
     widest = max(per_lan) if per_lan else 0
     column_width = max(LAYOUT_X_SPACING, widest * LAYOUT_PC_X_SPACING)
-    # El cluster se centra en su columna, asi que se extiende media anchura hacia
-    # la izquierda: el origen tiene que dejar ese margen. Los servidores comparten
-    # la columna de la LAN 1, asi que tambien cuentan.
+    # The cluster is centered on its column, so it extends half its width to the
+    # left: the origin has to leave that margin. The servers share the LAN 1 column,
+    # so they count too.
     left_reach = max(widest, req.servers) * LAYOUT_PC_X_SPACING // 2
     return max(LAYOUT_X_START, left_reach), column_width
 
@@ -124,15 +124,15 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
     x_start, column_width = _layout_metrics(req, pcs_list, laptops_list)
 
     def _column_x(lan_index: int) -> int:
-        """Centro de la columna de la LAN `lan_index`."""
+        """Center of the column of LAN `lan_index`."""
         return x_start + lan_index * column_width
 
     def _row_x(centre: int, count: int, index: int) -> int:
-        """x del host `index` de una fila de `count`, centrada en `centre`."""
+        """x of host `index` in a row of `count`, centered on `centre`."""
         return centre - (count * LAYOUT_PC_X_SPACING // 2) + index * LAYOUT_PC_X_SPACING
 
-    # Fila propia para los AP: colgados del switch pero sin pisarlo ni pisar los
-    # switches secundarios, que se desplazan de a 120 px sobre la misma fila.
+    # Own row for the APs: hung off the switch without overlapping it or the
+    # secondary switches, which are shifted 120 px at a time along the same row.
     ap_y = LAYOUT_Y_SWITCH + 70
 
     # Routers
@@ -179,16 +179,16 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
                         y=LAYOUT_Y_PC + 80,
                     ))
 
-    # WiFi: un AP por LAN que tenga laptops inalambricas. Cada uno se cablea al
-    # switch de SU LAN en _create_links, que es lo que pone a esas laptops en la
-    # subred correcta.
+    # WiFi: one AP per LAN that has wireless laptops. Each one is cabled to the switch
+    # of ITS LAN in _create_links, which is what puts those laptops on the
+    # correct subnet.
     for k, lan in enumerate(_wifi_lan_indices(req, laptops_list)):
         plan.devices.append(DevicePlan(
             name=f"WAP{k + 1}", model="AccessPoint-PT", category="accesspoint",
             role=DeviceRole.END_HOST, x=_column_x(lan), y=ap_y,
         ))
 
-    # Access Points pedidos explicitamente — uno por switch primario de cada router
+    # APs requested explicitly — one per primary switch of each router
     if req.access_points > 0:
         for i in range(min(req.access_points, req.routers)):
             plan.devices.append(DevicePlan(
@@ -197,9 +197,9 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
                 x=_column_x(i), y=ap_y,
             ))
 
-    # Servers — en la columna del switch al que se cablean (el primero) y en su
-    # propia fila. Antes se los mandaba al extremo derecho del diagrama mientras
-    # el cable seguia yendo a SW1, dibujando diagonales de punta a punta.
+    # Servers — in the column of the switch they are cabled to (the first one) and in their
+    # own row. They used to be sent to the far right of the diagram while the cable still went
+    # to SW1, drawing diagonals from end to end.
     for i in range(req.servers):
         plan.devices.append(DevicePlan(
             name=f"SRV{i + 1}", model="Server-PT", category="server",
@@ -222,7 +222,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     router_model_obj = resolve_model(req.router_model or DEFAULT_ROUTER)
     switch_model_obj = resolve_model(req.switch_model or DEFAULT_SWITCH)
     if not router_model_obj or not switch_model_obj:
-        plan.errors.append("Modelo de router o switch no válido")
+        plan.errors.append("Invalid router or switch model")
         return
 
     routers = plan.devices_by_category("router")
@@ -252,11 +252,11 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
         return _next_port(name, model, PortSpeed.FAST_ETHERNET)
 
     def _ether(name: str, model: str) -> str | None:
-        """Puerto Ethernet "pelado" — el de la nube es Ethernet6, no FastEthernet."""
+        """Plain Ethernet port — the cloud's is Ethernet6, not FastEthernet."""
         return _next_port(name, model, PortSpeed.ETHERNET)
 
-    # Router ↔ Router — la FORMA depende del template (antes siempre era cadena, lo
-    # que hacía que three_router_triangle quedara sin el cierre R3↔R1 = sin redundancia).
+    # Router ↔ Router — the SHAPE depends on the template (it used to always be a chain, which
+    # meant three_router_triangle lacked the R3↔R1 closing link = no redundancy).
     def _link_routers(ra, rb):
         p1, p2 = _gig(ra.name, ra.model), _gig(rb.name, rb.model)
         if p1 and p2:
@@ -267,15 +267,15 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
             ))
 
     if req.template == TopologyTemplate.HUB_SPOKE and len(routers) >= 2:
-        # Estrella de routers: R1 (hub) ↔ cada spoke.
+        # Router star: R1 (hub) ↔ each spoke.
         hub = routers[0]
         for spoke in routers[1:]:
             _link_routers(hub, spoke)
     else:
-        # Cadena: R[i] ↔ R[i+1].
+        # Chain: R[i] ↔ R[i+1].
         for i in range(len(routers) - 1):
             _link_routers(routers[i], routers[i + 1])
-        # Triángulo/anillo: cierra el último ↔ el primero para dar el camino redundante.
+        # Triangle/ring: closes the last ↔ the first to provide the redundant path.
         if req.template == TopologyTemplate.THREE_ROUTER_TRIANGLE and len(routers) >= 3:
             _link_routers(routers[-1], routers[0])
 
@@ -322,7 +322,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
             lt = laptops[laptop_idx]
             laptop_idx += 1
             if lt.wireless:
-                # WiFi: la asociación es por RF (auto a un AP por SSID default), no por cable.
+                # WiFi: association is over RF (automatic to an AP on the default SSID), not by cable.
                 continue
             sp, lp = _fast(primary_sw.name, primary_sw.model), _fast(lt.name, lt.model)
             if sp and lp:
@@ -332,11 +332,11 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
                     cable=infer_cable("switch", "pc"),
                 ))
 
-    # Switch ↔ Access Points — cada AP al switch de SU LAN.
+    # Switch ↔ Access Points — each AP to the switch of ITS LAN.
     #
-    # Con el AP unico esto no importaba: iba al primer switch y listo. Ahora los
-    # AP automaticos existen solo para las LANs que tienen laptops WiFi, asi que
-    # el indice del AP no coincide con el de la LAN y hay que mapearlo.
+    # With a single AP this did not matter: it went to the first switch and that was it. Now the
+    # automatic APs exist only for the LANs that have WiFi laptops, so the AP index does not
+    # match the LAN index and it has to be mapped.
     wifi_lans = _wifi_lan_indices(req, laptops_list)
     if wifi_lans:
         ap_to_lan = list(enumerate(wifi_lans))
@@ -383,7 +383,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
 
 
 def _switch_port_for(plan: TopologyPlan, switch_name: str, peer_name: str) -> str | None:
-    """Puerto del switch en el link switch↔peer (o None si no hay link)."""
+    """Switch port on the switch↔peer link (or None if there is no link)."""
     for link in plan.links:
         if link.device_a == switch_name and link.device_b == peer_name:
             return link.port_a
@@ -393,12 +393,12 @@ def _switch_port_for(plan: TopologyPlan, switch_name: str, peer_name: str) -> st
 
 
 def _create_vlans(plan: TopologyPlan, req: TopologyRequest):
-    """ROUTER_ON_A_STICK: convierte la LAN única en N VLANs con inter-VLAN routing.
+    """ROUTER_ON_A_STICK: turns the single LAN into N VLANs with inter-VLAN routing.
 
-    La topología física (1 router ↔ 1 switch por trunk, switch ↔ PCs por access) ya la
-    creó _create_links; aquí añadimos la capa lógica: declara VLANs, marca el uplink del
-    switch como trunk, asigna cada PC a una VLAN access y setea DevicePlan.vlan. El IP
-    planner hace el subnetting por-VLAN y crea las subinterfaces .1q del router.
+    The physical topology (1 router ↔ 1 switch via trunk, switch ↔ PCs via access) is already
+    created by _create_links; here we add the logical layer: declare VLANs, mark the switch
+    uplink as trunk, assign each PC to an access VLAN and set DevicePlan.vlan. The IP
+    planner does the per-VLAN subnetting and creates the router's .1q subinterfaces.
     """
     if req.template != TopologyTemplate.ROUTER_ON_A_STICK:
         return
@@ -410,7 +410,7 @@ def _create_vlans(plan: TopologyPlan, req: TopologyRequest):
     router, switch = routers[0], switches[0]
 
     vlan_count = req.vlans if req.vlans and req.vlans > 0 else 2
-    vlan_count = max(1, min(vlan_count, len(pcs)))  # no más VLANs que PCs
+    vlan_count = max(1, min(vlan_count, len(pcs)))  # no more VLANs than PCs
     vlan_ids = [10 * (i + 1) for i in range(vlan_count)]
     plan.vlans = [VLANConfig(vlan_id=v, name=f"VLAN{v}") for v in vlan_ids]
 

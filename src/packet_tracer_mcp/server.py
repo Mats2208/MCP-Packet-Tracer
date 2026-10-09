@@ -1,8 +1,8 @@
 """
-Servidor MCP para Packet Tracer.
+MCP server for Packet Tracer.
 
-Punto de entrada: crea el servidor, registra tools/resources, y arranca
-en streamable-http (:39000) o stdio según el flag --stdio.
+Entry point: creates the server, registers tools/resources, and starts
+on streamable-http (:39000) or stdio depending on the --stdio flag.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
+from .adapters.mcp.prompt_registry import register_prompts
 from .adapters.mcp.resource_registry import register_resources
 from .adapters.mcp.tool_registry import register_tools
 from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
@@ -26,32 +27,33 @@ mcp = FastMCP(
     stateless_http=True,
 )
 
-# Decir NUESTRA version en el handshake, no la del SDK.
+# Report OUR version in the handshake, not the SDK's.
 #
-# `create_initialization_options()` resuelve el numero con
-# `self.version if self.version else pkg_version("mcp")`, y FastMCP no expone
-# `version` en su `__init__` ni una propiedad para el server lowlevel, asi que
-# el fallback ganaba siempre: el servidor se presentaba como "1.28.1" —la
-# libreria— en vez de "0.8.0". Ese numero es el que muestran Claude Desktop,
-# Cursor y PacketSmith en su panel de servidores, y encima cambiaba solo al
-# actualizar la dependencia.
+# `create_initialization_options()` resolves the number with
+# `self.version if self.version else pkg_version("mcp")`, and FastMCP does not expose
+# `version` in its `__init__` nor a property for the lowlevel server, so the
+# fallback always won: the server presented itself as "1.28.1" — the library —
+# instead of "0.8.0". That number is the one Claude Desktop, Cursor and PacketSmith
+# show in their server panel, and on top of that it changed on its own whenever the
+# dependency was updated.
 #
-# `_mcp_server` es privado y no hay alternativa publica; va con guardia para
-# que una version futura del SDK que lo renombre degrade a lo de antes en vez
-# de romper el arranque, que es lo unico que no se puede permitir aca.
+# `_mcp_server` is private and there is no public alternative; it is guarded so that
+# a future SDK version that renames it degrades to the old behavior instead of
+# breaking startup, which is the one thing that cannot be allowed here.
 _lowlevel = getattr(mcp, "_mcp_server", None)
 if _lowlevel is not None:
     _lowlevel.version = __version__
 
 register_tools(mcp)
 register_resources(mcp)
+register_prompts(mcp)
 
 
 def main():
-    """Arranca el servidor MCP.
+    """Starts the MCP server.
 
-    Por defecto usa streamable-http en :39000.
-    Con --stdio usa transporte stdio (para debug o clientes legacy).
+    By default uses streamable-http on :39000.
+    With --stdio uses the stdio transport (for debugging or legacy clients).
     """
     if "--stdio" in sys.argv:
         mcp.run(transport="stdio")

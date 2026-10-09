@@ -1,11 +1,11 @@
-"""Validación de ajuste fino por interfaz."""
+"""Per-interface fine-tuning validation."""
 
 from __future__ import annotations
 
 from ..models.interface_tuning import InterfaceTuning
 from ..models.errors import PlanError, ErrorCode, ValidationResult
 
-# Clock rates válidos (bps) aceptados por IOS en interfaces seriales.
+# Valid clock rates (bps) accepted by IOS on serial interfaces.
 _VALID_CLOCK_RATES = {
     1200, 2400, 4800, 9600, 19200, 38400, 56000, 64000, 72000, 125000,
     148000, 250000, 500000, 800000, 1000000, 1300000, 2000000, 4000000,
@@ -21,18 +21,18 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_CLOCKRATE_NOT_SERIAL,
                 device=cfg.router,
-                message=f"clock_rate solo aplica a interfaces Serial, no a '{cfg.interface}'.",
-                suggestion="Quita clock_rate o usa una interfaz Serial (extremo DCE).",
+                message=f"clock_rate only applies to Serial interfaces, not to '{cfg.interface}'.",
+                suggestion="Remove clock_rate or use a Serial interface (DCE end).",
             ))
         elif cfg.clock_rate not in _VALID_CLOCK_RATES:
             warnings.append(PlanError(
                 code=ErrorCode.IFTUNE_CLOCKRATE_NOT_SERIAL,
                 device=cfg.router,
-                message=f"clock_rate {cfg.clock_rate} no es un valor IOS estándar.",
+                message=f"clock_rate {cfg.clock_rate} is not a standard IOS value.",
                 suggestion="Valores comunes: 64000, 128000, 1000000, 2000000.",
             ))
 
-    # --- Autenticación OSPF ---
+    # --- OSPF authentication ---
     for label, value in (("ospf_auth_key", cfg.ospf_auth_key),
                          ("ospf_md5_key", cfg.ospf_md5_key)):
         if value is None:
@@ -40,55 +40,55 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
         if not value.strip():
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-                message=f"{label} está vacía.",
-                suggestion="Pasá una clave o quitá el parámetro.",
+                message=f"{label} is empty.",
+                suggestion="Pass a key or remove the parameter.",
             ))
         elif any(ch in value for ch in ("\n", "\r", " ")):
-            # La clave termina dentro de un payload IOS de una sola línea; un
-            # salto se convertiría en un comando no pedido.
+            # The key ends up inside a single-line IOS payload; a line break would
+            # turn into an unrequested command.
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-                message=f"{label} tiene espacios o saltos de línea.",
-                suggestion="IOS no acepta espacios en la clave: usá una sola palabra.",
+                message=f"{label} contains spaces or line breaks.",
+                suggestion="IOS does not accept spaces in the key: use a single word.",
             ))
 
     if cfg.ospf_md5_key is not None:
         if cfg.ospf_md5_key_id is None:
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-                message="ospf_md5_key necesita un ospf_md5_key_id.",
-                suggestion="Usá un id entre 1 y 255; tiene que coincidir con el del vecino.",
+                message="ospf_md5_key needs an ospf_md5_key_id.",
+                suggestion="Use an id between 1 and 255; it must match the neighbor's.",
             ))
         elif not 1 <= cfg.ospf_md5_key_id <= 255:
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-                message=f"ospf_md5_key_id {cfg.ospf_md5_key_id} fuera de rango (1-255).",
-                suggestion="Usá un id entre 1 y 255.",
+                message=f"ospf_md5_key_id {cfg.ospf_md5_key_id} out of range (1-255).",
+                suggestion="Use an id between 1 and 255.",
             ))
         if cfg.ospf_auth_key is not None:
             warnings.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-                message="Se pasaron auth_key y md5_key; se aplica solo MD5.",
-                suggestion="Quitá ospf_auth_key: message-digest es el modo recomendado.",
+                message="Both auth_key and md5_key were passed; only MD5 is applied.",
+                suggestion="Remove ospf_auth_key: message-digest is the recommended mode.",
             ))
     elif cfg.ospf_auth_key is not None:
         warnings.append(PlanError(
             code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
-            message="La autenticación OSPF en texto plano viaja legible por la red.",
-            suggestion="Preferí ospf_md5_key + ospf_md5_key_id (message-digest).",
+            message="Plain-text OSPF authentication travels readable across the network.",
+            suggestion="Prefer ospf_md5_key + ospf_md5_key_id (message-digest).",
         ))
 
-    # Los timers tienen que coincidir con los del vecino o la adyacencia no forma.
-    # El default de IOS es dead = 4 x hello.
+    # The timers must match the neighbor's or the adjacency does not form.
+    # The IOS default is dead = 4 x hello.
     if cfg.ospf_dead_interval is not None and cfg.ospf_hello_interval is not None:
         if cfg.ospf_dead_interval <= cfg.ospf_hello_interval:
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_TIMERS, device=cfg.router,
                 message=(
-                    f"dead-interval ({cfg.ospf_dead_interval}s) tiene que ser mayor "
-                    f"que hello-interval ({cfg.ospf_hello_interval}s)."
+                    f"dead-interval ({cfg.ospf_dead_interval}s) must be greater "
+                    f"than hello-interval ({cfg.ospf_hello_interval}s)."
                 ),
-                suggestion="La convención IOS es dead = 4 x hello.",
+                suggestion="The IOS convention is dead = 4 x hello.",
             ))
 
     return ValidationResult(errors=errors, warnings=warnings)
@@ -103,19 +103,19 @@ def validate_interface_tuning_against_topology(
         errors.append(PlanError(
             code=ErrorCode.IFTUNE_DEVICE_NOT_FOUND,
             device=cfg.router,
-            message=f"Router '{cfg.router}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Router '{cfg.router}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
         return ValidationResult(errors=errors)
 
-    # Validar que la interfaz exista (puede ser subinterfaz "Gig0/0.10")
+    # Validate that the interface exists (it may be a subinterface "Gig0/0.10")
     ports = {p.get("name") for p in dev.get("ports", [])}
     base = cfg.interface.split(".", 1)[0]
     if ports and cfg.interface not in ports and base not in ports:
         errors.append(PlanError(
             code=ErrorCode.IFTUNE_INTERFACE_NOT_FOUND,
             device=cfg.router,
-            message=f"Interfaz '{cfg.interface}' no existe en {dev.get('model')}.",
-            suggestion=f"Puertos disponibles: {', '.join(sorted(p for p in ports if p))}",
+            message=f"Interface '{cfg.interface}' does not exist on {dev.get('model')}.",
+            suggestion=f"Available ports: {', '.join(sorted(p for p in ports if p))}",
         ))
     return ValidationResult(errors=errors)

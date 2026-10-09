@@ -5,6 +5,7 @@ devolvió los bytes en decimal separados por coma y CON SIGNO, empezando por
 `-119,80,78,71,13,10,26,10` — que es la firma PNG `89 50 4E 47 0D 0A 1A 0A`.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,7 @@ class TestDecodePtImage:
 
     def test_wrong_magic_is_caught_before_writing_to_disk(self):
         """Escribir un archivo corrupto y avisar cuando alguien lo abre es peor."""
-        with pytest.raises(CanvasImageError, match="no corresponden"):
+        with pytest.raises(CanvasImageError, match="are not a PNG"):
             decode_pt_image("1,2,3,4,5", "PNG")
 
     def test_decoded_bytes_are_writable_and_round_trip(self, tmp_path: Path):
@@ -108,9 +109,7 @@ class TestCanvasTools:
     por texto igual que TestReconcileWiring en test_live_reconcile.py."""
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_no_draw_tool_is_shipped(self):
         """drawCircle/drawLine no se exponen: el tercer argumento resulto ser el

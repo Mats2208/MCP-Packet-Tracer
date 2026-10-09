@@ -4,6 +4,7 @@ Un test por defecto encontrado manejando el MCP contra Packet Tracer real.
 Cada uno falla si el fix se revierte.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -124,9 +125,7 @@ class TestRenameRejectsDuplicates:
     """
 
     def _src(self) -> str:
-        return Path(
-            "src/packet_tracer_mcp/adapters/mcp/tool_registry.py"
-        ).read_text(encoding="utf-8")
+        return registry_source()
 
     def test_rename_checks_the_target_name_is_free(self):
         block = self._src().split("def pt_rename_device", 1)[1][:2000]
@@ -135,7 +134,7 @@ class TestRenameRejectsDuplicates:
 
     def test_duplicate_is_reported_with_a_reason(self):
         block = self._src().split("def pt_rename_device", 1)[1][:3000]
-        assert "ya existe un dispositivo llamado" in block
+        assert "a device named" in block
 
 
 def test_fix_plan_moves_the_ip_to_the_corrected_port():

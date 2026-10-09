@@ -1,12 +1,12 @@
 # infrastructure/persistence/
 
-Persistencia de proyectos — guardar, cargar y listar topologías en disco.
+Project persistence — save, load and list topologies on disk.
 
-## Archivos
+## Files
 
-### `project_repository.py` — Repositorio de proyectos
+### `project_repository.py` — Project repository
 
-Gestiona la persistencia de planes y metadata en el sistema de archivos.
+Manages the persistence of plans and metadata in the file system.
 
 ```python
 class ProjectRepository:
@@ -17,7 +17,7 @@ class ProjectRepository:
     def delete_project(project_name) → bool
 ```
 
-**Estructura de un proyecto guardado:**
+**Structure of a saved project:**
 ```
 projects/
 └── mi_topologia/
@@ -25,16 +25,16 @@ projects/
     └── metadata.json    ← Metadata del proyecto
 ```
 
-**Métodos:**
+**Methods:**
 
-| Método | Descripción |
+| Method | Description |
 |--------|-------------|
-| `save_plan(plan, name)` | Serializa el plan como JSON + genera metadata (nombre, fecha, conteos, is_valid) |
-| `load_plan(name)` | Deserializa JSON → `TopologyPlan` via `model_validate_json()` |
-| `list_projects()` | Escanea el directorio base, retorna lista de metadata por proyecto |
-| `delete_project(name)` | Elimina directorio del proyecto completo (`shutil.rmtree`) |
+| `save_plan(plan, name)` | Serializes the plan as JSON + generates metadata (name, date, counts, is_valid) |
+| `load_plan(name)` | Deserializes JSON → `TopologyPlan` via `model_validate_json()` |
+| `list_projects()` | Scans the base directory, returns a list of metadata per project |
+| `delete_project(name)` | Deletes the entire project directory (`shutil.rmtree`) |
 
-**Metadata generado:**
+**Generated metadata:**
 ```json
 {
   "project_name": "mi_topologia",
@@ -45,15 +45,15 @@ projects/
 }
 ```
 
-**Nota:** El directorio base por defecto es `projects/` relativo al CWD del servidor. Los MCP tools `pt_list_projects` y `pt_load_project` usan este repositorio directamente.
+**Note:** The default base directory is `projects/`, relative to the server's CWD. The MCP tools `pt_list_projects` and `pt_load_project` use this repository directly.
 
-**Importante — esto NO es lo mismo que guardar el archivo de Packet Tracer.**
-`ProjectRepository` persiste el **PLAN** (el `TopologyPlan` como `plan.json`), que es la
-descripción de la topología del lado del servidor. Es distinto de los MCP tools
-`pt_save_project` / `pt_open_project`, que guardan/abren el archivo **`.pkt` REAL de Packet
-Tracer** vía el bridge (no el plan JSON). En resumen:
+**Important — this is NOT the same as saving the Packet Tracer file.**
+`ProjectRepository` persists the **PLAN** (the `TopologyPlan` as `plan.json`), which is the
+server-side description of the topology. It is different from the MCP tools
+`pt_save_project` / `pt_open_project`, which save/open the **REAL `.pkt` file of Packet
+Tracer** via the bridge (not the plan JSON). In short:
 
-| | Qué guarda/abre | Cómo |
+| | What it saves/opens | How |
 |--|-----------------|------|
-| `ProjectRepository` (`pt_list_projects` / `pt_load_project`) | El PLAN (`plan.json` + metadata) | Disco, este repositorio |
-| `pt_save_project` / `pt_open_project` | El archivo `.pkt` REAL de PT | Bridge hacia Packet Tracer |
+| `ProjectRepository` (`pt_list_projects` / `pt_load_project`) | The PLAN (`plan.json` + metadata) | Disk, this repository |
+| `pt_save_project` / `pt_open_project` | The REAL PT `.pkt` file | Bridge to Packet Tracer |

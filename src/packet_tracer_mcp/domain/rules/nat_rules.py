@@ -1,8 +1,7 @@
-"""Reglas de validación para NAT/PAT.
+"""Validation rules for NAT/PAT.
 
-Las validaciones estáticas no consultan PT. La verificación dinámica
-(router e interfaces existen en la topología activa) se hace desde el
-use case, igual que en ACLs.
+Static validations do not query PT. The dynamic check (router and interfaces
+exist in the active topology) is done from the use case, same as for ACLs.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from .text_rules import has_control_chars
 
 
 def validate_nat_config(config: NATConfig) -> ValidationResult:
-    """Valida un NATConfig estáticamente."""
+    """Statically validates a NATConfig."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -35,7 +34,7 @@ def validate_nat_against_topology(
     config: NATConfig,
     devices_in_pt: list[dict],
 ) -> ValidationResult:
-    """Valida que el router y sus interfaces existan en la topología activa de PT."""
+    """Validates that the router and its interfaces exist in the active PT topology."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -44,8 +43,8 @@ def validate_nat_against_topology(
         errors.append(PlanError(
             code=ErrorCode.NAT_ROUTER_NOT_FOUND,
             device=config.router,
-            message=f"Router '{config.router}' no existe en la topología activa de PT.",
-            suggestion="Llama a pt_query_topology para ver los dispositivos disponibles.",
+            message=f"Router '{config.router}' does not exist in PT's active topology.",
+            suggestion="Call pt_query_topology to see the available devices.",
         ))
         return ValidationResult(errors=errors, warnings=warnings)
 
@@ -53,8 +52,8 @@ def validate_nat_against_topology(
     model = resolve_model(device.get("model", ""))
     if model is not None:
         valid_ports = {p.full_name for p in model.ports}
-        # Acepta sub-interfaces (ej "GigabitEthernet0/0/1.20") validando que el puerto
-        # base exista — PT las crea dinámicamente al configurar encapsulation dot1Q.
+        # Accepts sub-interfaces (e.g. "GigabitEthernet0/0/1.20") by validating that the
+        # base port exists — PT creates them dynamically when encapsulation dot1Q is set.
         for iface_label, iface in [
             ("inside_interface", config.inside_interface),
             ("outside_interface", config.outside_interface),
@@ -64,15 +63,15 @@ def validate_nat_against_topology(
                 errors.append(PlanError(
                     code=ErrorCode.NAT_INTERFACE_NOT_FOUND,
                     device=config.router,
-                    message=f"{iface_label} '{iface}' no existe en {device.get('model')}.",
-                    suggestion=f"Puertos disponibles: {', '.join(sorted(valid_ports))} (las sub-interfaces .N son válidas si el puerto base existe)",
+                    message=f"{iface_label} '{iface}' does not exist on {device.get('model')}.",
+                    suggestion=f"Available ports: {', '.join(sorted(valid_ports))} (.N subinterfaces are valid if the base port exists)",
                 ))
 
     return ValidationResult(errors=errors, warnings=warnings)
 
 
 # ----------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ----------------------------------------------------------------------
 
 def _validate_interfaces(config: NATConfig, errors: list[PlanError]) -> None:
@@ -80,13 +79,13 @@ def _validate_interfaces(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_SAME_INTERFACE,
             device=config.router,
-            message="inside_interface y outside_interface no pueden ser la misma interfaz.",
-            suggestion="La interfaz 'inside' conecta a la LAN y la 'outside' a la WAN/Internet.",
+            message="inside_interface and outside_interface cannot be the same interface.",
+            suggestion="The 'inside' interface connects to the LAN and the 'outside' one to the WAN/Internet.",
         ))
 
 
 def _validate_text_fields(config: NATConfig, errors: list[PlanError]) -> None:
-    """acl_number, el pool y las interfaces se interpolan crudos en el CLI
+    """acl_number, the pool and the interfaces are interpolated raw into the CLI
     (`ip nat pool {name}`, `ip nat inside source list {acl} ...`)."""
     fields = [
         ("acl_number", config.acl_number),
@@ -100,8 +99,8 @@ def _validate_text_fields(config: NATConfig, errors: list[PlanError]) -> None:
             errors.append(PlanError(
                 code=ErrorCode.NAT_INVALID_NAME,
                 device=config.router,
-                message=f"{label} contiene un salto de línea.",
-                suggestion=f"Usa un valor de una sola línea en {label}.",
+                message=f"{label} contains a line break.",
+                suggestion=f"Use a single-line value in {label}.",
             ))
 
 
@@ -110,8 +109,8 @@ def _validate_static(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_MISSING_STATIC_MAPPINGS,
             device=config.router,
-            message="NAT estático requiere al menos un mapping static (inside_local ↔ inside_global).",
-            suggestion="Agrega un dict {'inside_local': 'IP_privada', 'inside_global': 'IP_pública'}.",
+            message="Static NAT requires at least one static mapping (inside_local ↔ inside_global).",
+            suggestion="Add a dict {'inside_local': 'private_IP', 'inside_global': 'public_IP'}.",
         ))
         return
 
@@ -126,8 +125,8 @@ def _validate_dynamic(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_MISSING_INSIDE_NETWORKS,
             device=config.router,
-            message="NAT dinámico requiere inside_networks para generar el access-list.",
-            suggestion="Ej: ['192.168.1.0 0.0.0.255']. O especifica acl_number de una ACL existente.",
+            message="Dynamic NAT requires inside_networks to build the access-list.",
+            suggestion="E.g. ['192.168.1.0 0.0.0.255']. Or set acl_number to an existing ACL.",
         ))
     else:
         _validate_inside_networks(config, errors)
@@ -136,8 +135,8 @@ def _validate_dynamic(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_MISSING_POOL,
             device=config.router,
-            message="NAT dinámico requiere un pool de IPs públicas.",
-            suggestion="Especifica pool_name, pool_start, pool_end y pool_netmask.",
+            message="Dynamic NAT requires a pool of public IPs.",
+            suggestion="Set pool_name, pool_start, pool_end and pool_netmask.",
         ))
     else:
         _validate_pool(config.pool, config.router, errors)
@@ -148,8 +147,8 @@ def _validate_pat(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_MISSING_INSIDE_NETWORKS,
             device=config.router,
-            message="PAT requiere inside_networks para identificar los hosts que se traducen.",
-            suggestion="Ej: ['192.168.1.0 0.0.0.255']. Incluye todas las subredes internas.",
+            message="PAT requires inside_networks to identify the hosts to translate.",
+            suggestion="E.g. ['192.168.1.0 0.0.0.255']. Include every internal subnet.",
         ))
     else:
         _validate_inside_networks(config, errors)
@@ -158,9 +157,9 @@ def _validate_pat(config: NATConfig, errors: list[PlanError]) -> None:
         errors.append(PlanError(
             code=ErrorCode.NAT_MISSING_POOL,
             device=config.router,
-            message="PAT con use_interface_overload=False requiere un pool.",
-            suggestion="Especifica pool_name/start/end/netmask, o usa use_interface_overload=True "
-                       "si la IP pública está directamente en outside_interface.",
+            message="PAT with use_interface_overload=False requires a pool.",
+            suggestion="Set pool_name/start/end/netmask, or use use_interface_overload=True "
+                       "if the public IP is directly on outside_interface.",
         ))
     elif not config.use_interface_overload and config.pool is not None:
         _validate_pool(config.pool, config.router, errors)
@@ -184,15 +183,15 @@ def _validate_inside_networks(config: NATConfig, errors: list[PlanError]) -> Non
                 errors.append(PlanError(
                     code=ErrorCode.NAT_INVALID_IP,
                     device=config.router,
-                    message=f"{label}: '{net}' no es un par 'network wildcard' válido.",
+                    message=f"{label}: '{net}' is not a valid 'network wildcard' pair.",
                     suggestion="Formato: 'A.B.C.D W.W.W.W' (ej: '192.168.1.0 0.0.0.255').",
                 ))
             continue
         errors.append(PlanError(
             code=ErrorCode.NAT_INVALID_IP,
             device=config.router,
-            message=f"{label}: formato inválido '{net}'.",
-            suggestion="Usa 'any', 'host A.B.C.D' o 'A.B.C.D wildcard'.",
+            message=f"{label}: invalid format '{net}'.",
+            suggestion="Use 'any', 'host A.B.C.D' or 'A.B.C.D wildcard'.",
         ))
 
 
@@ -201,26 +200,26 @@ def _validate_pool(pool: NATPool, router: str, errors: list[PlanError]) -> None:
     _require_ipv4(pool.end_ip, "pool.end_ip", router, errors)
     try:
         ipaddress.IPv4Address(pool.netmask)
-        # Verificar que sea máscara válida (no wildcard)
+        # Check that it is a valid mask (not a wildcard)
         packed = int(ipaddress.IPv4Address(pool.netmask))
-        # Una máscara de red válida tiene todos los 1s seguidos de todos los 0s
+        # A valid network mask has all the 1s followed by all the 0s
         if packed != 0:
             inverted = packed ^ 0xFFFFFFFF
             if (inverted & (inverted + 1)) != 0:
                 errors.append(PlanError(
                     code=ErrorCode.NAT_INVALID_NETMASK,
                     device=router,
-                    message=f"pool.netmask '{pool.netmask}' no es una máscara de subred válida.",
-                    suggestion="Usa formato máscara (ej: '255.255.255.0'), NO wildcard.",
+                    message=f"pool.netmask '{pool.netmask}' is not a valid subnet mask.",
+                    suggestion="Use mask format (e.g. '255.255.255.0'), NOT wildcard.",
                 ))
     except ValueError:
         errors.append(PlanError(
             code=ErrorCode.NAT_INVALID_NETMASK,
             device=router,
-            message=f"pool.netmask '{pool.netmask}' no es una IPv4 válida.",
+            message=f"pool.netmask '{pool.netmask}' is not a valid IPv4 address.",
         ))
 
-    # Verificar que start <= end (solo si ambas son IPv4 válidas)
+    # Check that start <= end (only if both are valid IPv4)
     try:
         start = int(ipaddress.IPv4Address(pool.start_ip))
         end = int(ipaddress.IPv4Address(pool.end_ip))
@@ -228,10 +227,10 @@ def _validate_pool(pool: NATPool, router: str, errors: list[PlanError]) -> None:
             errors.append(PlanError(
                 code=ErrorCode.NAT_POOL_RANGE_INVALID,
                 device=router,
-                message=f"pool.start_ip '{pool.start_ip}' es mayor que pool.end_ip '{pool.end_ip}'.",
+                message=f"pool.start_ip '{pool.start_ip}' is greater than pool.end_ip '{pool.end_ip}'.",
             ))
     except ValueError:
-        pass  # ya reportado arriba
+        pass  # already reported above
 
 
 def _require_ipv4(value: str, label: str, router: str, errors: list[PlanError]) -> None:
@@ -241,5 +240,5 @@ def _require_ipv4(value: str, label: str, router: str, errors: list[PlanError]) 
         errors.append(PlanError(
             code=ErrorCode.NAT_INVALID_IP,
             device=router,
-            message=f"{label}: '{value}' no es una IPv4 válida.",
+            message=f"{label}: '{value}' is not a valid IPv4 address.",
         ))

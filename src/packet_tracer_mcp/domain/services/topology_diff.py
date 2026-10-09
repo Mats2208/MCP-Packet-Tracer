@@ -1,21 +1,21 @@
 """
-Diff y health-check de topología: comparan el plan contra la topología viva de PT
-(salida estructurada de _live_devices: [{name, model, ports:[{name,ip,mask,up,linked}]}]).
-Lógica pura, sin bridge — testeable con dicts sintéticos.
+Topology diff and health check: they compare the plan against PT's live topology
+(structured output of _live_devices: [{name, model, ports:[{name,ip,mask,up,linked}]}]).
+Pure logic, no bridge — testable with synthetic dicts.
 """
 
 from __future__ import annotations
 
 from ..models.plans import TopologyPlan
 
-# Categorias cuyos puertos NUNCA llevan IP: son de capa 2 o transparentes. Un
-# puerto de acceso de un 2960, los de un AP y el Ethernet6 de la nube salian
-# listados como "cableado sin IP" en cada barrido, y ese ruido tapaba el unico
-# caso que importa: el host al que el DHCP no le llego.
+# Categories whose ports NEVER carry an IP: they are layer 2 or transparent. An
+# access port on a 2960, the ports of an AP, and the cloud's Ethernet6 used to show
+# up as "cabled without IP" on every sweep, and that noise hid the only
+# case that matters: the host that never got a DHCP address.
 #
-# Se resuelve por modelo contra el catalogo y no por getClassName(): PT clasifica
-# por comportamiento, asi que un 3560 responde "Router" y un 2960 "CiscoDevice"
-# -- ninguno dice nunca "switch".
+# It is resolved by model against the catalog, not by getClassName(): PT classifies
+# by behavior, so a 3560 answers "Router" and a 2960 "CiscoDevice"
+# -- none of them ever says "switch".
 _L2_CATEGORIES = frozenset({
     "switch", "accesspoint", "hub", "bridge", "repeater", "cloud",
     "modem", "splitter", "patch_panel", "wall_mount", "cell_tower",
@@ -24,10 +24,10 @@ _L2_CATEGORIES = frozenset({
 
 
 def _carries_ip(model_name: str) -> bool:
-    """True si a un puerto de este modelo se le espera una IP.
+    """True if a port of this model is expected to have an IP.
 
-    Un modelo que no resuelve se reporta igual: mejor un falso positivo que
-    callarse un host sin direccion.
+    A model that does not resolve is reported anyway: better a false positive than
+    silencing a host with no address.
     """
     from ...infrastructure.catalog.devices import resolve_model
     model = resolve_model(model_name or "")
@@ -37,14 +37,14 @@ def _carries_ip(model_name: str) -> bool:
 
 
 def diff(plan: TopologyPlan, live: list[dict]) -> dict:
-    """Compara el plan contra la topología viva. Reporta divergencias."""
+    """Compares the plan against the live topology. Reports divergences."""
     plan_devices = {d.name: d for d in plan.devices}
     plan_names = set(plan_devices)
     live_by_name = {d.get("name"): d for d in live}
     live_names = set(live_by_name)
 
-    missing_devices = sorted(plan_names - live_names)   # en el plan, faltan en PT
-    extra_devices = sorted(live_names - plan_names)     # en PT, no en el plan
+    missing_devices = sorted(plan_names - live_names)   # in the plan, missing in PT
+    extra_devices = sorted(live_names - plan_names)     # in PT, not in the plan
 
     ip_mismatches = []
     for name in sorted(plan_names & live_names):
@@ -70,7 +70,7 @@ def diff(plan: TopologyPlan, live: list[dict]) -> dict:
 
 
 def health_check(live: list[dict]) -> dict:
-    """Barrido de salud sobre la topología viva."""
+    """Health sweep over the live topology."""
     down_links = []
     unconfigured = []
     ip_owners: dict[str, list[str]] = {}

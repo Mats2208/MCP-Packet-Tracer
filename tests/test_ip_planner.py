@@ -54,14 +54,14 @@ class TestPoolExhaustion:
         planner = IPPlanner("192.168.1.0/24", "10.0.0.0/16")
         assert str(planner.next_lan_subnet()) == "192.168.1.0/24"  # la única
 
-        with pytest.raises(ValueError, match=r"agotaron.*/24.*192\.168\.1\.0/24"):
+        with pytest.raises(ValueError, match=r"Ran out of /24.*192\.168\.1\.0/24"):
             planner.next_lan_subnet()
 
     def test_link_pool_exhaustion_explains_itself(self):
         planner = IPPlanner("192.168.0.0/16", "10.0.0.0/30")
         planner.next_link_subnet()
 
-        with pytest.raises(ValueError, match=r"agotaron.*/30"):
+        with pytest.raises(ValueError, match=r"Ran out of /30"):
             planner.next_link_subnet()
 
 

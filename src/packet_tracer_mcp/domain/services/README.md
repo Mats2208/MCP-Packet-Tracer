@@ -1,133 +1,133 @@
 # domain/services/
 
-6 servicios de negocio que implementan toda la lógica de planificación, validación y transformación de topologías. No dependen de infraestructura — solo de modelos del dominio.
+6 business services that implement all of the topology planning, validation and transformation logic. They do not depend on infrastructure — only on domain models.
 
-## Archivos
+## Files
 
-### `orchestrator.py` — Pipeline principal
+### `orchestrator.py` — Main pipeline
 
-Transforma un `TopologyRequest` en un `TopologyPlan` completo y validado.
+Transforms a `TopologyRequest` into a complete, validated `TopologyPlan`.
 
-**Función principal:**
+**Main function:**
 ```python
 plan_from_request(request: TopologyRequest) → tuple[TopologyPlan, ValidationResult]
 ```
 
-**Pipeline interno:**
-1. Normaliza `pcs_per_lan` y `laptops_per_lan` (expande int → lista por router)
-2. `_create_devices()` — Crea routers, switches, PCs, laptops, APs, servers, cloud
-3. `_create_links()` — Conecta dispositivos según template (router↔router, router↔switch, switch↔PC, etc.)
-4. `ip_planner.plan_addressing()` — Asigna IPs, DHCP pools, rutas
-5. `_create_validations()` — Genera tests de ping post-despliegue
-6. `validate_plan()` — Validación final del plan
+**Internal pipeline:**
+1. Normalizes `pcs_per_lan` and `laptops_per_lan` (expands an int → a list per router)
+2. `_create_devices()` — Creates routers, switches, PCs, laptops, APs, servers, cloud
+3. `_create_links()` — Connects devices according to the template (router↔router, router↔switch, switch↔PC, etc.)
+4. `ip_planner.plan_addressing()` — Assigns IPs, DHCP pools, routes
+5. `_create_validations()` — Generates post-deployment ping tests
+6. `validate_plan()` — Final validation of the plan
 
-**Layout automático:** Calcula posiciones X/Y basándose en constantes de `shared/constants.py` para distribución visual en el canvas de PT.
+**Automatic layout:** Computes X/Y positions based on constants in `shared/constants.py` for visual distribution on the PT canvas.
 
-**Funciones helper:**
-- `_normalize_pcs(value, count)` — Convierte int a lista replicada
-- `_normalize_laptops(value, count)` — Igual para laptops
+**Helper functions:**
+- `_normalize_pcs(value, count)` — Converts an int to a replicated list
+- `_normalize_laptops(value, count)` — Same for laptops
 
 ---
 
-### `ip_planner.py` — Motor de direccionamiento IP
+### `ip_planner.py` — IP addressing engine
 
-Asigna direcciones IP a todas las interfaces, configura DHCP y genera rutas.
+Assigns IP addresses to all interfaces, configures DHCP and generates routes.
 
-**Clase:** `IPPlanner`
+**Class:** `IPPlanner`
 
-| Método | Descripción |
+| Method | Description |
 |--------|-------------|
-| `__init__(lan_base, link_base)` | Inicializa generadores de subredes |
-| `next_lan_subnet()` | Siguiente subred /24 para LAN |
-| `next_link_subnet()` | Siguiente subred /30 para enlace inter-router |
-| `plan_addressing(plan, routing, dhcp, ...)` | Pipeline completo de asignación |
+| `__init__(lan_base, link_base)` | Initializes the subnet generators |
+| `next_lan_subnet()` | Next /24 subnet for a LAN |
+| `next_link_subnet()` | Next /30 subnet for an inter-router link |
+| `plan_addressing(plan, routing, dhcp, ...)` | Full assignment pipeline |
 
-**Esquema de direccionamiento:**
-- **LANs:** `192.168.x.0/24` — Gateway = `.1`, PCs desde `.2`
-- **Inter-router:** `10.0.x.0/30` — 2 hosts por enlace
+**Addressing scheme:**
+- **LANs:** `192.168.x.0/24` — Gateway = `.1`, PCs from `.2`
+- **Inter-router:** `10.0.x.0/30` — 2 hosts per link
 
-**Generación de rutas:**
-| Método | Protocolo | Descripción |
+**Route generation:**
+| Method | Protocol | Description |
 |--------|-----------|-------------|
-| `_plan_static_routes()` | static | Descubrimiento BFS + generación de `ip route` |
-| `_plan_ospf()` | OSPF | router-id, networks con wildcard mask, area 0 |
+| `_plan_static_routes()` | static | BFS discovery + `ip route` generation |
+| `_plan_ospf()` | OSPF | router-id, networks with wildcard mask, area 0 |
 | `_plan_rip()` | RIP v2 | networks classful, no auto-summary |
-| `_plan_eigrp()` | EIGRP | AS number, networks con wildcard, no auto-summary |
-| `_plan_floating_static_routes()` | static (backup) | Rutas alternativas con AD=254 |
+| `_plan_eigrp()` | EIGRP | AS number, networks with wildcard, no auto-summary |
+| `_plan_floating_static_routes()` | static (backup) | Alternative routes with AD=254 |
 
 ---
 
-### `validator.py` — Orquestador de validación
+### `validator.py` — Validation orchestrator
 
-Ejecuta todas las reglas de validación sobre un plan.
+Runs all validation rules against a plan.
 
-**Función principal:**
+**Main function:**
 ```python
 validate_plan(plan: TopologyPlan) → ValidationResult
 ```
 
-**Flujo:** Llama secuencialmente a:
-1. `validate_devices(plan)` — desde `rules/device_rules.py`
-2. `validate_links(plan)` — desde `rules/cable_rules.py`
-3. `validate_ips(plan)` — desde `rules/ip_rules.py`
-4. `validate_dhcp(plan)` — desde `rules/ip_rules.py`
+**Flow:** Calls the following in sequence:
+1. `validate_devices(plan)` — from `rules/device_rules.py`
+2. `validate_links(plan)` — from `rules/cable_rules.py`
+3. `validate_ips(plan)` — from `rules/ip_rules.py`
+4. `validate_dhcp(plan)` — from `rules/ip_rules.py`
 
-Sincroniza errores/warnings de vuelta a `plan.errors` y `plan.warnings` para compatibilidad.
+Syncs errors/warnings back to `plan.errors` and `plan.warnings` for compatibility.
 
 ---
 
-### `auto_fixer.py` — Auto-corrección de errores
+### `auto_fixer.py` — Automatic error correction
 
-Corrige automáticamente errores comunes en planes mal formados.
+Automatically fixes common errors in malformed plans.
 
-**Función principal:**
+**Main function:**
 ```python
 fix_plan(plan: TopologyPlan) → tuple[TopologyPlan, list[str]]
 ```
 
-Retorna el plan corregido + lista de fixes aplicados (human-readable).
+Returns the corrected plan + a list of applied fixes (human-readable).
 
-**Correcciones disponibles:**
-| Fix interno | Qué corrige |
+**Available fixes:**
+| Internal fix | What it fixes |
 |-------------|-------------|
-| `_fix_cables()` | Tipo de cable incorrecto → infiere el correcto según categorías |
-| `_fix_insufficient_ports()` | Router sin suficientes puertos GigE → upgrade a modelo 2911 |
-| `_fix_invalid_ports()` | Puerto inexistente → reasigna al primer puerto válido disponible |
+| `_fix_cables()` | Wrong cable type → infers the correct one from device categories |
+| `_fix_insufficient_ports()` | Router without enough GigE ports → upgrades to model 2911 |
+| `_fix_invalid_ports()` | Nonexistent port → reassigns to the first valid available port |
 
 ---
 
-### `explainer.py` — Generador de explicaciones
+### `explainer.py` — Explanation generator
 
-Produce explicaciones en lenguaje natural de las decisiones del plan.
+Produces natural-language explanations of the plan's decisions.
 
-**Función principal:**
+**Main function:**
 ```python
 explain_plan(plan: TopologyPlan) → list[str]
 ```
 
-**Genera explicaciones sobre:**
-- Conteo de dispositivos por categoría
-- Estrategia de subredes (LANs y enlaces)
-- Tipos de cable usados y razón
-- Configuración DHCP (pools, exclusiones)
-- Protocolo de routing y configuración
-- Tests de validación incluidos
+**Explains:**
+- Device count per category
+- Subnet strategy (LANs and links)
+- Cable types used and why
+- DHCP configuration (pools, exclusions)
+- Routing protocol and configuration
+- Included validation tests
 
 ---
 
-### `estimator.py` — Estimación sin build completo
+### `estimator.py` — Estimation without a full build
 
-Dry-run que estima complejidad y recursos sin generar el plan completo.
+Dry run that estimates complexity and resources without generating the full plan.
 
-**Funciones:**
-| Función | Entrada | Salida |
+**Functions:**
+| Function | Input | Output |
 |---------|---------|--------|
-| `estimate_from_request(request)` | `TopologyRequest` | `dict` con conteos estimados |
-| `estimate_from_plan(plan)` | `TopologyPlan` | `dict` con conteos reales + estado |
-| `_estimate_complexity(req)` | `TopologyRequest` | `str`: "simple", "moderada", "compleja", "muy compleja" |
+| `estimate_from_request(request)` | `TopologyRequest` | `dict` with estimated counts |
+| `estimate_from_plan(plan)` | `TopologyPlan` | `dict` with actual counts + status |
+| `_estimate_complexity(req)` | `TopologyRequest` | `str`: "simple", "moderate", "complex", "very complex" |
 
-**Criterios de complejidad:**
-- **Simple:** ≤2 routers, sin WAN, routing estático
-- **Moderada:** 3–4 routers, o OSPF/EIGRP
-- **Compleja:** 5–8 routers, o WAN + routing dinámico
-- **Muy compleja:** 9+ routers
+**Complexity criteria:**
+- **Simple:** ≤2 routers, no WAN, static routing
+- **Moderate:** 3–4 routers, or OSPF/EIGRP
+- **Complex:** 5–8 routers, or WAN + dynamic routing
+- **Very complex:** 9+ routers

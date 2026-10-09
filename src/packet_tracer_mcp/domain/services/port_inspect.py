@@ -1,31 +1,31 @@
 """
-Resumen de la inspección de puertos vivos de PT.
+Summary of the live port inspection of PT.
 
-Lógica pura, sin bridge — testeable con dicts sintéticos, igual que topology_diff.
+Pure logic, no bridge — testable with synthetic dicts, same as topology_diff.
 
-El detalle por puerto lo devuelve el lector del bridge; acá solo se agrega y se
-marcan las anomalías que un humano miraría primero. pt_health_check ya cubre el
-barrido de toda la topología (links caídos, IPs duplicadas): esto es la vista de
-detalle de UN dispositivo, así que no repite esos chequeos globales.
+The per-port detail is returned by the bridge reader; here we only aggregate and
+flag the anomalies a human would look at first. pt_health_check already covers the
+sweep of the whole topology (dropped links, duplicate IPs): this is the detail view
+of ONE device, so it does not repeat those global checks.
 """
 
 from __future__ import annotations
 
-# Verificado contra PT 9.0.0.0810: getNatMode() devuelve 0 en un puerto limpio y
-# 1 tras `ip nat inside`. El 2 es el único valor restante en IOS (`ip nat
-# outside`) — inferido, no observado.
+# Verified against PT 9.0.0.0810: getNatMode() returns 0 on a clean port and
+# 1 after `ip nat inside`. 2 is the only remaining value in IOS (`ip nat
+# outside`) — inferred, not observed.
 NAT_MODES = {0: "none", 1: "inside", 2: "outside"}
 
 
 def nat_mode_label(raw) -> str:
-    """Etiqueta legible del modo NAT; deja pasar el crudo si aparece un valor nuevo."""
+    """Human-readable label for the NAT mode; passes the raw value through if a new one appears."""
     return NAT_MODES.get(raw, f"unknown({raw})")
 
 
 def summarize_ports(devices: list[dict]) -> dict:
-    """Agrega el detalle por puerto y marca anomalías.
+    """Aggregates the per-port detail and flags anomalies.
 
-    `devices` es [{name, model, ports: [{name, up, linked, ip, ...}]}].
+    `devices` is [{name, model, ports: [{name, up, linked, ip, ...}]}].
     """
     total = 0
     up = 0
@@ -44,18 +44,18 @@ def summarize_ports(devices: list[dict]) -> dict:
                 linked += 1
 
             pname = port.get("name", "?")
-            # Cable puesto y el puerto no levanta: es el síntoma clásico de un
-            # `shutdown` olvidado o de un tipo de cable equivocado.
+            # Cable plugged in but the port does not come up: the classic symptom of a
+            # forgotten `shutdown` or of the wrong cable type.
             if p_linked and not p_up:
                 anomalies.append({
                     "device": dname, "port": pname, "issue": "linked_but_down",
-                    "detail": "Tiene cable pero el puerto está down (¿shutdown o cable incorrecto?).",
+                    "detail": "Cabled but the port is down (shutdown, or the wrong cable?).",
                 })
-            # Capa 1 arriba pero protocolo abajo: encapsulación o keepalive.
+            # Layer 1 up but protocol down: encapsulation or keepalive.
             elif p_up and not port.get("protocol_up", True):
                 anomalies.append({
                     "device": dname, "port": pname, "issue": "protocol_down",
-                    "detail": "Línea up pero protocolo down (encapsulación o keepalive).",
+                    "detail": "Line up but protocol down (encapsulation or keepalive).",
                 })
 
     return {

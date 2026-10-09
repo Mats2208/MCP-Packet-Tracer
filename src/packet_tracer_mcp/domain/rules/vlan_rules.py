@@ -1,4 +1,4 @@
-"""Validación estática y contra-topología de un VLANPlan."""
+"""Static and topology-level validation of a VLANPlan."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .text_rules import has_control_chars
 
 
 def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
-    """Valida un VLANPlan sin tocar PT (rangos, duplicados, coherencia)."""
+    """Validates a VLANPlan without touching PT (ranges, duplicates, consistency)."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -18,22 +18,22 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.VLAN_INVALID_ID,
                 device=plan.switch or plan.router,
-                message=f"VLAN id {v.vlan_id} fuera de rango (1-4094).",
-                suggestion="Usa un id entre 1 y 4094 (evita 1002-1005 reservadas).",
+                message=f"VLAN id {v.vlan_id} out of range (1-4094).",
+                suggestion="Use an id between 1 and 4094 (avoid the reserved 1002-1005).",
             ))
         if v.name and has_control_chars(v.name):
             errors.append(PlanError(
                 code=ErrorCode.VLAN_INVALID_NAME,
                 device=plan.switch or plan.router,
-                message=f"El nombre de la VLAN {v.vlan_id} contiene un salto de línea.",
-                suggestion="Usa un nombre de VLAN de una sola línea.",
+                message=f"The name of VLAN {v.vlan_id} contains a line break.",
+                suggestion="Use a single-line VLAN name.",
             ))
         if v.vlan_id in seen:
             errors.append(PlanError(
                 code=ErrorCode.VLAN_DUPLICATE_ID,
                 device=plan.switch or plan.router,
                 message=f"VLAN id {v.vlan_id} duplicada.",
-                suggestion="Cada VLAN debe declararse una sola vez.",
+                suggestion="Each VLAN must be declared only once.",
             ))
         seen.add(v.vlan_id)
 
@@ -43,8 +43,8 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
             warnings.append(PlanError(
                 code=ErrorCode.VLAN_INVALID_ID,
                 device=ap.switch,
-                message=f"Puerto {ap.port} asignado a VLAN {ap.vlan_id} no declarada.",
-                suggestion="Declara la VLAN en `vlans` o usa una existente.",
+                message=f"Port {ap.port} assigned to undeclared VLAN {ap.vlan_id}.",
+                suggestion="Declare the VLAN in `vlans` or use an existing one.",
             ))
 
     for t in plan.trunks:
@@ -52,8 +52,8 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
             errors.append(PlanError(
                 code=ErrorCode.VLAN_INVALID_ID,
                 device=t.switch,
-                message=f"Native VLAN {t.native_vlan} fuera de rango.",
-                suggestion="Usa una native vlan válida (default 1).",
+                message=f"Native VLAN {t.native_vlan} out of range.",
+                suggestion="Use a valid native VLAN (default 1).",
             ))
 
     for s in plan.subinterfaces:
@@ -61,8 +61,8 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
             warnings.append(PlanError(
                 code=ErrorCode.VLAN_INVALID_ID,
                 device=s.router,
-                message=f"Subinterfaz {s.parent_port}.{s.vlan_id} para VLAN no declarada.",
-                suggestion="La subinterfaz debe corresponder a una VLAN access del switch.",
+                message=f"Subinterface {s.parent_port}.{s.vlan_id} for an undeclared VLAN.",
+                suggestion="The subinterface must match an access VLAN on the switch.",
             ))
 
     return ValidationResult(errors=errors, warnings=warnings)
@@ -71,7 +71,7 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
 def validate_vlan_against_topology(
     plan: VLANPlan, devices_in_pt: list[dict]
 ) -> ValidationResult:
-    """Valida que el switch/router (y sus puertos) existan en la topología activa de PT."""
+    """Checks that the switch/router (and its ports) exist in PT's active topology."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -91,18 +91,18 @@ def validate_vlan_against_topology(
         errors.append(PlanError(
             code=ErrorCode.VLAN_SWITCH_NOT_FOUND,
             device=plan.switch,
-            message=f"Switch '{plan.switch}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Switch '{plan.switch}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
     if plan.router and plan.router not in by_name:
         errors.append(PlanError(
             code=ErrorCode.VLAN_ROUTER_NOT_FOUND,
             device=plan.router,
-            message=f"Router '{plan.router}' no existe en la topología activa.",
-            suggestion="Llama a pt_query_topology para ver los nombres reales.",
+            message=f"Router '{plan.router}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
 
-    # Validar puertos de trunks/access contra el modelo (si el switch existe)
+    # Validate trunk/access ports against the model (if the switch exists)
     if plan.switch in by_name:
         valid = _ports_of(plan.switch)
         if valid:
@@ -111,19 +111,19 @@ def validate_vlan_against_topology(
                     errors.append(PlanError(
                         code=ErrorCode.VLAN_INTERFACE_NOT_FOUND,
                         device=plan.switch,
-                        message=f"Puerto access '{ap.port}' no existe en {by_name[plan.switch].get('model')}.",
-                        suggestion=f"Puertos válidos: {', '.join(sorted(valid))}",
+                        message=f"Access port '{ap.port}' does not exist on {by_name[plan.switch].get('model')}.",
+                        suggestion=f"Valid ports: {', '.join(sorted(valid))}",
                     ))
             for t in plan.trunks:
                 if t.port not in valid:
                     errors.append(PlanError(
                         code=ErrorCode.VLAN_TRUNK_PORT_INVALID,
                         device=plan.switch,
-                        message=f"Puerto trunk '{t.port}' no existe en {by_name[plan.switch].get('model')}.",
-                        suggestion=f"Puertos válidos: {', '.join(sorted(valid))}",
+                        message=f"Trunk port '{t.port}' does not exist on {by_name[plan.switch].get('model')}.",
+                        suggestion=f"Valid ports: {', '.join(sorted(valid))}",
                     ))
 
-    # Subinterfaces: el puerto padre debe existir en el router
+    # Subinterfaces: the parent port must exist on the router
     if plan.router in by_name:
         valid_r = _ports_of(plan.router)
         if valid_r:
@@ -132,8 +132,8 @@ def validate_vlan_against_topology(
                     errors.append(PlanError(
                         code=ErrorCode.VLAN_INTERFACE_NOT_FOUND,
                         device=plan.router,
-                        message=f"Puerto padre '{s.parent_port}' no existe en {by_name[plan.router].get('model')}.",
-                        suggestion=f"Puertos válidos: {', '.join(sorted(valid_r))}",
+                        message=f"Parent port '{s.parent_port}' does not exist on {by_name[plan.router].get('model')}.",
+                        suggestion=f"Valid ports: {', '.join(sorted(valid_r))}",
                     ))
 
     return ValidationResult(errors=errors, warnings=warnings)

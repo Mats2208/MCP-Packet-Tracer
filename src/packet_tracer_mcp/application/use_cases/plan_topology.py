@@ -1,4 +1,4 @@
-"""Use case: planificar topología."""
+"""Use case: plan topology."""
 
 from __future__ import annotations
 from ...domain.models.requests import TopologyRequest
@@ -11,7 +11,7 @@ from ..dto.requests import PlanTopologyDTO
 
 
 def plan_topology(dto: PlanTopologyDTO) -> tuple[TopologyPlan, ValidationResult]:
-    """Crea un plan desde un DTO."""
+    """Creates a plan from a DTO."""
     kwargs: dict = dict(
         routers=dto.routers,
         pcs_per_lan=dto.pcs_per_lan,

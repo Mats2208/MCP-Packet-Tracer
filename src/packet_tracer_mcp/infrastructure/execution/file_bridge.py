@@ -1,26 +1,26 @@
-"""Transporte por archivo entre el servidor MCP y el Script Engine de Packet Tracer.
+"""File transport between the MCP server and Packet Tracer's Script Engine.
 
-Por qué existe, además del bridge HTTP:
-El polling HTTP vive en el webview de la extensión (la ventana). Si el usuario la
-cierra, el webview muere y PT deja de ejecutar comandos — aunque la extensión
-siga instalada. El Script Engine, en cambio, corre SIEMPRE que PT está abierto
-(sin ventana), tiene setInterval y acceso a archivos, pero NO tiene
-XMLHttpRequest. Así que el canal con el Script Engine no puede ser HTTP: es un
-buzón de archivos.
+Why it exists, in addition to the HTTP bridge:
+HTTP polling lives in the extension's webview (the window). If the user closes it,
+the webview dies and PT stops running commands — even though the extension
+remains installed. The Script Engine, in contrast, runs WHENEVER PT is open
+(no window), has setInterval and file access, but does NOT have
+XMLHttpRequest. So the channel with the Script Engine cannot be HTTP: it is a
+file mailbox.
 
-Coexistencia (no reemplazo): HTTP sigue siendo el canal cuando la ventana está
-abierta; este canal toma el relevo cuando está cerrada. El enrutado (elegir uno
-por request, nunca ambos) vive en el adaptador; acá solo está el transporte.
+Coexistence (not replacement): HTTP remains the channel while the window is
+open; this channel takes over when it is closed. Routing (choosing one
+per request, never both) lives in the adapter; only the transport lives here.
 
-Seguridad: el buzón vive bajo %LOCALAPPDATA% con ACL de usuario, igual que el
-token. Una página web del navegador no puede escribir un archivo local, así que
-este canal no tiene el vector CORS que obligó a autenticar el HTTP. La confianza
-es la misma que el modelo de amenaza ya asume: el usuario local.
+Security: the mailbox lives under %LOCALAPPDATA% with a user ACL, just like the
+token. A web page in the browser cannot write a local file, so this channel does
+not have the CORS vector that forced the HTTP channel to authenticate. The trust
+level is the same one the threat model already assumes: the local user.
 
-Protocolo (un archivo por request, escritura atómica tmp+rename):
-    Python  ─ escribe req_<seq>.js  (atómico) ─►  Script Engine
-    Python  ◄─ lee/borra res_<seq>.txt        ─   escribe res, borra req
-    Script Engine toca alive.txt cada tick (heartbeat de vida)
+Protocol (one file per request, atomic write tmp+rename):
+    Python  ─ writes req_<seq>.js  (atomic) ─►  Script Engine
+    Python  ◄─ reads/deletes res_<seq>.txt    ─   writes res, deletes req
+    Script Engine touches alive.txt every tick (liveness heartbeat)
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ from pathlib import Path
 
 from .bridge_token import token_dir
 
-# Subdirectorio del buzón, bajo el mismo dir del token.
+# Mailbox subdirectory, under the same dir as the token.
 _BRIDGE_SUBDIR = "bridge"
 
-# El Script Engine se considera vivo si tocó alive.txt hace menos que esto.
+# The Script Engine is considered alive if it touched alive.txt less than this long ago.
 HEARTBEAT_FRESH_S = 6.0
 
 
@@ -49,10 +49,10 @@ def ensure_bridge_dir() -> Path:
 
 
 class FileBridge:
-    """Lado Python del buzón de archivos.
+    """Python side of the file mailbox.
 
-    Sin estado propio salvo un contador de secuencia; el estado real son los
-    archivos en disco, para que sobreviva a reinicios del proceso.
+    No state of its own beyond a sequence counter; the real state is the
+    files on disk, so it survives process restarts.
     """
 
     def __init__(self, directory: Path | None = None):
@@ -60,15 +60,15 @@ class FileBridge:
         self._seq = 0
 
     def _ensure(self) -> None:
-        # Crea SIEMPRE self.dir, no el default del módulo: si se pasó un
-        # directorio propio (tests, config), la creación y la escritura tienen
-        # que apuntar al mismo lugar.
+        # ALWAYS creates self.dir, not the module default: if a custom
+        # directory was passed (tests, config), creation and writing must
+        # point to the same place.
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    # -- vida del Script Engine ----------------------------------------
+    # -- Script Engine liveness ----------------------------------------
 
     def pt_alive(self) -> bool:
-        """True si el Script Engine tocó su heartbeat hace poco."""
+        """True if the Script Engine touched its heartbeat recently."""
         alive = self.dir / "alive.txt"
         try:
             age = time.time() - alive.stat().st_mtime
@@ -76,28 +76,28 @@ class FileBridge:
             return False
         return age < HEARTBEAT_FRESH_S
 
-    # -- envío ----------------------------------------------------------
+    # -- sending ----------------------------------------------------------
 
     def _next_name(self) -> str:
-        # Secuencia monotónica dentro del proceso + pid para no chocar entre
-        # procesos MCP concurrentes que compartan el mismo buzón.
+        # Monotonic sequence within the process + pid, so concurrent MCP
+        # processes sharing the same mailbox do not collide.
         self._seq += 1
         return f"{os.getpid()}_{self._seq:06d}"
 
     def _write_atomic(self, path: Path, text: str) -> None:
-        # tmp + replace: el Script Engine, que lista el directorio, nunca ve un
-        # archivo a medio escribir (replace es atómico dentro del volumen).
+        # tmp + replace: the Script Engine, which lists the directory, never sees a
+        # half-written file (replace is atomic within the volume).
         #
-        # Bytes EXACTOS: escribir en binario, no write_text. En Windows el modo
-        # texto traduce \n -> \r\n, y un CR/LF real dentro de un string literal
-        # JS es SyntaxError. El comando (p.ej. configureIosDevice con \n entre
-        # líneas de CLI) debe llegar al Script Engine tal cual se generó.
+        # EXACT bytes: write in binary, not write_text. On Windows text mode
+        # translates \n -> \r\n, and a real CR/LF inside a JS string literal is a
+        # SyntaxError. The command (e.g. configureIosDevice with \n between
+        # CLI lines) must reach the Script Engine exactly as it was generated.
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_bytes(text.encode("utf-8"))
         os.replace(tmp, path)
 
     def send(self, js_code: str) -> bool:
-        """Encola un comando fire-and-forget. No espera resultado."""
+        """Queues a fire-and-forget command. Does not wait for a result."""
         try:
             self._ensure()
             name = self._next_name()
@@ -107,10 +107,10 @@ class FileBridge:
             return False
 
     def send_and_wait(self, js_code: str, timeout: float = 12.0) -> str | None:
-        """Encola un comando y espera su res_<name>.txt.
+        """Queues a command and waits for its res_<name>.txt.
 
-        El Script Engine envuelve la ejecución y escribe el resultado; acá se
-        sondea la aparición del archivo de respuesta y se lo consume.
+        The Script Engine wraps the execution and writes the result; here the
+        appearance of the response file is polled and then consumed.
         """
         try:
             self._ensure()
@@ -133,8 +133,8 @@ class FileBridge:
             except OSError:
                 pass
             time.sleep(0.1)
-        # Timeout: dejamos el req por si el SE lo procesa tarde, pero limpiamos
-        # el res si apareció entre el último chequeo y ahora.
+        # Timeout: we leave the req in case the Script Engine processes it late, but we clean
+        # up the res if it appeared between the last check and now.
         try:
             res_path.unlink(missing_ok=True)
         except OSError:

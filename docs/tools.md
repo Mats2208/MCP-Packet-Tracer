@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **62 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -68,8 +68,56 @@ still open. Every tool below works over either. See [Live deploy](live-deploy.md
 | `pt_rename_device` | Rename a device. |
 | `pt_move_device` | Move a device to new canvas coordinates. |
 | `pt_set_port` | Low-level port attributes (bandwidth, duplex, description, MAC, power). |
-| `pt_add_module` | Install one expansion module (auto power-cycle). |
+| `pt_add_module` | Install one expansion module (auto power-cycle). Reports `installed`/`failed` directly; it used to always time out. |
+| `pt_remove_module` | Remove the module in a slot (auto power-cycle) and report which ports disappeared. |
 | `pt_install_modules_batch` | Install several modules in one power-cycle (preferred for many). |
+
+## Device panel: CLI, Desktop and Services
+
+Everything a student does inside a device's window, done through PT's own API: no
+mouse, no keyboard, nothing taken over on screen. What you type with `pt_cli` shows
+up in the device's real CLI tab, so the user can watch or take over at any time.
+
+| Tool | Window it drives | What it does |
+|------|------------------|--------------|
+| `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
+| `pt_host_command` | Desktop › Command Prompt | `ping`, `ipconfig`, `tracert`, `arp -a`, `nslookup`, `telnet`/`ssh` (answers via `inputs`). |
+| `pt_terminal` | PC Desktop › Terminal | Find the router at the other end of the PC's console cable and type on its console, as from the PC's Terminal app. |
+| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig. |
+| `pt_host_firewall` | Desktop › Firewall | Inbound IPv4/IPv6 firewall on or off. |
+| `pt_web_browser` | Desktop › Web Browser | Open a URL and return the page as text; in UI mode the window's own browser navigates. |
+| `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |
+| `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
+| `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
+| `pt_server_http` | Services › HTTP | Replace or create pages, switch HTTP/HTTPS. |
+| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts. |
+| `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
+
+### Headless or UI mode
+
+| Tool | What it does |
+|------|--------------|
+| `pt_ui_mode` | `headless` (default: nothing opens) or `ui` (every tool above also opens the device window on the matching tab/app). Persists across restarts; `PT_MCP_UI_MODE` overrides it. |
+| `pt_ui_open` | Open a device window on a tab (`CLI`, `Desktop`, `Services`, `Config`…), Desktop app (`command_prompt`, `web_browser`, `email`…) or section (`DHCP`, `FastEthernet0`…). |
+| `pt_ui_capture` | Save a PNG of a device window (or the main window), even when it is covered. Returns the path. |
+| `pt_ui_close` | Close one device window, or all of them. |
+
+Each panel tool also takes `show=True/False` for a single call (it wins over the
+mode) and `capture=True` to save a PNG once it is done. `output_dir` is a folder
+relative to the project root, as with `pt_screenshot`. Claude Code exposes the
+prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
+
+!!! note "UI mode needs Windows and the `[ui]` extra"
+    Windows are opened through Windows UI Automation and a click *posted* to the
+    canvas (the real cursor does not move), and captured with `PrintWindow`.
+    Install with `pip install "packet-tracer-mcp[ui]"` (adds `comtypes`). Headless
+    mode works everywhere.
+
+!!! warning "What PT 9.0.1 does not let an extension do"
+    PC Wireless profiles (the API throws `invalid vector subscript` on every
+    call), the Text Editor (no file API on PCs), the EMAIL service's *Domain
+    Name* and individual host-firewall rules. Open the window with `pt_ui_open`
+    and set those by hand.
 
 ## NAT & ACL
 

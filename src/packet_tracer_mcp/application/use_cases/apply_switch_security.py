@@ -28,7 +28,7 @@ def _run(cfg, static_validate, topo_validate, gen_cli, build_payload, device,
             warnings.extend(tr.warnings)
         except Exception as exc:  # pragma: no cover
             warnings.append(PlanError(code=ErrorCode.VALIDATION_ERROR,
-                                      message=f"No se pudo validar contra PT: {exc}"))
+                                      message=f"Could not validate against PT: {exc}"))
     cli_lines = gen_cli(cfg)
     js_call = build_switch_js_call(device, build_payload(cfg))
     sent = False

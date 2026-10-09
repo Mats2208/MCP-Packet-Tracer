@@ -1,8 +1,8 @@
 """
-Generador de scripts PTBuilder.
+PTBuilder script generator.
 
-Convierte un TopologyPlan validado en JavaScript compatible
-con la extensión PTBuilder de Packet Tracer.
+Converts a validated TopologyPlan into JavaScript compatible
+with the PTBuilder extension for Packet Tracer.
 """
 
 from __future__ import annotations
@@ -17,17 +17,17 @@ from ...shared.constants import (
 
 
 def generate_ptbuilder_script(plan: TopologyPlan) -> str:
-    """Genera un script JS de PTBuilder a partir de un plan validado.
+    """Generates a PTBuilder JS script from a validated plan.
 
-    Usa lwAddDevice/lwAddLink (helpers inyectados como runtime patches) en vez del
-    addDevice/addLink global — los helpers escriben al canvas Logical de PT, así
-    los devices y cables aparecen inmediatamente sin necesidad de save+reload.
+    Uses lwAddDevice/lwAddLink (helpers injected as runtime patches) instead of the
+    global addDevice/addLink — the helpers write to PT's Logical canvas, so devices
+    and cables appear immediately without needing a save+reload.
     """
     lines: list[str] = []
 
-    # json.dumps en cada campo de texto: un nombre con comillas o saltos de línea
-    # rompía el literal JS y el resto se ejecutaba como código en el Script Engine.
-    # Es el mismo patrón que ya usa generate_executable_script() más abajo.
+    # json.dumps on every text field: a name with quotes or line breaks broke the
+    # JS literal and the rest was executed as code in the Script Engine.
+    # It is the same pattern that generate_executable_script() below already uses.
     for dev in plan.devices:
         device_type = PT_DEVICE_TYPE.get(dev.category, PT_DEVICE_TYPE_DEFAULT)
         lines.append(
@@ -35,8 +35,8 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
             f'{json.dumps(dev.model)}, {int(dev.x)}, {int(dev.y)});'
         )
 
-    # Laptops WiFi: cambiar el NIC ethernet por uno inalámbrico (→ Wireless0). Debe ir
-    # antes de los links/config; la auto-asociación al AP es por RF (SSID default).
+    # WiFi laptops: swap the ethernet NIC for a wireless one (→ Wireless0). It must go
+    # before the links/config; auto-association to the AP is over RF (default SSID).
     for dev in plan.devices:
         if dev.category == "laptop" and getattr(dev, "wireless", False):
             lines.append(f'swapLaptopToWireless({json.dumps(dev.name)});')
@@ -59,8 +59,8 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
 
 def generate_executable_script(plan: TopologyPlan) -> str:
     """
-    Genera script JS completo y ejecutable: dispositivos, enlaces,
-    configureIosDevice() para routers/switches, y configurePcIp() para PCs.
+    Generates a complete, executable JS script: devices, links,
+    configureIosDevice() for routers/switches, and configurePcIp() for PCs.
     """
     from .cli_config_generator import generate_all_configs
 
@@ -76,9 +76,10 @@ def generate_executable_script(plan: TopologyPlan) -> str:
 
     pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
 
-    # Fix F17: con DHCP activo, el ÚLTIMO host cableado por LAN a veces no completa el
-    # DHCP DISCOVER. Como fallback determinista le asignamos IP estática (la que el planner
-    # ya calculó). Identificamos el último host por subred /24 (el de mayor IP).
+    # Fix F17: with DHCP active, the LAST wired host on a LAN sometimes does not
+    # complete the DHCP DISCOVER. As a deterministic fallback we assign it a static IP
+    # (the one the planner already calculated). We identify the last host per /24
+    # subnet (the one with the highest IP).
     last_host_per_subnet: dict[str, str] = {}
     if plan.dhcp_pools:
         host_ip: dict[str, str] = {}
@@ -114,9 +115,9 @@ def generate_executable_script(plan: TopologyPlan) -> str:
                         f'{json.dumps(ip)}, {json.dumps(mask)}, {json.dumps(gw)});'
                     )
         elif getattr(pc, "wireless", False) and plan.dhcp_pools:
-            # Laptop WiFi sin link cableado: toma DHCP por Wireless0 (asociada al AP).
+            # WiFi laptop with no wired link: gets DHCP via Wireless0 (associated with the AP).
             lines.append(f'configurePcIp({json.dumps(pc.name)}, true);')
-        # IPv6 dual-stack: host por SLAAC (auto-config desde el RA del router)
+        # IPv6 dual-stack: host via SLAAC (auto-config from the router's RA)
         if plan.dual_stack:
             lines.append(f'configurePcIpv6({json.dumps(pc.name)});')
 
@@ -125,8 +126,8 @@ def generate_executable_script(plan: TopologyPlan) -> str:
 
 def generate_full_script(plan: TopologyPlan) -> str:
     """
-    Genera el script completo: PTBuilder + bloque de configuración CLI
-    como comentarios (para referencia visual).
+    Generates the complete script: PTBuilder + the CLI configuration block
+    as comments (for visual reference).
     """
     from .cli_config_generator import generate_all_configs
 
@@ -135,8 +136,8 @@ def generate_full_script(plan: TopologyPlan) -> str:
 
     configs = generate_all_configs(plan)
     if configs:
-        parts.append("/* === Configuraciones CLI por dispositivo ===")
-        parts.append("Copiar y pegar en la CLI de cada dispositivo. */")
+        parts.append("/* === CLI configuration per device ===")
+        parts.append("Copy and paste into each device's CLI. */")
         for device_name, cli_block in configs.items():
             parts.append(f"/* --- {device_name} ---")
             for line in cli_block.splitlines():

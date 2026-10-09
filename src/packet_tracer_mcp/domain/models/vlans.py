@@ -1,28 +1,28 @@
-"""Modelos de VLAN / trunk / inter-VLAN routing (router-on-a-stick)."""
+"""VLAN / trunk / inter-VLAN routing (router-on-a-stick) models."""
 
 from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
 class VLANConfig(BaseModel):
-    """Una VLAN. `subnet` lo rellena el IP planner (ej "192.168.10.0/24")."""
+    """A VLAN. `subnet` is filled in by the IP planner (e.g. "192.168.10.0/24")."""
     vlan_id: int
     name: str = ""
     subnet: str = ""
 
 
 class AccessPortConfig(BaseModel):
-    """Un puerto de switch en modo access asignado a una VLAN."""
+    """A switch port in access mode assigned to a VLAN."""
     switch: str
     port: str
     vlan_id: int
 
 
 class TrunkConfig(BaseModel):
-    """Un puerto de switch en modo trunk.
+    """A switch port in trunk mode.
 
-    `allowed_vlans` vacío = todas. `encapsulation` solo se emite en switches
-    multi-encap (3560); el 2960 es dot1q-only y rechaza el comando.
+    Empty `allowed_vlans` = all. `encapsulation` is only emitted on
+    multi-encap switches (3560); the 2960 is dot1q-only and rejects the command.
     """
     switch: str
     port: str
@@ -32,7 +32,7 @@ class TrunkConfig(BaseModel):
 
 
 class SubinterfaceConfig(BaseModel):
-    """Una subinterfaz .1q en un router (inter-VLAN routing)."""
+    """A .1q subinterface on a router (inter-VLAN routing)."""
     router: str
     parent_port: str
     vlan_id: int
@@ -41,7 +41,7 @@ class SubinterfaceConfig(BaseModel):
 
 
 class VLANPlan(BaseModel):
-    """Agregado para la tool post-deploy `pt_apply_vlan`."""
+    """Aggregate for the post-deploy tool `pt_apply_vlan`."""
     router: str = ""
     switch: str = ""
     vlans: list[VLANConfig] = Field(default_factory=list)

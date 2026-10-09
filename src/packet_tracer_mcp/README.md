@@ -1,10 +1,10 @@
 # packet_tracer_mcp
 
-Módulo principal del servidor MCP para Cisco Packet Tracer.
+Main module of the MCP server for Cisco Packet Tracer.
 
-## Arquitectura
+## Architecture
 
-Sigue **Clean Architecture / Domain-Driven Design** con separación clara de capas:
+Follows **Clean Architecture / Domain-Driven Design** with a clear separation of layers:
 
 ```
 packet_tracer_mcp/
@@ -25,7 +25,7 @@ packet_tracer_mcp/
 └── __main__.py         → Entry point: python -m packet_tracer_mcp
 ```
 
-## Flujo de datos
+## Data flow
 
 ```
 Request → TopologyRequest → Orchestrator → TopologyPlan → Validator
@@ -35,15 +35,15 @@ Request → TopologyRequest → Orchestrator → TopologyPlan → Validator
                                     Executor (Manual / Deploy / Live Bridge)
 ```
 
-## Archivos raíz
+## Root files
 
-| Archivo | Propósito |
+| File | Purpose |
 |---------|-----------|
-| `server.py` | Crea la instancia `FastMCP`, registra tools/resources, arranca en HTTP (:39000) o stdio |
-| `__main__.py` | Entry point para `python -m packet_tracer_mcp` — invoca `server.main()` |
-| `settings.py` | Constantes globales: `VERSION` (0.4.0), `SERVER_NAME`, `SERVER_INSTRUCTIONS` |
+| `server.py` | Creates the `FastMCP` instance, registers tools/resources, starts over HTTP (:39000) or stdio |
+| `__main__.py` | Entry point for `python -m packet_tracer_mcp` — calls `server.main()` |
+| `settings.py` | Global constants: `VERSION` (0.4.0), `SERVER_NAME`, `SERVER_INSTRUCTIONS` |
 
-## Ejecución
+## Running
 
 ```bash
 # Streamable HTTP (default, puerto 39000)
@@ -53,7 +53,7 @@ python -m packet_tracer_mcp
 python -m packet_tracer_mcp --stdio
 ```
 
-## Dependencias entre capas
+## Layer dependencies
 
 ```
 adapters/mcp → application/use_cases → domain/services → domain/models
@@ -63,4 +63,4 @@ adapters/mcp → application/use_cases → domain/services → domain/models
                                          shared/ (enums, constants, utils)
 ```
 
-Sin dependencias circulares. La capa `domain` nunca importa de `infrastructure` directamente — la comunicación es a través de las interfaces.
+No circular dependencies. The `domain` layer never imports from `infrastructure` directly — communication goes through interfaces.

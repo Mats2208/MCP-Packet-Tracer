@@ -12,8 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows es la plataforma principal (Packet Tracer, portapapeles vía
-        # clip.exe). Ubuntu corre igual para detectar suposiciones de rutas.
+        # Windows is the primary platform (Packet Tracer, clipboard via
+        # clip.exe). Ubuntu runs the same to catch path assumptions.
         os: [windows-latest, ubuntu-latest]
         python-version: ["3.11", "3.13"]
 
@@ -30,8 +30,8 @@ jobs:
           python -m pip install -e ".[test]"
 
       - name: Run tests
-        # Token fijo para que los tests del bridge no toquen el archivo real
-        # del usuario que corre el runner.
+        # Fixed token so the bridge tests do not touch the real token file
+        # of the user who runs the runner.
         env:
           PT_MCP_BRIDGE_TOKEN: ci-token-long-enough-to-be-considered-valid-0123456789
         run: python -m pytest -q

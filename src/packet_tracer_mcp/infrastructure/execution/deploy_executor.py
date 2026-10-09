@@ -1,6 +1,6 @@
 """
-Ejecutor de despliegue: copia scripts al portapapeles de Windows
-y genera instrucciones paso a paso para Packet Tracer.
+Deploy executor: copies scripts to the Windows clipboard
+and generates step-by-step instructions for Packet Tracer.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .executor_base import ExecutorBase
 
 
 def _copy_to_clipboard(text: str) -> bool:
-    """Copia texto al portapapeles de Windows usando clip.exe."""
+    """Copies text to the Windows clipboard using clip.exe."""
     if sys.platform != "win32":
         return False
     try:
@@ -34,34 +34,34 @@ def _copy_to_clipboard(text: str) -> bool:
 
 class DeployExecutor(ExecutorBase):
     """
-    Despliega topología en Packet Tracer.
+    Deploys a topology to Packet Tracer.
 
-    Estrategia:
-    1. Genera el script PTBuilder (addDevice + addLink)
-    2. Lo copia al portapapeles de Windows
-    3. Exporta archivos a disco (configs CLI, plan JSON)
-    4. Devuelve instrucciones paso a paso
+    Strategy:
+    1. Generates the PTBuilder script (addDevice + addLink)
+    2. Copies it to the Windows clipboard
+    3. Exports files to disk (CLI configs, plan JSON)
+    4. Returns step-by-step instructions
     """
 
     def __init__(self, output_dir: str | Path = "projects"):
         self.output_dir = Path(output_dir)
 
     def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
-        """Despliega el plan: clipboard + archivos + instrucciones."""
+        """Deploys the plan: clipboard + files + instructions."""
         base_name = (project_name or plan.name or "topology").strip() or "topology"
         safe_name = safe_name_component(base_name)
         project_dir = resolve_within(self.output_dir, safe_name)
         project_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generar scripts
+        # Generate scripts
         topology_script = generate_ptbuilder_script(plan)
         full_script = generate_full_script(plan)
         configs = generate_all_configs(plan)
 
-        # Copiar script de topología al portapapeles
+        # Copy the topology script to the clipboard
         clipboard_ok = _copy_to_clipboard(topology_script)
 
-        # Guardar archivos a disco
+        # Save files to disk
         files: dict[str, str] = {}
 
         script_path = project_dir / "topology.js"
@@ -83,7 +83,7 @@ class DeployExecutor(ExecutorBase):
         plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
         files["plan_json"] = str(plan_path)
 
-        # Generar instrucciones
+        # Generate instructions
         instructions = self._build_instructions(
             plan, configs, clipboard_ok, project_dir
         )
@@ -99,7 +99,7 @@ class DeployExecutor(ExecutorBase):
         }
 
     def is_available(self) -> bool:
-        """Disponible si estamos en Windows (para clipboard)."""
+        """Available when running on Windows (for the clipboard)."""
         return sys.platform == "win32"
 
     @staticmethod
@@ -109,57 +109,57 @@ class DeployExecutor(ExecutorBase):
         clipboard_ok: bool,
         project_dir: Path,
     ) -> str:
-        """Genera instrucciones paso a paso para completar el despliegue."""
+        """Generates step-by-step instructions to complete the deployment."""
         steps: list[str] = []
 
-        # Paso 1: Script PTBuilder
+        # Step 1: PTBuilder script
         steps.append("=" * 60)
-        steps.append("PASO 1: Crear topologia en Packet Tracer")
+        steps.append("STEP 1: Create the topology in Packet Tracer")
         steps.append("=" * 60)
         if clipboard_ok:
-            steps.append("El script PTBuilder ya esta en tu portapapeles.")
+            steps.append("The PTBuilder script is already on your clipboard.")
             steps.append("")
-            steps.append("  1. Abre Packet Tracer")
-            steps.append("  2. Ve a Extensions > Scripting (o Builder Code Editor)")
-            steps.append("  3. Pega el script (Ctrl+V)")
-            steps.append("  4. Haz clic en 'Run' o presiona el boton de ejecutar")
+            steps.append("  1. Open Packet Tracer")
+            steps.append("  2. Go to Extensions > Scripting (or Builder Code Editor)")
+            steps.append("  3. Paste the script (Ctrl+V)")
+            steps.append("  4. Click 'Run' or press the run button")
             steps.append("")
-            steps.append(f"Los dispositivos y enlaces se crearan automaticamente.")
+            steps.append(f"The devices and links will be created automatically.")
         else:
-            steps.append(f"Abre el archivo: {project_dir / 'topology.js'}")
-            steps.append("Copia su contenido y pegalo en Packet Tracer:")
-            steps.append("  Extensions > Scripting > Pegar > Run")
+            steps.append(f"Open the file: {project_dir / 'topology.js'}")
+            steps.append("Copy its contents and paste them into Packet Tracer:")
+            steps.append("  Extensions > Scripting > Paste > Run")
 
-        # Paso 2: Configurar dispositivos
+        # Step 2: Configure devices
         routers = [d for d in plan.devices if d.category == "router"]
         switches = [d for d in plan.devices if d.category == "switch"]
 
         if configs:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 2: Configurar dispositivos")
+            steps.append("STEP 2: Configure the devices")
             steps.append("=" * 60)
 
             for router in routers:
                 if router.name in configs:
                     steps.append(f"")
                     steps.append(f"  {router.name}:")
-                    steps.append(f"    - Doble clic en {router.name} > pestaña CLI")
-                    steps.append(f"    - Pega el contenido de: {project_dir / f'{router.name}_config.txt'}")
+                    steps.append(f"    - Double-click {router.name} > CLI tab")
+                    steps.append(f"    - Paste the contents of: {project_dir / f'{router.name}_config.txt'}")
 
             for switch in switches:
                 if switch.name in configs:
                     steps.append(f"")
                     steps.append(f"  {switch.name}:")
-                    steps.append(f"    - Doble clic en {switch.name} > pestaña CLI")
-                    steps.append(f"    - Pega el contenido de: {project_dir / f'{switch.name}_config.txt'}")
+                    steps.append(f"    - Double-click {switch.name} > CLI tab")
+                    steps.append(f"    - Paste the contents of: {project_dir / f'{switch.name}_config.txt'}")
 
-        # Paso 3: Configurar PCs
+        # Step 3: Configure PCs
         pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
         if pcs:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 3: Configurar hosts (PCs)")
+            steps.append("STEP 3: Configure the hosts (PCs)")
             steps.append("=" * 60)
             for pc in pcs:
                 if plan.dhcp_pools:
@@ -169,13 +169,13 @@ class DeployExecutor(ExecutorBase):
                         ip = ip_cidr.split("/")[0]
                         steps.append(f"  {pc.name}: IP={ip}, Gateway={pc.gateway or 'N/A'}")
 
-        # Paso 4: Verificar
+        # Step 4: Verify
         if plan.validations:
             steps.append("")
             steps.append("=" * 60)
-            steps.append("PASO 4: Verificar conectividad")
+            steps.append("STEP 4: Verify connectivity")
             steps.append("=" * 60)
             for v in plan.validations:
-                steps.append(f"  {v.check_type}: {v.from_device} -> {v.to_target} (esperado: {v.expected})")
+                steps.append(f"  {v.check_type}: {v.from_device} -> {v.to_target} (expected: {v.expected})")
 
         return "\n".join(steps)

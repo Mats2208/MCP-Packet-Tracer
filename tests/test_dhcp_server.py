@@ -1,11 +1,13 @@
-"""Tests de pools DHCP en Server-PT (pt_configure_dhcp_server, issue #23).
+"""Tests for DHCP pools on a Server-PT (pt_configure_dhcp_server, issue #23).
 
-Firmas sacadas de la referencia IpcAPI que instala PT 9.0
-(class_dhcp_server_process / class_dhcp_pool) y verificadas en vivo: un PC en
-DHCP recibió IP, gateway y DNS del pool creado así. `DhcpServerMain` en sí no
-tiene métodos de pools: hay que bajar a `getDhcpServerProcessByPortName(port)`.
+Signatures taken from the IpcAPI reference that PT 9.0 installs
+(class_dhcp_server_process / class_dhcp_pool) and verified live: a PC on DHCP
+received IP, gateway and DNS from a pool created this way. `DhcpServerMain`
+itself has no pool methods: you have to go down to
+`getDhcpServerProcessByPortName(port)`.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -46,7 +48,7 @@ def _live(ip="192.168.10.2", ports=("FastEthernet0",)) -> list[dict]:
 
 class TestDefaults:
     def test_targets_the_factory_pool_by_default(self):
-        """La GUI muestra 'serverPool'; editarlo es lo que haría un humano."""
+        """The GUI shows 'serverPool'; editing it is what a human would do."""
         cfg = DhcpServerPool(device="S", network="10.0.0.0")
         assert cfg.pool_name == DEFAULT_SERVER_POOL == "serverPool"
         assert cfg.port == "FastEthernet0"
@@ -105,7 +107,7 @@ class TestValidation:
             validate_dhcp_server(_cfg(start_ip=start)))
 
     def test_range_past_broadcast_is_rejected(self):
-        """.3 + 253 usuarios llegaría a .255, el broadcast."""
+        """.3 + 253 users would reach .255, the broadcast."""
         assert ErrorCode.DHCP_SERVER_INVALID_RANGE in _codes(
             validate_dhcp_server(_cfg(max_users=253)))
 
@@ -118,7 +120,7 @@ class TestValidation:
 
     @pytest.mark.parametrize("bad", ["LAN\nB", "LAN\rB", "LAN B"])
     def test_line_terminator_in_pool_name_is_rejected(self, bad):
-        """El nombre viaja dentro de un literal JS de una sola línea."""
+        """The name travels inside a single-line JS literal."""
         assert ErrorCode.DHCP_INVALID_POOL_NAME in _codes(
             validate_dhcp_server(_cfg(pool_name=bad)))
 
@@ -127,7 +129,7 @@ class TestValidation:
             validate_dhcp_server(_cfg(pool_name="  ")))
 
     def test_gateway_inside_range_warns(self):
-        """Verificado en PT 9.0: el server SÍ reparte la IP del gateway."""
+        """Verified in PT 9.0: the server DOES hand out the gateway's IP."""
         result = validate_dhcp_server(_cfg(start_ip="192.168.10.1"))
         assert result.is_valid
         assert ErrorCode.DHCP_SERVER_RANGE_OVERLAP in _warn_codes(result)
@@ -149,7 +151,7 @@ class TestAgainstTopology:
         assert "FastEthernet0" in result.errors[0].suggestion
 
     def test_server_ip_inside_subnet_is_fine(self):
-        """PT salta la IP del propio servidor aunque caiga en el rango."""
+        """PT skips the server's own IP even if it falls in the range."""
         result = validate_dhcp_server_against_topology(_cfg(), _live())
         assert result.is_valid
         assert not result.warnings
@@ -167,31 +169,29 @@ class TestAgainstTopology:
 
 
 class TestToolPayload:
-    """Guards sobre el JS. Closures en register_tools → verificación por texto.
+    """Guards on the JS. Closures inside register_tools → checked as text.
 
-    El JS se arma con f-strings, así que en el FUENTE las llaves van dobladas.
+    The JS is built with f-strings, so in the SOURCE the braces are doubled.
     """
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_goes_through_the_per_port_process(self):
-        """El bug del issue: los métodos de pool NO están en DhcpServerMain."""
+        """The issue's bug: the pool methods are NOT on DhcpServerMain."""
         src = self._src()
         assert "getProcess('DhcpServerMain')" in src
         assert "__m.getDhcpServerProcessByPortName(" in src
 
     def test_network_mask_takes_network_and_mask(self):
-        """Con un solo argumento PT contesta 'Invalid arguments for IPC call'."""
+        """With a single argument PT answers 'Invalid arguments for IPC call'."""
         assert (
             "__p.setNetworkMask({json.dumps(cfg.network)}, {json.dumps(cfg.mask)})"
             in self._src()
         )
 
     def test_start_is_set_before_max_users(self):
-        """setMaxUsers recalcula el fin a partir del inicio."""
+        """setMaxUsers recomputes the end from the start."""
         src = self._src()
         assert src.index("__p.setStartIp(") < src.index("__p.setMaxUsers(")
 
@@ -219,9 +219,9 @@ class TestToolPayload:
             in self._src()
 
     def test_sent_response_drops_the_js(self):
-        """El JS solo sirve antes de mandarlo (dry_run); después es ruido."""
+        """The JS is only useful before sending it (dry_run); afterwards it is noise."""
         assert 'payload.pop("js_payload", None)' in self._src()
 
     def test_does_not_use_the_undocumented_add_new_pool(self):
-        """addNewPool tiene 8 argumentos sin nombre en la referencia: no se adivina."""
+        """addNewPool has 8 unnamed arguments in the reference: don't guess."""
         assert "addNewPool(" not in self._src()

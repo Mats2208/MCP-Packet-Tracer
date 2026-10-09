@@ -5,13 +5,12 @@ que TestReconcileWiring en test_live_reconcile.py. La forma de los datos está
 tomada de una lectura real contra PT 9.0.0.0810.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 
 def _src() -> str:
-    return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-        encoding="utf-8"
-    )
+    return registry_source()
 
 
 class TestBackupConfig:
@@ -41,7 +40,7 @@ class TestBackupConfig:
 
     def test_empty_startup_tells_the_user_what_to_do(self):
         """Un equipo sin `write memory` no tiene startup-config: no es un error."""
-        assert "write memory` en el equipo antes de respaldar" in _src()
+        assert "write memory` on the device before backing it up" in _src()
 
 
 class TestProjectMetadata:
@@ -56,7 +55,7 @@ class TestProjectMetadata:
 
     def test_unsaved_project_is_flagged(self):
         """Un proyecto sin guardar se pierde al cerrar PT; hay que decirlo."""
-        assert "Proyecto SIN guardar" in _src()
+        assert "Project NOT saved" in _src()
 
     def test_setter_is_feature_detected(self):
         assert "typeof __f.setNetworkDescription === 'function'" in _src()
@@ -71,7 +70,7 @@ class TestWorkspaceOptions:
         """PT expone dos de estas en negativo (`setDisableAutoCabling`,
         `setHideDevLabel`). Si el flag amistoso no se invierte, la tool hace
         exactamente lo contrario de lo que pide el usuario y en silencio."""
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 
@@ -83,7 +82,7 @@ class TestWorkspaceOptions:
         assert workspace_setter_call("show_device_labels", 0) == ("setHideDevLabel", "true, true")
 
     def test_positive_polarity_setters_are_not_inverted(self):
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 
@@ -96,7 +95,7 @@ class TestWorkspaceOptions:
     def test_hide_dev_label_carries_its_second_argument(self):
         """PT rechaza `setHideDevLabel(x)` con un solo argumento:
         `Invalid arguments for IPC call`. Verificado contra PT 9.0.1."""
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 
@@ -117,4 +116,4 @@ class TestWorkspaceOptions:
 
     def test_external_network_access_is_called_out(self):
         """Sacar tráfico del simulador a la red real merece un aviso."""
-        assert "acceso a la red REAL habilitado" in _src()
+        assert "access to the REAL network enabled" in _src()

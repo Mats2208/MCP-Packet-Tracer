@@ -1,4 +1,4 @@
-"""Use case: aplicar VLAN / trunk / inter-VLAN a una topología activa de PT."""
+"""Use case: apply VLAN / trunk / inter-VLAN to an active PT topology."""
 
 from __future__ import annotations
 from typing import Callable
@@ -44,7 +44,7 @@ def apply_vlan_uc(
     dry_run: bool = False,
     switch_model: str = "",
 ) -> dict:
-    """Valida + (opcionalmente) aplica VLANs/trunks al switch y subinterfaces al router."""
+    """Validates + (optionally) applies VLANs/trunks to the switch and subinterfaces to the router."""
     plan_result = validate_vlan_plan(plan)
     errors = list(plan_result.errors)
     warnings = list(plan_result.warnings)
@@ -61,10 +61,10 @@ def apply_vlan_uc(
             topo = validate_vlan_against_topology(plan, devices_in_pt)
             errors.extend(topo.errors)
             warnings.extend(topo.warnings)
-        except Exception as exc:  # pragma: no cover - defensivo
+        except Exception as exc:  # pragma: no cover - defensive
             warnings.append(PlanError(
                 code=ErrorCode.VALIDATION_ERROR,
-                message=f"No se pudo validar contra PT: {exc}",
+                message=f"Could not validate against PT: {exc}",
             ))
 
     cli_lines: list[str] = []

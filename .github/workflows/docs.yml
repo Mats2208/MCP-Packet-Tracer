@@ -1,7 +1,7 @@
-# Las actions van en su major actual, que es el que corre sobre Node 24. Las de
-# la serie anterior declaran `using: node20` en su action.yml y GitHub ya las
-# venía forzando con un aviso en cada run; el día que deje de forzarlas, esto se
-# cae solo — y se cae publicando, que es cuando menos se mira.
+# Actions are pinned to their current major version, the one that runs on Node 24.
+# The previous major declares `using: node20` in its action.yml, and GitHub was
+# already forcing those with a warning on every run; the day it stops forcing them,
+# this breaks on its own — and it breaks while publishing, which is when nobody is looking.
 name: Deploy docs
 
 on:

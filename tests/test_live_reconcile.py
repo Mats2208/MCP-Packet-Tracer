@@ -1,5 +1,6 @@
 """Tests de reconcile (F16) y DHCP fallback del último host (F17)."""
 
+from tests._registry_src import registry_source
 import re
 from pathlib import Path
 
@@ -44,7 +45,7 @@ class TestDHCPFallback:
 
 class TestReconcileWiring:
     def test_pt_live_deploy_has_reconcile(self):
-        src = Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(encoding="utf-8")
+        src = registry_source()
         assert "Reconcile (fix F16)" in src
         assert "reconciled" in src
         assert "link_fail_objs" in src

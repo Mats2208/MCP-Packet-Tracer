@@ -1,10 +1,10 @@
-# Publica en PyPI con Trusted Publishing: PyPI confía en este workflow por su
-# identidad OIDC, así que no hay ningún token guardado en los secrets del repo.
-# Un token filtrado publica cualquier version desde cualquier lado; una
-# identidad OIDC solo vale para este repo, este workflow y este environment.
+# Publishes to PyPI with Trusted Publishing: PyPI trusts this workflow through its
+# OIDC identity, so no token is stored in the repo's secrets.
+# A leaked token publishes any version from anywhere; an OIDC identity is only
+# valid for this repo, this workflow and this environment.
 #
-# El disparador es un release PUBLICADO, no un push de tag. Un tag se empuja sin
-# querer; publicar un release es un acto deliberado con un botón de por medio.
+# The trigger is a PUBLISHED release, not a tag push. A tag gets pushed by accident;
+# publishing a release is a deliberate act with a button press in between.
 name: release
 
 on:
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       dry-run:
-        description: "Construir y validar sin publicar"
+        description: "Build and validate without publishing"
         type: boolean
         default: true
 
@@ -36,16 +36,16 @@ jobs:
       - name: Build
         run: python -m build
 
-      # El tag manda sobre lo que diga el archivo: si `pyproject.toml` quedó en
-      # 0.8.0 y el release se llama v0.9.0, PyPI se queda con 0.8.0 para
-      # siempre y esa version ya no se puede volver a subir. Mejor fallar acá.
+      # The tag takes precedence over what the file says: if `pyproject.toml` is still at
+      # 0.8.0 and the release is called v0.9.0, PyPI keeps 0.8.0 forever
+      # and that version can never be uploaded again. Better to fail here.
       - name: Tag matches version
         if: github.event_name == 'release'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           echo "tag=$TAG  pyproject=$VER"
-          test "$TAG" = "$VER" || { echo "::error::el tag $TAG no coincide con la version $VER de pyproject.toml"; exit 1; }
+          test "$TAG" = "$VER" || { echo "::error::tag $TAG does not match version $VER in pyproject.toml"; exit 1; }
 
       - name: Check metadata
         run: python -m twine check dist/*
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      # Lo único que hace falta para Trusted Publishing. Sin secrets.
+      # The only thing Trusted Publishing needs. No secrets.
       id-token: write
     steps:
       - uses: actions/download-artifact@v6
