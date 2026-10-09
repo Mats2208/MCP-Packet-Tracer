@@ -28,14 +28,22 @@ comments in Spanish or English following whatever the file already uses.
 | `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
 | `src/packet_tracer_mcp/application/` | Use cases: rules + generators, dependencies injected |
 | `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP + file bridges, device catalog |
-| `src/packet_tracer_mcp/adapters/mcp/` | `tool_registry.py` — the 62 original MCP tools; `device_panel_tools.py` + `desktop_service_tools.py` — the 17 device-panel tools (module-level, testable); `prompt_registry.py` — MCP prompts |
+| `src/packet_tracer_mcp/adapters/mcp/` | `tools/<topic>.py` — 62 tools, one `register(mcp, ctx)` each, run by `tool_registry.py`; `bridge_context.py` — the shared `BridgeContext`; `device_panel_tools.py` + `desktop_service_tools.py` — the 17 device-panel tools; `prompt_registry.py` / `resource_registry.py` — prompts and resources (`pt://guide`) |
 | `src/packet_tracer_mcp/infrastructure/ui/` | UI mode: Win32 + UI Automation presenter that opens/captures device windows (Windows only, `[ui]` extra) |
 | `EXTENSION/script-engine/` | Script-engine side of the extension. `main.js` is ours (tracked); the rest are PTBuilder reference copies (gitignored) |
 | `EXTENSION/webview/` | The MCP Control Center webview (`index.html` + `interface.js`) |
 
-`tool_registry.py` is ~3000 lines and every tool is a closure inside
-`register_tools()`. That means helpers defined there **cannot be imported by
-tests**. If you write a helper worth testing, put it in `shared/utils.py`.
+Start at `CODEMAP.md`: which file owns what, and which file holds each tool.
+It is generated — rerun `python -m src.packet_tracer_mcp.devtools.codemap`
+after adding a module or tool (a test fails when it is stale).
+
+Tools are closures inside each module's `register()`, so helpers defined
+there **cannot be imported by tests**: put a helper worth testing at module
+level or in `shared/utils.py`. Tool replies go through `reply_json()`
+(compact, drops JS once sent). Tests cap `SERVER_INSTRUCTIONS` at 2,000 chars
+(Claude Code cuts at 2,048) and tool descriptions at 1,500; longer notes go
+in `settings.GUIDE`, served as `pt://guide`. `tests/fixtures/tool_api.json`
+snapshots the tool API — regenerate with `UPDATE_TOOL_API=1` only on purpose.
 
 ## Rules that are not negotiable
 
