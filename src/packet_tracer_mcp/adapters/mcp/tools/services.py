@@ -15,6 +15,7 @@ from ....domain.rules.dhcp_server_rules import (
     validate_dhcp_server_against_topology,
 )
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -143,10 +144,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         if errors:
             payload["summary"] = f"❌ NetFlow: {len(errors)} error(s); nothing was sent."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
         if dry_run:
             payload["summary"] = "✅ NetFlow valid. dry_run mode — NOT sent to the bridge."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         err = _check_bridge()
         if err:
@@ -184,7 +185,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"⚠ '{name}' exists on {device} but PT reports it incomplete: "
                 "without a destination it exports no flows."
             )
-        return json.dumps(payload, indent=2, ensure_ascii=False)
+        return reply_json(payload)
 
     # ------------------------------------------------------------------
     # DHCP ON A SERVER-PT — native API, a Server-PT has no CLI (issue #23)
@@ -380,10 +381,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         }
         if errors:
             payload["summary"] = f"❌ DHCP server: {len(errors)} error(s); nothing was sent."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
         if dry_run:
             payload["summary"] = "✅ Pool is valid. dry_run mode — NOT sent to the bridge."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         err = _check_bridge()
         if err:
@@ -453,7 +454,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                     + (" The unconfigured factory serverPool was deleted."
                        if data.get("dropped_factory_pool") else "")
                 )
-        return json.dumps(payload, indent=2, ensure_ascii=False)
+        return reply_json(payload)
 
     # ------------------------------------------------------------------
     # QoS — READ ONLY: PT's API does not allow creating class/policy-maps
@@ -551,4 +552,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             f"{len(pmaps)} policy-map(s). QoS is read-only through the API: "
             "to configure it use IOS CLI."
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)

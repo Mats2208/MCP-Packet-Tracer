@@ -8,6 +8,7 @@ from ....domain.models.plans import TopologyPlan
 from ....domain.services.topology_diff import diff as topology_diff, health_check
 from ....domain.services.port_inspect import nat_mode_label, summarize_ports
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -42,7 +43,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                  f"{len(result['extra_devices'])} extra(s), "
                  f"{len(result['ip_mismatches'])} IP mismatch(es)."
         )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        return reply_json(result)
 
     @mcp.tool()
     def pt_health_check() -> str:
@@ -63,7 +64,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             else f"⚠ {len(result['down_links'])} link(s) down, "
                  f"{len(result['duplicate_ips'])} duplicate IP(s)."
         )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        return reply_json(result)
 
     # ------------------------------------------------------------------
     # PORT INSPECTION — physical and logical state read from the device
@@ -186,7 +187,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if not anomalies
             else f"⚠ {len(anomalies)} anomaly(ies) in {result['ports_total']} port(s)."
         )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        return reply_json(result)
 
     # ------------------------------------------------------------------
     # POWER ON / OFF of devices
@@ -269,4 +270,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"⚠ Asked for {verb} but PT reports power={data['after']}. "
                 "The model may not support the change."
             )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)

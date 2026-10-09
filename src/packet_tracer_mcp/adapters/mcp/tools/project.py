@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from mcp.server.fastmcp import FastMCP
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 # Workspace options: MCP flag → (PT method, is it inverted?).
@@ -134,7 +135,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"{len(lines)} line(s) of startup-config from '{device}' "
                 f"({data.get('model')}, serial {data.get('serial')})."
             )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     @mcp.tool()
     def pt_project_metadata(description: str = "") -> str:
@@ -200,7 +201,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                else "Project NOT saved — use pt_save_project to persist it.")
             + (" Description updated." if new_desc else "")
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     @mcp.tool()
     def pt_workspace_options(
@@ -305,4 +306,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         data["summary"] = (
             f"{len(applied)} option(s) changed. " if sets else "Read only. "
         ) + ("; ".join(notes) if notes else "Default configuration.")
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)

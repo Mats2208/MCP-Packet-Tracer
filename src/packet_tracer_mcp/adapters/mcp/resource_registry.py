@@ -5,7 +5,6 @@ Define recursos estáticos que el LLM puede consultar.
 """
 
 from __future__ import annotations
-import json
 from mcp.server.fastmcp import FastMCP
 
 from ...infrastructure.catalog.devices import ALL_MODELS
@@ -13,6 +12,7 @@ from ...infrastructure.catalog.cables import CABLE_TYPES
 from ...infrastructure.catalog.aliases import MODEL_ALIASES
 from ...infrastructure.catalog.templates import list_templates
 from ...shared.constants import CAPABILITIES
+from ...shared.utils import reply_json
 
 
 def register_resources(mcp: FastMCP) -> None:
@@ -28,17 +28,17 @@ def register_resources(mcp: FastMCP) -> None:
                 "category": model.category,
                 "ports": [p.full_name for p in model.ports],
             }
-        return json.dumps(catalog, indent=2, ensure_ascii=False)
+        return reply_json(catalog)
 
     @mcp.resource("pt://catalog/cables")
     def resource_cable_catalog() -> str:
         """Tipos de cable disponibles en Packet Tracer."""
-        return json.dumps(CABLE_TYPES, indent=2, ensure_ascii=False)
+        return reply_json(CABLE_TYPES)
 
     @mcp.resource("pt://catalog/aliases")
     def resource_aliases() -> str:
         """Alias comunes para modelos de dispositivos."""
-        return json.dumps(MODEL_ALIASES, indent=2, ensure_ascii=False)
+        return reply_json(MODEL_ALIASES)
 
     @mcp.resource("pt://catalog/templates")
     def resource_templates() -> str:
@@ -54,7 +54,7 @@ def register_resources(mcp: FastMCP) -> None:
                 "default_routing": t.default_routing.value,
                 "tags": list(t.tags),
             })
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     @mcp.resource("pt://capabilities")
     async def resource_capabilities() -> str:
@@ -84,4 +84,4 @@ def register_resources(mcp: FastMCP) -> None:
             }
         except Exception:
             pass
-        return json.dumps(caps, indent=2, ensure_ascii=False)
+        return reply_json(caps)

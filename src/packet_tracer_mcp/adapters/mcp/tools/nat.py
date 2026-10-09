@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from mcp.server.fastmcp import FastMCP
 from ....application.use_cases.apply_nat import build_nat_config, apply_nat_uc, remove_nat_uc
 from ..bridge_context import BridgeContext
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -134,7 +134,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         elif result["valid"] and not result["sent"]:
             summary_lines.append("⚠ Bridge OK but sending failed.")
 
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary_lines),
             "mode": mode,
             "valid": result["valid"],
@@ -144,7 +144,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_remove_nat(
@@ -201,7 +201,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         else:
             summary.append("⚠ Sending failed.")
 
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary),
             "valid": result["valid"],
             "errors": result["errors"],
@@ -210,4 +210,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })

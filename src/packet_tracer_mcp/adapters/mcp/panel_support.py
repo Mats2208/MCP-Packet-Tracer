@@ -12,6 +12,7 @@ from ...infrastructure.execution.console_session import format_run, run_commands
 from ...infrastructure.ui.presenter import Presenter, PresenterError
 from ...shared.ui_mode import UiModeStore
 from ...shared.utils import resolve_within, safe_name_component
+from ...shared.utils import reply_json
 
 SendAndWait = Callable[[str, float], Optional[str]]
 
@@ -117,7 +118,7 @@ def with_notes(payload: dict | str, notes: list[str]) -> str:
     if isinstance(payload, dict):
         if notes:
             payload["notes"] = notes
-        return json.dumps(payload, indent=2, ensure_ascii=False)
+        return reply_json(payload)
     return payload + ("\n\n" + "\n".join(notes) if notes else "")
 
 

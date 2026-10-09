@@ -8,6 +8,7 @@ from ....domain.models.acls import ACLBinding
 from ....application.use_cases.apply_acl import build_acl_plan, apply_acl_uc, remove_acl_uc
 from ....infrastructure.generator.acl_cli_generator import generate_acl_cli
 from ..bridge_context import BridgeContext
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -120,7 +121,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         elif result["valid"] and not result["sent"]:
             summary_lines.append("⚠ Bridge OK but sending failed.")
 
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary_lines),
             "valid": result["valid"],
             "errors": result["errors"],
@@ -129,7 +130,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_apply_acl_object(
@@ -179,7 +180,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         )
 
         if not result["valid"]:
-            return json.dumps({
+            return reply_json({
                 "summary": f"❌ ACL '{plan.name_or_number}' has {len(result['errors'])} error(s).",
                 "valid": False,
                 "errors": result["errors"],
@@ -187,7 +188,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "sent": False,
                 "dry_run": dry_run,
                 "backend": "objects",
-            }, indent=2, ensure_ascii=False)
+            })
 
         # Convert CLI lines to statements (without the "access-list NAME " prefix)
         cli_lines = generate_acl_cli(plan)
@@ -250,16 +251,16 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"[dry_run] ACL '{plan.name_or_number}' ready: "
                 f"{len(statements)} statement(s) + binding={bound}. JS NOT sent."
             )
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         if not bridge_ok:
             payload["summary"] = "⚠ Bridge not connected — payload generated but NOT sent."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
         if response is None:
             payload["summary"] = "No answer from PT."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         try:
             r = json.loads(response)
@@ -276,7 +277,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception:
             payload["summary"] = f"Unexpected reply: {response}"
 
-        return json.dumps(payload, indent=2, ensure_ascii=False)
+        return reply_json(payload)
 
     @mcp.tool()
     def pt_remove_acl_object(
@@ -344,16 +345,16 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"[dry_run] payload generated to remove ACL '{name_or_number}' "
                 f"on '{router}' (binding={bound_label}). NOT sent."
             )
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         if not bridge_ok:
             payload["summary"] = "⚠ Bridge not connected — payload generated but NOT sent."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
         if response is None:
             payload["summary"] = "No answer from PT."
-            return json.dumps(payload, indent=2, ensure_ascii=False)
+            return reply_json(payload)
 
         try:
             r = json.loads(response)
@@ -369,7 +370,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception:
             payload["summary"] = f"Unexpected reply: {response}"
 
-        return json.dumps(payload, indent=2, ensure_ascii=False)
+        return reply_json(payload)
 
     @mcp.tool()
     def pt_remove_acl(
@@ -417,7 +418,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         else:
             summary.append("⚠ Sending failed.")
 
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary),
             "valid": result["valid"],
             "errors": result["errors"],
@@ -426,4 +427,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })

@@ -14,7 +14,6 @@ desktop_service_tools.py.
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Callable, Optional
 
@@ -31,6 +30,7 @@ from .desktop_service_tools import register_desktop_service_tools
 from .panel_support import (
     PanelSupport, console_tool_run, errors_text, screenshot_path, with_notes,
 )
+from ...shared.utils import reply_json
 
 __all__ = ["register_device_panel_tools", "screenshot_path"]
 
@@ -226,7 +226,7 @@ def register_device_panel_tools(
         info["summary"] = f"Capture saved to {info['path']} ({info['width']}x{info['height']})."
         if info.get("blank"):
             info["summary"] += " Note: it came out a single colour; retry with the window visible."
-        return json.dumps(info, indent=2, ensure_ascii=False)
+        return reply_json(info)
 
     # ------------------------------------------------------------------
     # IP Configuration / panel
@@ -332,7 +332,7 @@ def register_device_panel_tools(
         if error:
             return error
         data.pop("ok", None)
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     # ------------------------------------------------------------------
     # Physical
@@ -349,7 +349,7 @@ def register_device_panel_tools(
             return "Error: empty slot."
         js = remove_module_js(device, slot_s)
         if dry_run:
-            return json.dumps({"js_payload": js, "sent": False, "dry_run": True}, indent=2)
+            return reply_json({"js_payload": js, "sent": False, "dry_run": True})
         err = check_bridge()
         if err:
             return err

@@ -315,7 +315,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         parts.append("=" * 60)
         parts.append("PLAN JSON (for programmatic use)")
         parts.append("=" * 60)
-        parts.append(plan.model_dump_json(indent=2))
+        parts.append(plan.model_dump_json())
 
         return "\n".join(parts)
 

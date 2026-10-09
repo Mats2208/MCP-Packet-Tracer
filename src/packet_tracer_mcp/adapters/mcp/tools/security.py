@@ -6,6 +6,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from ....domain.services.security_audit import audit_security
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -145,4 +146,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"⚠ {counts['high']} high finding(s), {counts['medium']} medium, "
                 f"{counts['low']} low on {result['devices_audited']} device(s)."
             )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        return reply_json(result)

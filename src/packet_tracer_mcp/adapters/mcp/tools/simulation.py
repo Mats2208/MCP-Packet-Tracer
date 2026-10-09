@@ -6,6 +6,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from ....domain.services.packet_trace import summarize_trace, traffic_type_label
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -64,7 +65,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if data["before"] != data["after"]
             else f"Already in {mode} mode; no changes."
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     @mcp.tool()
     def pt_simulation_step(action: str = "forward", times: int = 1) -> str:
@@ -135,7 +136,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             f"{act} x{data['steps']} — {data['frames_after']} frame(s) in the event list "
             f"(before {data['frames_before']})."
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)
 
     @mcp.tool()
     def pt_read_packet_trace(
@@ -270,4 +271,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             result["summary"] = (
                 f"⚠ {len(result['failures'])} frame(s) did not reach their destination. {reasons}"
             )
-        return json.dumps(result, indent=2, ensure_ascii=False)
+        return reply_json(result)

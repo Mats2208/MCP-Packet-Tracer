@@ -11,6 +11,7 @@ from ....application.use_cases.apply_hardening import build_hardening_config, ap
 from ....application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ....domain.models.interface_tuning import InterfaceTuning
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -90,7 +91,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         elif result["valid"] and not bridge_ok:
             summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
 
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary),
             "valid": result["valid"],
             "errors": result["errors"],
@@ -99,7 +100,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })
 
     def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
         summary = []
@@ -111,7 +112,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             summary.append("📤 Applied through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
             summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
-        return json.dumps({
+        return reply_json({
             "summary": "\n".join(summary),
             "valid": result["valid"],
             "errors": result["errors"],
@@ -120,7 +121,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_apply_stp(
@@ -389,4 +390,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             f"{len(vlans) - len(custom)} factory. "
             f"Model maximum: {data.get('max_vlans')}."
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)

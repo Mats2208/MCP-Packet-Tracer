@@ -8,6 +8,7 @@ from ....infrastructure.generator.host_js import add_module_js
 from ..bridge_context import BridgeContext
 from ....infrastructure.catalog.modules import ALL_MODULES, resolve_module, ports_for_slot
 from ....shared.utils import js_escape
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -61,11 +62,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             })
 
         items.sort(key=lambda x: (x["category"], x["name"]))
-        return json.dumps({
+        return reply_json({
             "count": len(items),
             "filter": {"router_model": rm or None, "category": cat or None},
             "modules": items,
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_add_module(
@@ -124,7 +125,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         ports_added = ", ".join(slot_ports) if slot_ports else "(no ports)"
 
         if dry_run:
-            return json.dumps({
+            return reply_json({
                 "summary": f"[dry_run] Payload generated to install {spec.name} on {device_name} slot {slot_s}.",
                 "device": device_name,
                 "slot": slot_s,
@@ -135,7 +136,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
                 "sent": False,
                 "dry_run": True,
-            }, indent=2, ensure_ascii=False)
+            })
 
         # Check bridge + PT
         err = _check_bridge()
@@ -268,10 +269,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             })
 
         if errors:
-            return json.dumps({
+            return reply_json({
                 "error": "Validation failed",
                 "details": errors,
-            }, indent=2, ensure_ascii=False)
+            })
 
         # Build a single one-liner JS: power-off of the unique devices → addModule × N → power-on
         unique_devs = []
@@ -332,7 +333,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         if dry_run:
             summary["summary"] = f"[dry_run] {len(validated)} module(s) on {len(unique_devs)} device(s)."
-            return json.dumps(summary, indent=2, ensure_ascii=False)
+            return reply_json(summary)
 
         err = _check_bridge()
         if err:
@@ -364,7 +365,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"Batch sent ({len(validated)} module(s)) but PT did not confirm in time.\n"
                 "Check with pt_query_topology which ones were installed."
             )
-            return json.dumps(summary, indent=2, ensure_ascii=False)
+            return reply_json(summary)
 
         # "R1|0/0|ok;R1|0/2|fail" — a slot that doesn't exist on the model returns
         # false without throwing, so without this phantom ports were reported.
@@ -393,11 +394,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "That slot does not exist on that model — check pt_list_modules and the "
                 "correct slot for the router's family."
             )
-            return json.dumps(summary, indent=2, ensure_ascii=False)
+            return reply_json(summary)
 
         summary["summary"] = (
             f"Batch sent: {len(validated)} module(s) on {len(unique_devs)} device(s).\n"
             f"PT is powering off, installing and powering back on in a single step. "
             f"Check with pt_query_topology or by querying getPorts() on each router."
         )
-        return json.dumps(summary, indent=2, ensure_ascii=False)
+        return reply_json(summary)

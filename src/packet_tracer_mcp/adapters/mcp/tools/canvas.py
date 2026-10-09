@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import safe_name_component, resolve_within
 from ....domain.services.canvas import CanvasImageError, decode_pt_image, normalize_format
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -83,12 +84,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except (OSError, ValueError) as exc:
             return f"Could not write the image: {exc}"
 
-        return json.dumps({
+        return reply_json({
             "path": str(target),
             "format": image_fmt,
             "bytes": len(blob),
             "summary": f"✅ Capture saved to {target} ({len(blob):,} bytes).",
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_add_note(x: int, y: int, text: str) -> str:
@@ -134,10 +135,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return _TIMEOUT_MSG
         if raw.startswith("ERROR:"):
             return f"PT error: {raw}"
-        return json.dumps({
+        return reply_json({
             "id": raw.strip(),
             "summary": f"✅ Note added at ({x},{y}).",
-        }, indent=2, ensure_ascii=False)
+        })
 
     @mcp.tool()
     def pt_clear_annotations(kind: str = "all") -> str:
@@ -225,4 +226,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if data.get("removed")
             else f"There were no annotations to remove{nota}"
         )
-        return json.dumps(data, indent=2, ensure_ascii=False)
+        return reply_json(data)

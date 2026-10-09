@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 import ipaddress
+import json
 import re
 from pathlib import Path
+from typing import Any
 from .constants import PREFIX_TO_MASK
 
 # Caracteres permitidos en un componente de ruta. Todo lo demás se reemplaza por "_",
@@ -148,3 +150,19 @@ def first_ip(interfaces: dict[str, str]) -> str:
     for ip_cidr in interfaces.values():
         return ip_cidr.split("/")[0]
     return "0.0.0.0"
+
+
+def to_json(obj: Any) -> str:
+    """Compact JSON for tool replies: every later turn re-sends them, so no indentation."""
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def reply_json(obj: Any) -> str:
+    """A tool reply as compact JSON, minus the generated JS once it has been sent.
+
+    The JS only helps before sending (dry_run, or bridge down so it can be pasted
+    by hand); after a send it is kilobytes of noise in the conversation.
+    """
+    if isinstance(obj, dict) and obj.get("sent") is True and not obj.get("dry_run")             and "js_payload" in obj:
+        obj = {k: v for k, v in obj.items() if k != "js_payload"}
+    return to_json(obj)

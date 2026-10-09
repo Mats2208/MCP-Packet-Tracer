@@ -27,6 +27,7 @@ from ....infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ....infrastructure.catalog.aliases import MODEL_ALIASES
 from ....infrastructure.catalog.templates import list_templates
 from ....shared.enums import RoutingProtocol, TopologyTemplate
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -92,7 +93,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             ],
             "total_ports": len(model.ports),
         }
-        return json.dumps(info, indent=2, ensure_ascii=False)
+        return reply_json(info)
 
     # ------------------------------------------------------------------
     # ESTIMATION (dry-run)
@@ -136,7 +137,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             routing=RoutingProtocol(routing),
         )
         est = estimate_from_request(request)
-        return json.dumps(est, indent=2, ensure_ascii=False)
+        return reply_json(est)
 
     # ------------------------------------------------------------------
     # PLANNING
@@ -214,7 +215,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             wireless_laptops=wireless_laptops,
         )
         plan, validation = plan_from_request(request)
-        return plan.model_dump_json(indent=2)
+        return plan.model_dump_json()
 
     # ------------------------------------------------------------------
     # VALIDATION
@@ -230,17 +231,17 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         try:
             raw = json.loads(plan_json)
         except json.JSONDecodeError as exc:
-            return json.dumps({
+            return reply_json({
                 "valid": False,
                 "error_count": 1,
                 "warning_count": 0,
                 "errors": [{"code": "INVALID_JSON", "message": f"Invalid JSON: {exc.msg}"}],
                 "warnings": [],
                 "summary": "❌ Invalid JSON — the plan could not be parsed.",
-            }, indent=2, ensure_ascii=False)
+            })
 
         if not isinstance(raw, dict) or "devices" not in raw or not raw.get("devices"):
-            return json.dumps({
+            return reply_json({
                 "valid": False,
                 "error_count": 1,
                 "warning_count": 0,
@@ -250,7 +251,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 }],
                 "warnings": [],
                 "summary": "❌ Empty or unstructured plan — it must include at least one device.",
-            }, indent=2, ensure_ascii=False)
+            })
 
         plan = TopologyPlan.model_validate_json(plan_json)
         result = validate_plan(plan)
@@ -260,7 +261,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             output["summary"] = "✅ Valid plan. No errors."
         else:
             output["summary"] = f"❌ Plan with {len(result.errors)} error(s)."
-        return json.dumps(output, indent=2, ensure_ascii=False)
+        return reply_json(output)
 
     # ------------------------------------------------------------------
     # AUTO-FIX
@@ -277,12 +278,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         plan = TopologyPlan.model_validate_json(plan_json)
         fixed_plan, fixes = fix_plan(plan)
 
-        return json.dumps({
+        return reply_json({
             "fixes_applied": fixes,
             "fixes_count": len(fixes),
             "is_valid": fixed_plan.is_valid,
             "plan": json.loads(fixed_plan.model_dump_json()),
-        }, indent=2, ensure_ascii=False)
+        })
 
     # ------------------------------------------------------------------
     # EXPLANATION
@@ -436,7 +437,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         projects = repo.list_projects()
         if not projects:
             return "There are no saved projects."
-        return json.dumps(projects, indent=2, ensure_ascii=False)
+        return reply_json(projects)
 
     @mcp.tool()
     def pt_load_project(project_name: str, output_dir: str = "projects") -> str:
@@ -449,4 +450,4 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         repo = ProjectRepository(base_dir=output_dir)
         plan = repo.load_plan(project_name)
-        return plan.model_dump_json(indent=2)
+        return plan.model_dump_json()
