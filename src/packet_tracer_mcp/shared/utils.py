@@ -1,4 +1,4 @@
-"""Utilidades compartidas."""
+"""Shared utilities."""
 
 from __future__ import annotations
 import ipaddress
@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any
 from .constants import PREFIX_TO_MASK
 
-# Caracteres permitidos en un componente de ruta. Todo lo demás se reemplaza por "_",
-# incluidos los separadores (/ \), los dos puntos de unidad (C:) y los NUL.
+# Characters allowed in a path component. Everything else is replaced by "_",
+# including separators (/ \), drive colons (C:) and NUL bytes.
 _UNSAFE_PATH_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
-# Nombres reservados por Windows: crear "CON.txt" o "NUL" falla de forma opaca.
+# Names reserved by Windows: creating "CON.txt" or "NUL" fails opaquely.
 _WINDOWS_RESERVED = {
     "CON", "PRN", "AUX", "NUL",
     *(f"COM{i}" for i in range(1, 10)),
@@ -23,14 +23,14 @@ _MAX_COMPONENT_LEN = 100
 
 
 def safe_name_component(name: str, fallback: str = "topology") -> str:
-    """Reduce un nombre a un componente de ruta seguro (un solo nivel, sin escapes).
+    """Reduces a name to a safe path component (a single level, no escapes).
 
-    Neutraliza separadores, "..", letras de unidad y nombres reservados de Windows.
-    Los espacios se mapean a "_" — se conserva el comportamiento histórico para no
-    cambiar los nombres de proyectos ya existentes en disco.
+    Neutralizes separators, "..", drive letters and Windows reserved names.
+    Spaces are mapped to "_" — the historical behavior is kept so that the names of
+    projects already on disk do not change.
     """
     cleaned = _UNSAFE_PATH_CHARS.sub("_", (name or "").strip())
-    # Un componente compuesto solo de puntos ("." o "..") es un escape, no un nombre.
+    # A component made only of dots ("." or "..") is an escape, not a name.
     if not cleaned.strip("._-") or set(cleaned) <= {"."}:
         return fallback
     if cleaned.split(".")[0].upper() in _WINDOWS_RESERVED:
@@ -39,15 +39,15 @@ def safe_name_component(name: str, fallback: str = "topology") -> str:
 
 
 def js_escape(s: str) -> str:
-    """Escapa una string para insertarla en un literal JS.
+    """Escapes a string so it can be inserted into a JS literal.
 
-    Un literal JS no puede cruzar un fin de línea, y JS trata U+2028/U+2029 como
-    tales. Sin escaparlos, un nombre con un salto no "se cuela" como código: rompe
-    el parseo y el comando entero se pierde en silencio dentro del catch del
-    bridge, que es peor que fallar ruidosamente.
+    A JS literal cannot cross a line break, and JS treats U+2028/U+2029 as line
+    breaks too. Without escaping them, a name containing a line break does not
+    "slip through" as code: it breaks parsing and the whole command is silently
+    lost inside the bridge's catch, which is worse than failing loudly.
 
-    Para construir una llamada entera preferí `json.dumps`; esto es para los
-    casos en que hay que interpolar dentro de un literal ya existente.
+    To build an entire call, prefer `json.dumps`; this is for the cases where
+    something has to be interpolated inside an existing literal.
     """
     return (
         s.replace("\\", "\\\\")
@@ -61,14 +61,13 @@ def js_escape(s: str) -> str:
 
 
 def classify_ping(stat_line: str) -> str:
-    """Clasifica una línea de estadística de ping en "ok" | "partial" | "none".
+    """Classifies a ping statistics line as "ok" | "partial" | "none".
 
-    `interpret_ping` solo dice "llegó al menos uno", así que 1 de 4 paquetes se
-    reportaba como CONECTIVIDAD OK igual que 4 de 4 — un enlace agonizante se
-    veía idéntico a uno sano. La pérdida parcial es información distinta y
-    merece un veredicto distinto.
+    `interpret_ping` only says "at least one arrived", so 1 of 4 packets was reported
+    as CONNECTIVITY OK just like 4 of 4 — a dying link looked identical to a healthy
+    one. Partial loss is different information and deserves a different verdict.
 
-    Cubre los dos formatos que produce Packet Tracer:
+    Covers the two formats Packet Tracer produces:
       - Host (PC/Server): "Packets: Sent = 4, Received = 4, Lost = 0 (0% loss)"
       - IOS (router/switch): "Success rate is 100 percent (4/5)"
     """
@@ -106,20 +105,20 @@ def classify_ping(stat_line: str) -> str:
 
 
 def interpret_ping(stat_line: str) -> bool:
-    """True si una línea de estadística de ping indica al menos un paquete recibido.
+    """True if a ping statistics line indicates at least one packet was received.
 
-    Se mantiene por compatibilidad con quien ya dependía del booleano; el
-    veredicto con grados vive en `classify_ping`.
+    Kept for backward compatibility with callers that already depended on the
+    boolean; the graded verdict lives in `classify_ping`.
     """
     return classify_ping(stat_line) != "none"
 
 
 def resolve_within(base: Path, *parts: str) -> Path:
-    """Resuelve `parts` bajo `base` y verifica que el resultado no se escape.
+    """Resolves `parts` under `base` and verifies that the result does not escape.
 
-    Sanitizar el nombre es la primera barrera; esta comprobación posterior a
-    resolve() es la que realmente decide, porque cubre symlinks y cualquier caso
-    que la sanitización no haya previsto.
+    Sanitizing the name is the first barrier; this check after resolve() is the one
+    that actually decides, because it covers symlinks and any case that
+    sanitization did not anticipate.
     """
     base_resolved = Path(base).resolve()
     candidate = base_resolved.joinpath(*parts).resolve()
@@ -131,7 +130,7 @@ def resolve_within(base: Path, *parts: str) -> Path:
 
 
 def prefix_to_mask(prefix: int) -> str:
-    """Convierte un prefijo CIDR a máscara decimal."""
+    """Converts a CIDR prefix to a dotted decimal mask."""
     if prefix in PREFIX_TO_MASK:
         return PREFIX_TO_MASK[prefix]
     bits = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
@@ -139,14 +138,14 @@ def prefix_to_mask(prefix: int) -> str:
 
 
 def wildcard_mask(network: ipaddress.IPv4Network) -> str:
-    """Calcula la wildcard mask de una red."""
+    """Computes the wildcard mask of a network."""
     mask_int = int(network.netmask)
     wildcard_int = mask_int ^ 0xFFFFFFFF
     return str(ipaddress.IPv4Address(wildcard_int))
 
 
 def first_ip(interfaces: dict[str, str]) -> str:
-    """Devuelve la primera IP de un dict de interfaces."""
+    """Returns the first IP from an interfaces dict."""
     for ip_cidr in interfaces.values():
         return ip_cidr.split("/")[0]
     return "0.0.0.0"

@@ -1,8 +1,8 @@
-"""Reglas de validación para ACLs.
+"""Validation rules for ACLs.
 
-Las validaciones aquí son estáticas (no consultan PT). Para verificar que
-el router/interfaz existan en la topología activa se hace consulta al
-bridge desde el use case correspondiente.
+The validations here are static (they do not query PT). To verify that the
+router/interface exist in the active topology, the bridge is queried from the
+corresponding use case.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from ..models.errors import PlanError, ErrorCode, ValidationResult
 from .text_rules import has_control_chars
 
 
-# Rangos numéricos de IOS:
+# IOS numeric ranges:
 #  1-99       Standard IP ACL
 #  100-199    Extended IP ACL
 #  1300-1999  Standard IP ACL (expanded)
@@ -26,7 +26,7 @@ _PROTOCOLS_WITH_ICMP_TYPE = {"icmp"}
 
 
 def validate_acl_plan(plan: ACLPlan) -> ValidationResult:
-    """Valida un ACLPlan estáticamente."""
+    """Statically validates an ACLPlan."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -46,7 +46,7 @@ def validate_acl_plan(plan: ACLPlan) -> ValidationResult:
 
 
 def validate_acl_binding(binding: ACLBinding, plan: ACLPlan) -> ValidationResult:
-    """Valida coherencia entre un binding y su ACLPlan."""
+    """Validates consistency between a binding and its ACLPlan."""
     errors: list[PlanError] = []
     if binding.router != plan.router:
         errors.append(PlanError(
@@ -64,11 +64,11 @@ def validate_acl_binding(binding: ACLBinding, plan: ACLPlan) -> ValidationResult
 
 
 # ----------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ----------------------------------------------------------------------
 
 def _validate_number_or_name(plan: ACLPlan, errors: list[PlanError]) -> None:
-    """Si name_or_number es numérico, debe estar en rango coherente con acl_type."""
+    """If name_or_number is numeric, it must be in a range consistent with acl_type."""
     if has_control_chars(plan.name_or_number):
         errors.append(PlanError(
             code=ErrorCode.ACL_INVALID_NAME,
@@ -80,7 +80,7 @@ def _validate_number_or_name(plan: ACLPlan, errors: list[PlanError]) -> None:
 
     nn = plan.name_or_number.strip()
     if not nn.isdigit():
-        # Nombre alfanumérico — IOS lo acepta para named ACLs
+        # Alphanumeric name — IOS accepts it for named ACLs
         return
 
     n = int(nn)
@@ -124,7 +124,7 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
                 suggestion="Usa un remark de una sola línea.",
             ))
 
-        # Sequence duplicada
+        # Duplicate sequence
         if entry.sequence is not None:
             if entry.sequence in seen_sequences:
                 errors.append(PlanError(
@@ -134,7 +134,7 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
                 ))
             seen_sequences.add(entry.sequence)
 
-        # Standard no acepta destination ni puertos
+        # Standard does not accept destination or ports
         if plan.acl_type == "standard":
             if entry.destination:
                 errors.append(PlanError(
@@ -155,7 +155,7 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
                     message=f"{label}: ACL standard solo soporta protocol='ip'.",
                 ))
 
-        # Puertos solo válidos para TCP/UDP
+        # Ports are only valid for TCP/UDP
         has_ports = entry.source_port_op or entry.dest_port_op
         if has_ports and entry.protocol not in _PROTOCOLS_WITH_PORTS:
             errors.append(PlanError(
@@ -164,7 +164,7 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
                 message=f"{label}: protocol='{entry.protocol}' no soporta puertos. Solo TCP/UDP.",
             ))
 
-        # ICMP type solo para ICMP
+        # ICMP type only for ICMP
         if entry.icmp_type and entry.protocol != "icmp":
             errors.append(PlanError(
                 code=ErrorCode.ACL_INVALID_PROTOCOL_FOR_PORTS,
@@ -172,14 +172,14 @@ def _validate_entries(plan: ACLPlan, errors: list[PlanError], warnings: list[Pla
                 message=f"{label}: icmp_type solo aplica con protocol='icmp'.",
             ))
 
-        # Validar IPs / wildcards
+        # Validate IPs / wildcards
         _validate_address(entry.source, label + " source", plan.router, errors)
         if entry.destination:
             _validate_address(entry.destination, label + " destination", plan.router, errors)
 
 
 def _validate_address(addr: str, label: str, device: str, errors: list[PlanError]) -> None:
-    """Valida 'any', 'host X.X.X.X', o 'X.X.X.X Y.Y.Y.Y' (network + wildcard)."""
+    """Validates 'any', 'host X.X.X.X', or 'X.X.X.X Y.Y.Y.Y' (network + wildcard)."""
     addr = addr.strip()
     if addr == "any":
         return
@@ -217,7 +217,7 @@ def _validate_address(addr: str, label: str, device: str, errors: list[PlanError
 
 
 def _detect_unreachable_rules(plan: ACLPlan, warnings: list[PlanError]) -> None:
-    """Avisa si hay reglas después de un permit/deny catch-all."""
+    """Warns if there are rules after a permit/deny catch-all."""
     catch_all_at: int | None = None
     for idx, entry in enumerate(plan.entries):
         is_catch_all = (

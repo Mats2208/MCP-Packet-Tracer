@@ -1,4 +1,4 @@
-"""Reglas de validación de cables y enlaces."""
+"""Validation rules for cables and links."""
 
 from __future__ import annotations
 from ..models.plans import TopologyPlan
@@ -8,7 +8,7 @@ from ...infrastructure.catalog.cables import CABLE_TYPES, infer_cable
 
 
 def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]]:
-    """Valida enlaces. Retorna (errors, warnings)."""
+    """Validates links. Returns (errors, warnings)."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
     port_usage: dict[str, str] = {}
@@ -34,11 +34,11 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
             ))
             continue
 
-        # Puertos válidos
+        # Valid ports
         _check_port(errors, dev_a.name, dev_a.model, link.port_a)
         _check_port(errors, dev_b.name, dev_b.model, link.port_b)
 
-        # Puertos duplicados
+        # Duplicate ports
         for key, label in [
             (f"{link.device_a}:{link.port_a}", desc),
             (f"{link.device_b}:{link.port_b}", desc),
@@ -53,7 +53,7 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
             else:
                 port_usage[key] = label
 
-        # Cable válido
+        # Valid cable
         if link.cable not in CABLE_TYPES:
             errors.append(PlanError(
                 code=ErrorCode.INVALID_CABLE_TYPE,
@@ -61,7 +61,7 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
                 suggestion=f"Cables válidos: {list(CABLE_TYPES.keys())}",
             ))
 
-        # Sugerir cable correcto
+        # Suggest the correct cable
         expected = infer_cable(dev_a.category, dev_b.category)
         if link.cable != expected:
             warnings.append(PlanError(
@@ -74,7 +74,7 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
 
 
 def _check_port(errors: list[PlanError], dev_name: str, model_name: str, port: str):
-    """Verifica que un puerto exista en el modelo."""
+    """Checks that a port exists on the model."""
     valid = get_valid_ports(model_name)
     if valid and port not in valid:
         errors.append(PlanError(

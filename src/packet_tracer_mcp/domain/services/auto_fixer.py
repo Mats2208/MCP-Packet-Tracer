@@ -1,10 +1,10 @@
 """
-Auto-fixer de planes.
+Plan auto-fixer.
 
-Intenta corregir errores comunes automáticamente:
-  - Cambiar cable incorrecto
-  - Cambiar modelo si faltan puertos
-  - Corregir nombres de interfaces
+Tries to fix common errors automatically:
+  - Change a wrong cable
+  - Change the model if ports are missing
+  - Fix interface names
 """
 
 from __future__ import annotations
@@ -18,18 +18,18 @@ from ...shared.enums import PortSpeed
 
 def fix_plan(plan: TopologyPlan) -> tuple[TopologyPlan, list[str]]:
     """
-    Intenta corregir errores del plan automáticamente.
-    Retorna (plan_corregido, lista_de_correcciones_aplicadas).
+    Attempts to fix the plan's errors automatically.
+    Returns (fixed_plan, list_of_applied_fixes).
     """
     fixes: list[str] = []
 
-    # Fix 1: Corregir cables
+    # Fix 1: Correct cables
     fixes.extend(_fix_cables(plan))
 
-    # Fix 2: Upgrade routers si faltan puertos
+    # Fix 2: Upgrade routers if ports are missing
     fixes.extend(_fix_insufficient_ports(plan))
 
-    # Fix 3: Corregir puertos inválidos por los del modelo correcto
+    # Fix 3: Correct invalid ports to those of the correct model
     fixes.extend(_fix_invalid_ports(plan))
 
     # Re-validate
@@ -39,7 +39,7 @@ def fix_plan(plan: TopologyPlan) -> tuple[TopologyPlan, list[str]]:
 
 
 def _fix_cables(plan: TopologyPlan) -> list[str]:
-    """Corrige cables según las categorías de los dispositivos."""
+    """Corrects cables according to the device categories."""
     fixes = []
     for link in plan.links:
         dev_a = plan.device_by_name(link.device_a)
@@ -58,7 +58,7 @@ def _fix_cables(plan: TopologyPlan) -> list[str]:
 
 
 def _fix_insufficient_ports(plan: TopologyPlan) -> list[str]:
-    """Si un router no tiene suficientes puertos GigE, lo upgrade a 2911."""
+    """If a router does not have enough GigE ports, upgrade it to 2911."""
     fixes = []
     port_usage: dict[str, int] = {}
 
@@ -87,11 +87,11 @@ def _fix_insufficient_ports(plan: TopologyPlan) -> list[str]:
 
 
 def _fix_invalid_ports(plan: TopologyPlan) -> list[str]:
-    """Intenta reasignar puertos inválidos al primer puerto disponible."""
+    """Tries to reassign invalid ports to the first available port."""
     fixes = []
     used_ports: dict[str, set[str]] = {d.name: set() for d in plan.devices}
 
-    # Primero registrar puertos ya usados válidamente
+    # First record the ports that are already validly used
     for link in plan.links:
         for dev_name, port in [(link.device_a, link.port_a), (link.device_b, link.port_b)]:
             dev = plan.device_by_name(dev_name)
@@ -101,7 +101,7 @@ def _fix_invalid_ports(plan: TopologyPlan) -> list[str]:
             if model and any(p.full_name == port for p in model.ports):
                 used_ports[dev_name].add(port)
 
-    # Ahora intentar corregir puertos inválidos
+    # Now try to fix invalid ports
     for link in plan.links:
         for attr_dev, attr_port in [("device_a", "port_a"), ("device_b", "port_b")]:
             dev_name = getattr(link, attr_dev)
@@ -114,16 +114,16 @@ def _fix_invalid_ports(plan: TopologyPlan) -> list[str]:
                 continue
 
             if not any(p.full_name == port for p in model.ports):
-                # Puerto inválido — buscar uno libre
+                # Invalid port — look for a free one
                 for p in model.ports:
                     if p.full_name not in used_ports[dev_name]:
                         old_port = port
                         setattr(link, attr_port, p.full_name)
                         used_ports[dev_name].add(p.full_name)
-                        # La IP viaja con el puerto. Sin esto el enlace pasaba
-                        # a la interfaz nueva pero el direccionamiento se
-                        # quedaba en la vieja —que ya no usa ningún enlace—,
-                        # así que el plan salía "arreglado" e inconsistente.
+                        # The IP travels with the port. Without this, the link moved
+                        # to the new interface but the addressing stayed on the old one
+                        # (which no longer uses any link), so the plan came out "fixed"
+                        # but inconsistent.
                         for ifaces in (dev.interfaces, dev.interfaces_v6):
                             if old_port in ifaces:
                                 ifaces[p.full_name] = ifaces.pop(old_port)

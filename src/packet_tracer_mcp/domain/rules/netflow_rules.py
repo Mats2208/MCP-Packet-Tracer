@@ -1,4 +1,4 @@
-"""Validación de exportadores NetFlow."""
+"""NetFlow exporter validation."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from ..models.errors import ErrorCode, PlanError, ValidationResult
 from ..models.netflow import NetflowExporter
 from .text_rules import has_control_chars
 
-# PT implementa v5 (formato fijo) y v9 (basado en templates). Cualquier otro
-# número lo acepta el setter pero no produce un exportador funcional.
+# PT implements v5 (fixed format) and v9 (template-based). Any other
+# number is accepted by the setter but does not produce a working exporter.
 VALID_VERSIONS = (5, 9)
 
 
@@ -74,8 +74,8 @@ def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
                 suggestion="Cada monitor es un nombre de una sola línea, sin vacíos.",
             ))
 
-    # Sin destino el exportador queda creado pero inerte: PT lo reporta como no
-    # configurado del todo. Es válido (se puede completar después) pero conviene avisar.
+    # Without a destination the exporter is created but inert: PT reports it as not
+    # fully configured. It is valid (it can be completed later), but a warning is advisable.
     if not cfg.destination_ip:
         warnings.append(PlanError(
             code=ErrorCode.NETFLOW_INCOMPLETE, device=cfg.device,
@@ -102,8 +102,8 @@ def validate_netflow_against_topology(
 
     if cfg.source_port:
         ports = {p.get("name") for p in match.get("ports", [])}
-        # Si no pudimos leer los puertos no bloqueamos: fallar abierto es mejor
-        # que rechazar una config correcta por una lectura incompleta.
+        # If we could not read the ports we do not block: failing open is better
+        # than rejecting a correct config because of an incomplete read.
         if ports and cfg.source_port not in ports:
             errors.append(PlanError(
                 code=ErrorCode.NETFLOW_PORT_NOT_FOUND, device=cfg.device,

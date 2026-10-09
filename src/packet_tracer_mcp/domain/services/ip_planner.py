@@ -1,8 +1,8 @@
 """
-Planificador de direccionamiento IP.
+IP addressing planner.
 
-Asigna subredes para LANs e inter-router links automáticamente,
-genera pools DHCP, rutas estáticas y configuraciones OSPF.
+Automatically assigns subnets for LANs and inter-router links,
+generates DHCP pools, static routes and OSPF configurations.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from ...shared.constants import DEFAULT_DNS
 
 
 class IPPlanner:
-    """Asigna IPs a todas las interfaces de un plan de topología."""
+    """Assigns IPs to all interfaces of a topology plan."""
 
     def __init__(
         self,
@@ -32,9 +32,9 @@ class IPPlanner:
         self._lan_subnets = ipaddress.IPv4Network(lan_base).subnets(new_prefix=24)
         self._link_subnets = ipaddress.IPv4Network(link_base).subnets(new_prefix=30)
 
-    # `TopologyRequest` ya valida que las bases den al menos una subred, pero el
-    # agotamiento depende de cuántas LANs pida la topología y eso no se sabe
-    # hasta acá. Un `StopIteration` crudo se veía como un fallo sin causa.
+    # `TopologyRequest` already validates that the bases yield at least one subnet, but
+    # exhaustion depends on how many LANs the topology requests, which is not known
+    # until this point. A raw `StopIteration` looked like a failure with no cause.
 
     def next_lan_subnet(self) -> ipaddress.IPv4Network:
         try:
@@ -67,13 +67,13 @@ class IPPlanner:
         dual_stack: bool = False,
         ipv6_base: str = "2001:db8::/32",
     ) -> TopologyPlan:
-        """Asigna IPs, genera DHCP pools y rutas."""
+        """Assigns IPs, generates DHCP pools and routes."""
         routers = plan.devices_by_category("router")
         router_lans: dict[str, list[ipaddress.IPv4Network]] = {}
         link_subnets: dict[tuple[str, str], ipaddress.IPv4Network] = {}
 
-        # Modo VLAN (router-on-a-stick): el link router↔switch es un trunk, no se le
-        # asigna una /24 única — se reparte una /24 por VLAN vía subinterfaces.
+        # VLAN mode (router-on-a-stick): the router↔switch link is a trunk, so it is not
+        # given a single /24 — a /24 is split per VLAN via subinterfaces.
         vlan_mode = bool(plan.vlans)
         if vlan_mode:
             self._plan_vlan_addressing(plan, dhcp)
@@ -85,7 +85,7 @@ class IPPlanner:
                 continue
 
             if vlan_mode and _is_router_switch(dev_a, dev_b):
-                continue  # trunk — direccionado por VLAN
+                continue  # trunk — addressed per VLAN
 
             if _is_router_switch(dev_a, dev_b):
                 router = dev_a if dev_a.category == "router" else dev_b
@@ -141,7 +141,7 @@ class IPPlanner:
         elif routing == RoutingProtocol.RIP:
             self._plan_rip(plan, routers)
 
-        # IPv6 dual-stack (routers con ipv6 address por CLI; hosts SLAAC)
+        # IPv6 dual-stack (routers with an ipv6 address via CLI; hosts use SLAAC)
         if dual_stack:
             plan.dual_stack = True
             self._plan_ipv6_addressing(plan, ipv6_base)
@@ -149,14 +149,14 @@ class IPPlanner:
         return plan
 
     def _plan_ipv6_addressing(self, plan: TopologyPlan, ipv6_base: str):
-        """Asigna /64 IPv6 a las interfaces de router (LAN, inter-router, subinterfaces).
+        """Assigns a /64 IPv6 to the router interfaces (LAN, inter-router, subinterfaces).
 
-        Los hosts NO reciben dirección estática: usan SLAAC (configurePcIpv6 en el deploy),
-        que es la forma soportada por la API de PT (addIpv6Address falla en HostPort).
+        Hosts do NOT get a static address: they use SLAAC (configurePcIpv6 during deploy),
+        which is the form supported by the PT API (addIpv6Address fails on HostPort).
         """
         pool = ipaddress.IPv6Network(ipv6_base).subnets(new_prefix=64)
 
-        # Router-on-a-stick: una /64 por subinterfaz
+        # Router-on-a-stick: one /64 per subinterface
         if plan.vlans:
             routers = plan.devices_by_category("router")
             if routers:
@@ -214,10 +214,10 @@ class IPPlanner:
                 host_idx += 1
 
     def _plan_vlan_addressing(self, plan: TopologyPlan, dhcp: bool):
-        """Asigna una /24 por VLAN y crea las subinterfaces .1q del router.
+        """Assigns a /24 per VLAN and creates the router's .1q subinterfaces.
 
-        Escribe la IP de cada subinterfaz también en router.interfaces["Gig0/0.N"] para
-        que OSPF/RIP/EIGRP (que iteran router.interfaces) anuncien las VLANs sin cambios.
+        Also writes the IP of each subinterface to router.interfaces["Gig0/0.N"] so that
+        OSPF/RIP/EIGRP (which iterate router.interfaces) advertise the VLANs unchanged.
         """
         routers = plan.devices_by_category("router")
         switches = plan.devices_by_category("switch")
@@ -225,7 +225,7 @@ class IPPlanner:
             return
         router, switch = routers[0], switches[0]
 
-        # Puerto físico del router hacia el switch (parent de las subinterfaces)
+        # Physical router port toward the switch (parent of the subinterfaces)
         parent_port = None
         for link in plan.links:
             if link.device_a == router.name and link.device_b == switch.name:
@@ -254,7 +254,7 @@ class IPPlanner:
             prefix = subnet.prefixlen
             vlan.subnet = f"{subnet.network_address}/{prefix}"
 
-            # Subinterfaz del router (gateway de la VLAN)
+            # Router subinterface (the VLAN's gateway)
             sub_key = f"{parent_port}.{vlan.vlan_id}"
             router.interfaces[sub_key] = f"{gateway}/{prefix}"
             plan.subinterfaces.append(SubinterfaceConfig(
@@ -262,7 +262,7 @@ class IPPlanner:
                 vlan_id=vlan.vlan_id, ip_cidr=f"{gateway}/{prefix}",
             ))
 
-            # IPs de los hosts de esta VLAN
+            # IPs of the hosts in this VLAN
             host_idx = 1
             for pc in pcs:
                 if pc.vlan != vlan.vlan_id:
@@ -275,7 +275,7 @@ class IPPlanner:
                     pc.gateway = gateway
                     host_idx += 1
 
-            # Pool DHCP por VLAN
+            # DHCP pool per VLAN
             if dhcp:
                 plan.dhcp_pools.append(DHCPPool(
                     router=router.name,
@@ -291,7 +291,7 @@ class IPPlanner:
         router_lans: dict[str, list[ipaddress.IPv4Network]],
         link_subnets: dict[tuple[str, str], ipaddress.IPv4Network],
     ):
-        # Adyacencia entre routers basada en los links inter-router.
+        # Router adjacency based on the inter-router links.
         adjacency: dict[str, set[str]] = {r.name: set() for r in routers}
         for r1, r2 in link_subnets:
             adjacency.setdefault(r1, set()).add(r2)
@@ -366,7 +366,7 @@ class IPPlanner:
             ))
 
     def _plan_rip(self, plan: TopologyPlan, routers: list[DevicePlan]):
-        """Genera configuración RIP v2 para todos los routers."""
+        """Generates RIP v2 configuration for all routers."""
         for router in routers:
             classless_nets: list[str] = []
             for ip_cidr in router.interfaces.values():
@@ -382,7 +382,7 @@ class IPPlanner:
             ))
 
     def _plan_eigrp(self, plan: TopologyPlan, routers: list[DevicePlan], as_number: int = 100):
-        """Genera configuración EIGRP para todos los routers."""
+        """Generates EIGRP configuration for all routers."""
         for router in routers:
             networks = []
             for ip_cidr in router.interfaces.values():
@@ -408,8 +408,8 @@ class IPPlanner:
         admin_distance: int = 254,
     ):
         """
-        Genera rutas estáticas flotantes (backup) por caminos alternativos.
-        Solo produce rutas cuando existe un path alternativo al primario.
+        Generates floating static routes (backup) over alternative paths.
+        Only produces routes when an alternative path to the primary exists.
         """
         adjacency: dict[str, set[str]] = {r.name: set() for r in routers}
         for r1, r2 in link_subnets:

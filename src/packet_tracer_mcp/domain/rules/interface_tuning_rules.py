@@ -1,11 +1,11 @@
-"""Validación de ajuste fino por interfaz."""
+"""Per-interface fine-tuning validation."""
 
 from __future__ import annotations
 
 from ..models.interface_tuning import InterfaceTuning
 from ..models.errors import PlanError, ErrorCode, ValidationResult
 
-# Clock rates válidos (bps) aceptados por IOS en interfaces seriales.
+# Valid clock rates (bps) accepted by IOS on serial interfaces.
 _VALID_CLOCK_RATES = {
     1200, 2400, 4800, 9600, 19200, 38400, 56000, 64000, 72000, 125000,
     148000, 250000, 500000, 800000, 1000000, 1300000, 2000000, 4000000,
@@ -32,7 +32,7 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
                 suggestion="Valores comunes: 64000, 128000, 1000000, 2000000.",
             ))
 
-    # --- Autenticación OSPF ---
+    # --- OSPF authentication ---
     for label, value in (("ospf_auth_key", cfg.ospf_auth_key),
                          ("ospf_md5_key", cfg.ospf_md5_key)):
         if value is None:
@@ -44,8 +44,8 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
                 suggestion="Pasá una clave o quitá el parámetro.",
             ))
         elif any(ch in value for ch in ("\n", "\r", " ")):
-            # La clave termina dentro de un payload IOS de una sola línea; un
-            # salto se convertiría en un comando no pedido.
+            # The key ends up inside a single-line IOS payload; a line break would
+            # turn into an unrequested command.
             errors.append(PlanError(
                 code=ErrorCode.IFTUNE_INVALID_OSPF_AUTH, device=cfg.router,
                 message=f"{label} tiene espacios o saltos de línea.",
@@ -78,8 +78,8 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
             suggestion="Preferí ospf_md5_key + ospf_md5_key_id (message-digest).",
         ))
 
-    # Los timers tienen que coincidir con los del vecino o la adyacencia no forma.
-    # El default de IOS es dead = 4 x hello.
+    # The timers must match the neighbor's or the adjacency does not form.
+    # The IOS default is dead = 4 x hello.
     if cfg.ospf_dead_interval is not None and cfg.ospf_hello_interval is not None:
         if cfg.ospf_dead_interval <= cfg.ospf_hello_interval:
             errors.append(PlanError(
@@ -108,7 +108,7 @@ def validate_interface_tuning_against_topology(
         ))
         return ValidationResult(errors=errors)
 
-    # Validar que la interfaz exista (puede ser subinterfaz "Gig0/0.10")
+    # Validate that the interface exists (it may be a subinterface "Gig0/0.10")
     ports = {p.get("name") for p in dev.get("ports", [])}
     base = cfg.interface.split(".", 1)[0]
     if ports and cfg.interface not in ports and base not in ports:

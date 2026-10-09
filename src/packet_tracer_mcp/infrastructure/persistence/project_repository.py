@@ -1,5 +1,5 @@
 """
-Repositorio de proyectos: persistencia de planes y artefactos.
+Project repository: persistence of plans and artifacts.
 """
 
 from __future__ import annotations
@@ -11,14 +11,14 @@ from ...shared.utils import safe_name_component, resolve_within
 
 
 class ProjectRepository:
-    """Gestiona la persistencia de proyectos."""
+    """Manages project persistence."""
 
     def __init__(self, base_dir: str | Path = "projects"):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def save_plan(self, plan: TopologyPlan, project_name: str | None = None) -> Path:
-        """Guarda un plan como JSON."""
+        """Saves a plan as JSON."""
         base_name = (project_name or plan.name or "topology").strip() or "topology"
         name = safe_name_component(base_name)
         project_dir = resolve_within(self.base_dir, name)
@@ -41,7 +41,7 @@ class ProjectRepository:
         return plan_path
 
     def load_plan(self, project_name: str) -> TopologyPlan:
-        """Carga un plan desde JSON."""
+        """Loads a plan from JSON."""
         plan_path = resolve_within(
             self.base_dir, safe_name_component(project_name), "plan.json"
         )
@@ -50,7 +50,7 @@ class ProjectRepository:
         return TopologyPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
 
     def list_projects(self) -> list[dict]:
-        """Lista todos los proyectos guardados."""
+        """Lists all saved projects."""
         projects = []
         for d in sorted(self.base_dir.iterdir()):
             if d.is_dir():
@@ -63,9 +63,9 @@ class ProjectRepository:
         return projects
 
     def delete_project(self, project_name: str) -> bool:
-        """Elimina un proyecto."""
-        # rmtree confinado: sin resolve_within, un project_name con ".." borra
-        # recursivamente cualquier directorio de la máquina.
+        """Deletes a project."""
+        # Confined rmtree: without resolve_within, a project_name containing ".."
+        # would recursively delete any directory on the machine.
         project_dir = resolve_within(self.base_dir, safe_name_component(project_name))
         if not project_dir.exists():
             return False

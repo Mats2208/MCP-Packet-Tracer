@@ -1,11 +1,11 @@
-"""Use case: aplicar NAT/PAT a un router en la topología activa.
+"""Use case: apply NAT/PAT to a router in the active topology.
 
-Pipeline (idéntico al de ACLs):
-  1. Construye NATConfig desde args user-friendly.
-  2. Valida estáticamente (IPs, interfaces, pool, redes internas).
-  3. Verifica contra topología activa de PT (router e interfaces existen).
-  4. Genera CLI IOS y arma payload para configureIosDevice.
-  5. Envía via bridge o devuelve dry-run payload.
+Pipeline (identical to the ACL one):
+  1. Builds NATConfig from user-friendly args.
+  2. Validates statically (IPs, interfaces, pool, inside networks).
+  3. Checks against the active PT topology (router and interfaces exist).
+  4. Generates IOS CLI and builds the payload for configureIosDevice.
+  5. Sends via the bridge or returns a dry-run payload.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def build_nat_config(
     pool_netmask: str = "",
     use_interface_overload: bool = False,
 ) -> NATConfig:
-    """Construye un NATConfig desde parámetros planos (típicamente del LLM)."""
+    """Builds a NATConfig from flat parameters (typically from the LLM)."""
     mappings = [NATStaticMapping(**m) for m in (static_mappings or [])]
 
     pool: NATPool | None = None
@@ -69,25 +69,25 @@ def apply_nat_uc(
     bridge_send: Callable[[str], bool] | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Pipeline completo: validar + (opcionalmente) aplicar NAT.
+    """Full pipeline: validate + (optionally) apply NAT.
 
     Args:
-        config: NATConfig ya construido.
-        query_pt_topology: callable → list de devices en PT. Si None, omite
-            verificación dinámica.
-        bridge_send: callable que recibe el JS payload y lo envía. Si None
-            o dry_run=True, no se envía.
-        dry_run: si True, devuelve payload sin enviarlo.
+        config: NATConfig already built.
+        query_pt_topology: callable → list of devices in PT. If None, skips the
+            dynamic check.
+        bridge_send: callable that receives the JS payload and sends it. If None
+            or dry_run=True, nothing is sent.
+        dry_run: if True, returns the payload without sending it.
 
     Returns:
-        dict con keys: valid, errors, warnings, cli_lines, js_payload, sent, dry_run.
+        dict with keys: valid, errors, warnings, cli_lines, js_payload, sent, dry_run.
     """
-    # 1. Validación estática
+    # 1. Static validation
     result = validate_nat_config(config)
     errors = list(result.errors)
     warnings = list(result.warnings)
 
-    # 2. Validación dinámica contra PT
+    # 2. Dynamic validation against PT
     if query_pt_topology is not None:
         try:
             devices_in_pt = query_pt_topology()
@@ -101,7 +101,7 @@ def apply_nat_uc(
                 message=f"No se pudo consultar topología activa: {exc}. Validación estática aplicada.",
             ))
 
-    # 3. Generar CLI siempre (útil para inspección incluso si hay errores)
+    # 3. Always generate the CLI (useful for inspection even if there are errors)
     cli_lines = generate_nat_interface_cli(config)
     cli_lines.extend(generate_nat_body_cli(config))
 
@@ -134,9 +134,9 @@ def remove_nat_uc(
     bridge_send: Callable[[str], bool] | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Construye y envía comandos para eliminar NAT/PAT de un router."""
-    # Sin NATConfig no pasa por validate_nat_config, pero los mismos campos
-    # terminan crudos en el CLI (`no ip nat pool {pool_name}`, ...).
+    """Builds and sends commands to remove NAT/PAT from a router."""
+    # NATConfig is not used, so validate_nat_config does not run, but the same fields
+    # end up raw in the CLI (`no ip nat pool {pool_name}`, ...).
     fields = [
         ("mode", mode),
         ("inside_interface", inside_interface),

@@ -1,4 +1,4 @@
-"""Reglas de validación de dispositivos."""
+"""Device validation rules."""
 
 from __future__ import annotations
 from ..models.plans import TopologyPlan
@@ -8,7 +8,7 @@ from .text_rules import has_control_chars
 
 
 def validate_devices(plan: TopologyPlan) -> list[PlanError]:
-    """Valida que todos los dispositivos sean válidos."""
+    """Validates that all devices are valid."""
     errors: list[PlanError] = []
     names_seen: set[str] = set()
 

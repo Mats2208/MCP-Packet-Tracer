@@ -1,8 +1,8 @@
 """
-Catálogo de dispositivos de Packet Tracer.
+Packet Tracer device catalog.
 
-Puertos verificados contra PT 8.x en vivo — NO incluimos Vlan1
-porque no se usa para cableado físico (es SVI).
+Ports verified against PT 8.x live — we do NOT include Vlan1
+because it is not used for physical cabling (it is an SVI).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from ...shared.enums import PortSpeed
 
 @dataclass(frozen=True)
 class PortSpec:
-    """Especificación de un puerto físico."""
+    """Specification of a physical port."""
     speed: str
     slot: str
     full_name: str = ""
@@ -26,7 +26,7 @@ class PortSpec:
 
 @dataclass(frozen=True)
 class DeviceModel:
-    """Modelo de dispositivo de Packet Tracer."""
+    """Packet Tracer device model."""
     pt_type: str
     category: str
     ports: tuple[PortSpec, ...]
@@ -213,17 +213,16 @@ EMBEDDED_SERVER_PT = DeviceModel(
 # =====================================================================
 # CLOUD / WAN
 #
-# Los ocho puertos salen de leer `getPorts()` sobre una Cloud-PT viva en
-# PT 9.0.1:
+# The eight ports come from reading `getPorts()` on a live Cloud-PT in PT 9.0.1:
 #   Serial0, Serial1, Serial2, Serial3, Modem4, Modem5, Ethernet6, Coaxial7
 #
-# El catalogo declaraba SOLO Ethernet6, asi que `pt_add_link` y `validate_plan`
-# rechazaban los otros siete -- puertos que el dispositivo si tiene -- antes de
-# que la peticion llegara a PT.
+# The catalog declared ONLY Ethernet6, so `pt_add_link` and `validate_plan`
+# rejected the other seven -- ports the device does have -- before the request
+# reached PT.
 #
-# Ethernet6 ademas estaba declarado como FastEthernet con el nombre forzado a
-# mano; salia bien por el override, no por la velocidad. Con la velocidad real
-# el nombre se deriva solo, que es como funcionan los demas modelos.
+# Ethernet6 was also declared as FastEthernet with the name forced by hand; it
+# worked through the override, not through the speed. With the real speed the
+# name is derived on its own, which is how the other models work.
 # =====================================================================
 CLOUD_PT = DeviceModel(
     pt_type="Cloud-PT", category="cloud", display_name="Cloud",
@@ -496,7 +495,7 @@ THING_PT = DeviceModel(
 
 
 # =====================================================================
-# CATÁLOGO INDEXADO
+# INDEXED CATALOG
 # =====================================================================
 ALL_MODELS: dict[str, DeviceModel] = {
     m.pt_type: m for m in [
@@ -551,19 +550,19 @@ ALL_MODELS: dict[str, DeviceModel] = {
 
 
 def resolve_model(name: str) -> DeviceModel | None:
-    """Resuelve un nombre/alias a un DeviceModel."""
+    """Resolves a name/alias to a DeviceModel."""
     from .aliases import MODEL_ALIASES
     key = MODEL_ALIASES.get(name.lower(), name)
     return ALL_MODELS.get(key)
 
 
 def get_ports_by_speed(model: DeviceModel, speed: str) -> list[PortSpec]:
-    """Devuelve los puertos de un modelo filtrados por velocidad."""
+    """Returns the ports of a model filtered by speed."""
     return [p for p in model.ports if p.speed == speed]
 
 
 def get_valid_ports(model_name: str) -> set[str]:
-    """Devuelve el set de nombres de puertos válidos para un modelo."""
+    """Returns the set of valid port names for a model."""
     model = resolve_model(model_name)
     if not model:
         return set()
@@ -571,14 +570,13 @@ def get_valid_ports(model_name: str) -> set[str]:
 
 
 def category_of_model(model_name: str) -> str:
-    """Categoría del catálogo para un modelo. Cadena vacía si no se conoce.
+    """Catalog category for a model. Empty string if it is not known.
 
-    Existe para traducir lo que PT devuelve en `getModel()` a la clave que
-    usan las reglas de cableado. NO usar `getClassName()` para esto: PT
-    clasifica por comportamiento, no por rol de red, así que un 3560 (switch
-    multicapa) responde "Router" y un 2960 responde "CiscoDevice" — con eso
-    la categoría "switch" no aparecía nunca y todo router↔switch se cableaba
-    cruzado.
+    It exists to translate what PT returns from `getModel()` into the key that
+    the cabling rules use. Do NOT use `getClassName()` for this: PT classifies by
+    behavior, not by network role, so a 3560 (multilayer switch) answers "Router"
+    and a 2960 answers "CiscoDevice" — with that, the "switch" category never
+    appeared and every router<->switch link was cabled as a crossover.
     """
     model = resolve_model(model_name)
     return model.category if model else ""

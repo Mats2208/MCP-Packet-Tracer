@@ -1,8 +1,8 @@
 """
-Plantillas de topología formales.
+Formal topology templates.
 
-Cada plantilla define valores por defecto y restricciones
-que el orquestador usa para generar planes.
+Each template defines default values and constraints
+that the orchestrator uses to generate plans.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from ...shared.enums import TopologyTemplate, RoutingProtocol
 
 @dataclass(frozen=True)
 class TemplateSpec:
-    """Especificación de una plantilla de topología."""
+    """Specification of a topology template."""
     name: str
     key: TopologyTemplate
     description: str
@@ -100,10 +100,10 @@ TEMPLATES: dict[TopologyTemplate, TemplateSpec] = {
 
 
 def get_template(key: TopologyTemplate) -> TemplateSpec:
-    """Obtiene la spec de una plantilla."""
+    """Returns the spec of a template."""
     return TEMPLATES[key]
 
 
 def list_templates() -> list[TemplateSpec]:
-    """Lista todas las plantillas con sus detalles."""
+    """Lists all templates with their details."""
     return list(TEMPLATES.values())

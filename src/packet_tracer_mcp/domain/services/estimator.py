@@ -1,8 +1,8 @@
 """
-Estimator: genera estimaciones de lo que se va a crear (dry-run).
+Estimator: generates estimates of what is going to be created (dry-run).
 
-Útil para que el LLM o el usuario vean qué se va a hacer antes
-de generar scripts.
+Useful so the LLM or the user can see what is going to be done before
+generating scripts.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from ..models.plans import TopologyPlan
 
 
 def estimate_from_request(request: TopologyRequest) -> dict:
-    """Estima recursos sin generar el plan completo."""
+    """Estimates resources without generating the full plan."""
     total_pcs = _normalized_total(request.pcs_per_lan, request.routers)
     total_laptops = _normalized_total(request.laptops_per_lan, request.routers)
     total_access_points = min(request.access_points, request.routers)
@@ -28,8 +28,8 @@ def estimate_from_request(request: TopologyRequest) -> dict:
     if request.has_wan:
         total_devices += 1
 
-    # Enlaces estimados
-    router_links = max(0, request.routers - 1)  # cadena
+    # Estimated links
+    router_links = max(0, request.routers - 1)  # chain
     router_switch_links = total_switches
     switch_pc_links = total_pcs
     switch_laptop_links = total_laptops
@@ -85,7 +85,7 @@ def estimate_from_request(request: TopologyRequest) -> dict:
 
 
 def estimate_from_plan(plan: TopologyPlan) -> dict:
-    """Estima recursos a partir de un plan ya generado."""
+    """Estimates resources from a plan that has already been generated."""
     return {
         "devices_to_create": len(plan.devices),
         "links_to_create": len(plan.links),
@@ -126,7 +126,7 @@ def _estimate_complexity(req: TopologyRequest) -> str:
 
 
 def _normalized_total(values: int | list[int], routers: int) -> int:
-    """Normaliza un entero/lista por router usando la misma convención del orquestador."""
+    """Normalizes an int/list per router using the same convention as the orchestrator."""
     if isinstance(values, int):
         return values * routers
 

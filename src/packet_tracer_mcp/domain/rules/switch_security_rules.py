@@ -1,4 +1,4 @@
-"""Validación de STP y port-security."""
+"""STP and port-security validation."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def _port_in_model(switch: dict, port: str) -> bool:
     from ...infrastructure.catalog.devices import resolve_model
     model = resolve_model(switch.get("model", ""))
     if model is None:
-        return True  # no podemos verificar → no bloqueamos
+        return True  # cannot verify → do not block
     return port in {p.full_name for p in model.ports}
 
 

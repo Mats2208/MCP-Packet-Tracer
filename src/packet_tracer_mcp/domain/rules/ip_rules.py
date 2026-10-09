@@ -1,4 +1,4 @@
-"""Reglas de validación de IPs."""
+"""IP validation rules."""
 
 from __future__ import annotations
 import ipaddress
@@ -8,7 +8,7 @@ from .text_rules import has_control_chars
 
 
 def validate_ips(plan: TopologyPlan) -> list[PlanError]:
-    """Verifica que no haya conflictos de IP."""
+    """Checks that there are no IP conflicts."""
     errors: list[PlanError] = []
     all_ips: dict[str, str] = {}
 
@@ -41,7 +41,7 @@ def validate_ips(plan: TopologyPlan) -> list[PlanError]:
 
 
 def validate_dhcp(plan: TopologyPlan) -> list[PlanError]:
-    """Verifica pools DHCP."""
+    """Checks DHCP pools."""
     errors: list[PlanError] = []
 
     for pool in plan.dhcp_pools:

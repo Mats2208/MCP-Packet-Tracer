@@ -1,24 +1,24 @@
 """
-Anotaciones y captura del canvas lógico de Packet Tracer.
+Annotations and capture of Packet Tracer's logical canvas.
 
-Lógica pura, sin bridge — testeable con datos sintéticos, igual que topology_diff.
+Pure logic, no bridge — testable with synthetic data, like topology_diff.
 
-El grueso de este módulo existe por cómo PT devuelve una imagen: no manda binario
-ni base64, sino los bytes en decimal separados por coma y **con signo** (el `byte`
-de Qt va de -128 a 127). Reconstruir el archivo es traducir cada negativo a su
-valor sin signo. Verificado contra PT 9.0.0.0810: los primeros ocho valores de un
-PNG vuelven como `-119,80,78,71,13,10,26,10`, que es exactamente la firma
+Most of this module exists because of how PT returns an image: it does not send
+binary or base64, but bytes in decimal separated by commas and **signed** (Qt's
+`byte` ranges from -128 to 127). Rebuilding the file means translating each negative
+value to its unsigned equivalent. Verified against PT 9.0.0.0810: the first eight values
+of a PNG come back as `-119,80,78,71,13,10,26,10`, which is exactly the signature
 `89 50 4E 47 0D 0A 1A 0A`.
 """
 
 from __future__ import annotations
 
-# Formatos que acepta getWorkspaceImage. Medido: PNG ~33 KB y JPG ~105 KB para el
-# mismo canvas — PNG comprime mucho mejor un diagrama de líneas planas.
+# Formats accepted by getWorkspaceImage. Measured: PNG ~33 KB and JPG ~105 KB for the
+# same canvas — PNG compresses flat line diagrams much better.
 IMAGE_FORMATS = ("PNG", "JPG", "JPEG", "BMP")
 
-# Firmas para verificar que lo decodificado es realmente lo que se pidió, en vez
-# de escribir a disco un archivo corrupto y avisar recién cuando alguien lo abre.
+# Signatures to verify that the decoded data is really what was requested, instead
+# of writing a corrupt file to disk and only reporting it once someone opens it.
 _MAGIC = {
     "PNG": bytes([0x89, 0x50, 0x4E, 0x47]),
     "JPG": bytes([0xFF, 0xD8, 0xFF]),
@@ -28,7 +28,7 @@ _MAGIC = {
 
 
 class CanvasImageError(ValueError):
-    """La respuesta de PT no se pudo convertir en una imagen."""
+    """PT's response could not be converted into an image."""
 
 
 def normalize_format(fmt: str) -> str:
@@ -41,7 +41,7 @@ def normalize_format(fmt: str) -> str:
 
 
 def decode_pt_image(raw: str, fmt: str = "PNG") -> bytes:
-    """Convierte la lista de bytes con signo de PT en el binario de la imagen."""
+    """Converts PT's signed byte list into the image's binary data."""
     if not raw or not raw.strip():
         raise CanvasImageError("PT devolvió una imagen vacía.")
 
@@ -58,7 +58,7 @@ def decode_pt_image(raw: str, fmt: str = "PNG") -> bytes:
             ) from exc
         if not -128 <= value <= 255:
             raise CanvasImageError(f"Byte fuera de rango: {value}.")
-        # Un `byte` de Qt es con signo; -119 y 137 son el mismo octeto (0x89).
+        # Qt's `byte` is signed; -119 and 137 are the same octet (0x89).
         out.append(value + 256 if value < 0 else value)
 
     if not out:
@@ -74,17 +74,17 @@ def decode_pt_image(raw: str, fmt: str = "PNG") -> bytes:
 
 
 def validate_color(r: int, g: int, b: int, a: int) -> None:
-    """Los cuatro canales van de 0 a 255; PT no avisa si se le pasa otra cosa."""
+    """All four channels range from 0 to 255; PT does not warn if anything else is passed."""
     for name, value in (("r", r), ("g", g), ("b", b), ("a", a)):
         if not 0 <= value <= 255:
             raise ValueError(f"El canal {name}={value} está fuera de rango (0-255).")
 
 
 def parse_uuid_list(raw) -> list[str]:
-    """Normaliza a lista los ids de canvas que devuelve PT.
+    """Normalizes the canvas ids returned by PT into a list.
 
-    Según el caso llegan como lista ya parseada por JSON o como una sola cadena
-    con los UUID entre llaves separados por coma.
+    Depending on the case they arrive as a list already parsed from JSON, or as a
+    single string with the UUIDs in braces separated by commas.
     """
     if raw is None:
         return []

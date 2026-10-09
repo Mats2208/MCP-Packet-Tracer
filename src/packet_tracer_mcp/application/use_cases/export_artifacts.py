@@ -1,4 +1,4 @@
-"""Use case: exportar artefactos a disco."""
+"""Use case: export artifacts to disk."""
 
 from __future__ import annotations
 from ...domain.models.plans import TopologyPlan
@@ -8,7 +8,7 @@ from ..dto.responses import ExportResponse
 
 
 def export_artifacts_uc(plan: TopologyPlan, output_dir: str = "projects") -> ExportResponse:
-    """Exporta todos los archivos del plan."""
+    """Exports all files of the plan."""
     executor = ManualExecutor(output_dir=output_dir)
     result = executor.execute(plan)
     return ExportResponse(

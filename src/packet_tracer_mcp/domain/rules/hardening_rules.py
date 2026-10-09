@@ -1,4 +1,4 @@
-"""Validación de hardening de dispositivos."""
+"""Device hardening validation."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from .text_rules import has_control_chars
 def _check_no_newlines(
     value: str | None, field: str, device: str, errors: list[PlanError]
 ) -> None:
-    """Un salto de línea en un campo de hardening es un comando IOS extra.
+    """A line break in a hardening field is an extra IOS command.
 
-    El payload viaja como una sola string a configureIosDevice(), que la parte por
-    "\\n" y manda cada trozo al dispositivo. Un \\n en `hostname` o `secret` no
-    rompe el JS: se convierte en configuración que nadie pidió.
+    The payload travels as a single string to configureIosDevice(), which splits it
+    on "\\n" and sends each piece to the device. A \\n in `hostname` or `secret` does not
+    break the JS: it becomes configuration nobody asked for.
     """
     if has_control_chars(value):
         errors.append(PlanError(
@@ -41,10 +41,9 @@ def validate_hardening(cfg: HardeningConfig) -> ValidationResult:
     if cfg.ssh:
         _check_no_newlines(cfg.ssh.domain, "ssh.domain", cfg.device, errors)
 
-    # El generador delimita el banner con '#' (banner motd #texto#). Un '#' dentro
-    # del texto cierra el banner antes de tiempo y lo que sigue lo interpreta IOS
-    # como configuración. La invariante estaba documentada en un comentario del
-    # generador pero no la hacía cumplir nadie.
+    # The generator delimits the banner with '#' (banner motd #text#). A '#' inside
+    # the text closes the banner early, and IOS interprets whatever follows as configuration.
+    # The invariant was documented in a comment in the generator, but nothing enforced it.
     if cfg.banner_motd and "#" in cfg.banner_motd:
         errors.append(PlanError(
             code=ErrorCode.HARDENING_INVALID_CHARS,

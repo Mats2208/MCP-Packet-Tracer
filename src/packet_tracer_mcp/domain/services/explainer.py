@@ -1,8 +1,8 @@
 """
-Explainer: genera explicaciones humanas de las decisiones del plan.
+Explainer: generates human-readable explanations of the plan's decisions.
 
-Útil para aprendizaje y para que el LLM pueda comunicar al usuario
-por qué se tomó cada decisión.
+Useful for learning, and so the LLM can tell the user
+why each decision was made.
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from ..models.plans import TopologyPlan
 
 
 def explain_plan(plan: TopologyPlan) -> list[str]:
-    """Genera una lista de explicaciones de las decisiones del plan."""
+    """Generates a list of explanations for the plan's decisions."""
     explanations: list[str] = []
 
-    # Dispositivos
+    # Devices
     routers = plan.devices_by_category("router")
     switches = plan.devices_by_category("switch")
     pcs = plan.devices_by_category("pc")
@@ -98,7 +98,7 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
             f"protocolo avanzado de vector de distancia (Cisco), convergencia rápida."
         )
 
-    # Validación
+    # Validation
     if plan.validations:
         explanations.append(
             f"Verificaciones sugeridas: {len(plan.validations)} "

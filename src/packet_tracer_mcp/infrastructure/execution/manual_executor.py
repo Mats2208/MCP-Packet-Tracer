@@ -1,5 +1,5 @@
 """
-Ejecutor manual: exporta archivos para que el usuario los copie/pegue.
+Manual executor: exports files so the user can copy/paste them.
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ from .executor_base import ExecutorBase
 
 
 class ManualExecutor(ExecutorBase):
-    """Genera archivos de salida para ejecución manual."""
+    """Generates output files for manual execution."""
 
     def __init__(self, output_dir: str | Path = "projects"):
         self.output_dir = Path(output_dir)
 
     def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
-        """Genera todos los archivos de la topología."""
+        """Generates all the files for the topology."""
         base_name = (project_name or plan.name or "topology").strip() or "topology"
         safe_name = safe_name_component(base_name)
         project_dir = resolve_within(self.output_dir, safe_name)
@@ -40,7 +40,7 @@ class ManualExecutor(ExecutorBase):
         full_path.write_text(full, encoding="utf-8")
         files["full_script"] = str(full_path)
 
-        # CLI configs individuales
+        # Individual CLI configs
         configs = generate_all_configs(plan)
         for device_name, config_text in configs.items():
             cfg_path = resolve_within(
@@ -54,7 +54,7 @@ class ManualExecutor(ExecutorBase):
         plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
         files["plan_json"] = str(plan_path)
 
-        # Metadata del proyecto
+        # Project metadata
         meta_path = project_dir / "metadata.json"
         metadata = {
             "project_name": safe_name,

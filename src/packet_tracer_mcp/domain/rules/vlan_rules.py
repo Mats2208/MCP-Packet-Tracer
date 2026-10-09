@@ -1,4 +1,4 @@
-"""Validación estática y contra-topología de un VLANPlan."""
+"""Static and topology-level validation of a VLANPlan."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .text_rules import has_control_chars
 
 
 def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
-    """Valida un VLANPlan sin tocar PT (rangos, duplicados, coherencia)."""
+    """Validates a VLANPlan without touching PT (ranges, duplicates, consistency)."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -71,7 +71,7 @@ def validate_vlan_plan(plan: VLANPlan) -> ValidationResult:
 def validate_vlan_against_topology(
     plan: VLANPlan, devices_in_pt: list[dict]
 ) -> ValidationResult:
-    """Valida que el switch/router (y sus puertos) existan en la topología activa de PT."""
+    """Checks that the switch/router (and its ports) exist in PT's active topology."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
 
@@ -102,7 +102,7 @@ def validate_vlan_against_topology(
             suggestion="Llama a pt_query_topology para ver los nombres reales.",
         ))
 
-    # Validar puertos de trunks/access contra el modelo (si el switch existe)
+    # Validate trunk/access ports against the model (if the switch exists)
     if plan.switch in by_name:
         valid = _ports_of(plan.switch)
         if valid:
@@ -123,7 +123,7 @@ def validate_vlan_against_topology(
                         suggestion=f"Puertos válidos: {', '.join(sorted(valid))}",
                     ))
 
-    # Subinterfaces: el puerto padre debe existir en el router
+    # Subinterfaces: the parent port must exist on the router
     if plan.router in by_name:
         valid_r = _ports_of(plan.router)
         if valid_r:

@@ -1,14 +1,14 @@
-"""Use case: aplicar ACL a un router en la topología activa.
+"""Use case: apply an ACL to a router in the active topology.
 
 Pipeline:
-  1. Construye ACLPlan + ACLBinding opcional desde args user-friendly.
-  2. Valida estáticamente (rangos, tipos, IPs/wildcards, reglas inalcanzables).
-  3. Verifica contra topología activa de PT (router e interfaz existen).
-  4. Genera CLI IOS y arma payload para configureIosDevice.
-  5. Devuelve payload listo para enviar via bridge (o lo envía si apply=True).
+  1. Builds ACLPlan + optional ACLBinding from user-friendly args.
+  2. Validates statically (ranges, types, IPs/wildcards, unreachable rules).
+  3. Checks against the active PT topology (router and interface exist).
+  4. Generates IOS CLI and builds the payload for configureIosDevice.
+  5. Returns a payload ready to send via the bridge (or sends it if apply=True).
 
-La aplicación real se delega al caller (tool MCP) para mantener este
-módulo libre de dependencias del bridge HTTP.
+The actual application is delegated to the caller (MCP tool) to keep this
+module free of HTTP bridge dependencies.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def build_acl_plan(
     acl_type: str,
     entries_dicts: list[dict],
 ) -> ACLPlan:
-    """Construye un ACLPlan desde dicts (típicamente del LLM)."""
+    """Builds an ACLPlan from dicts (typically from the LLM)."""
     entries = [ACLEntry(**e) for e in entries_dicts]
     return ACLPlan(
         router=router,
@@ -47,13 +47,13 @@ def validate_against_topology(
     binding: ACLBinding | None,
     devices_in_pt: list[dict],
 ) -> ValidationResult:
-    """Valida que router (y su interfaz si hay binding) existan en PT.
+    """Checks that the router (and its interface, if there is a binding) exist in PT.
 
-    `devices_in_pt` es la salida cruda del bridge (queryTopology()):
-    cada dict tiene al menos {name, type, model}. No incluye interfaces
-    explícitas, así que la verificación de interfaz es heurística:
-    si el modelo del router está en el catálogo, validamos contra sus
-    puertos conocidos.
+    `devices_in_pt` is the raw output of the bridge (queryTopology()):
+    each dict has at least {name, type, model}. It does not include explicit
+    interfaces, so the interface check is heuristic:
+    if the router's model is in the catalog, we validate against its
+    known ports.
     """
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
@@ -69,9 +69,9 @@ def validate_against_topology(
         return ValidationResult(errors=errors, warnings=warnings)
 
     if binding is not None:
-        # Verifica interfaz contra catálogo (best-effort).
-        # Acepta sub-interfaces (ej "GigabitEthernet0/0/1.20") validando que el puerto
-        # base exista — PT crea las sub-interfaces dinámicamente al configurar dot1Q.
+        # Checks the interface against the catalog (best-effort).
+        # Accepts sub-interfaces (e.g. "GigabitEthernet0/0/1.20") as long as the base port
+        # exists — PT creates sub-interfaces dynamically when configuring dot1Q.
         from ...infrastructure.catalog.devices import resolve_model
         model = resolve_model(device.get("model", ""))
         if model is not None:
@@ -96,32 +96,32 @@ def apply_acl_uc(
     bridge_send: Callable[[str], bool] | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Pipeline completo: validar + (opcionalmente) aplicar.
+    """Full pipeline: validate + (optionally) apply.
 
     Args:
-        plan: ACLPlan ya construido.
-        binding: opcional, aplica la ACL a una interfaz.
-        query_pt_topology: callable que devuelve devices_in_pt (lista dicts).
-            Si es None se omite la verificación contra PT (solo validación estática).
-        bridge_send: callable que recibe el JS payload completo y lo envía a PT.
-            Si es None o dry_run=True, no se envía nada.
-        dry_run: si True, devuelve el payload pero no lo envía.
+        plan: ACLPlan already built.
+        binding: optional, applies the ACL to an interface.
+        query_pt_topology: callable that returns devices_in_pt (list of dicts).
+            If None, the PT check is skipped (static validation only).
+        bridge_send: callable that receives the full JS payload and sends it to PT.
+            If None or dry_run=True, nothing is sent.
+        dry_run: if True, returns the payload without sending it.
 
     Returns:
-        dict con keys: valid, errors, warnings, cli_lines, js_payload, sent.
+        dict with keys: valid, errors, warnings, cli_lines, js_payload, sent.
     """
-    # 1. Validación estática del plan
+    # 1. Static validation of the plan
     plan_result = validate_acl_plan(plan)
     errors = list(plan_result.errors)
     warnings = list(plan_result.warnings)
 
-    # 2. Validación del binding (si aplica)
+    # 2. Validate the binding (if applicable)
     if binding is not None:
         binding_result = validate_acl_binding(binding, plan)
         errors.extend(binding_result.errors)
         warnings.extend(binding_result.warnings)
 
-    # 3. Validación dinámica contra PT
+    # 3. Dynamic validation against PT
     if query_pt_topology is not None:
         try:
             devices_in_pt = query_pt_topology()
@@ -135,7 +135,7 @@ def apply_acl_uc(
                 message=f"No se pudo consultar topología activa: {exc}. Validación estática aplicada.",
             ))
 
-    # 4. Generar CLI siempre (útil incluso si hay errores, para inspección)
+    # 4. Always generate the CLI (useful for inspection even if there are errors)
     cli_lines = generate_acl_cli(plan)
     if binding is not None:
         cli_lines.extend(generate_acl_binding_cli(binding))
@@ -166,9 +166,9 @@ def remove_acl_uc(
     bridge_send: Callable[[str], bool] | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Construye y envía comandos para eliminar una ACL aplicada."""
-    # Sin ACLPlan no pasa por validate_acl_plan, pero los mismos campos
-    # terminan crudos en el CLI (`no access-list {name}`, `interface {iface}`).
+    """Builds and sends commands to remove an applied ACL."""
+    # ACLPlan is not used, so validate_acl_plan does not run, but the same fields
+    # end up raw in the CLI (`no access-list {name}`, `interface {iface}`).
     errors = [
         PlanError(
             code=ErrorCode.ACL_INVALID_NAME,
@@ -203,12 +203,12 @@ def remove_acl_uc(
 
 
 def _build_js_call(router: str, ios_payload: str) -> str:
-    """Envuelve el payload IOS en una llamada configureIosDevice como una sola línea JS.
+    """Wraps the IOS payload in a configureIosDevice call as a single JS line.
 
-    Importante: el string completo debe ir en una línea de código JS (sin
-    saltos reales en el código), pero los \\n DENTRO del string sí viajan
-    porque son escapes de string literal — no son saltos de línea de
-    código fuente que executeCode() strippearía.
+    Important: the full string must go on one line of JS code (without
+    real line breaks in the code), but the \\n INSIDE the string do survive
+    because they are string-literal escapes — they are not source-code line breaks
+    that executeCode() would strip.
     """
     safe_router = router.replace("\\", "\\\\").replace('"', '\\"')
     safe_payload = (
