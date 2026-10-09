@@ -10,6 +10,13 @@ validates them, generates JavaScript for PT's script engine and IOS CLI config
 for the devices, and can push all of it into a running copy of Packet Tracer over
 a local HTTP bridge.
 
+## Language
+
+Write everything in the repo in **English**: code, comments, docstrings, tool
+descriptions, user-facing messages, tests, docs and commit messages. This keeps
+the project usable by anyone, whatever their language. Talk to your user in
+**their** preferred language — only what you write into the repo is English.
+
 ## Build and test
 
 ```bash
@@ -19,7 +26,7 @@ python -m pytest          # from the repo root, no PT required
 
 There is no linter or formatter configured. Match the surrounding style: type
 hints on public functions, `from __future__ import annotations` at the top,
-comments in Spanish or English following whatever the file already uses.
+comments in English (see Language above).
 
 ## Layout
 

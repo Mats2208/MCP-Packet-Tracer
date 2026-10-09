@@ -52,3 +52,15 @@ site/
 _site/
 
 pt_union.txt
+
+# Smoke-test / UI-mode screenshots
+/screenshots/
+/tempimages/
+
+# Local agent working files: plans, status, scratch and smoke harness (not part of the project)
+/PLAN.md
+/STATUS.md
+/HANDOFF.md
+/.dev/
+/.superpowers/
+/screenshots_*/

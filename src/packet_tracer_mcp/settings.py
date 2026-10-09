@@ -460,4 +460,6 @@ pt_read_vlans, pt_health_check.
 
 Device windows (CLI, Command Prompt, Desktop apps, Services): pt_cli, pt_host_command, pt_server_* and \
 friends work headless; pt_ui_mode("ui") or show=True opens PT's window, capture=True saves a PNG.
+
+Tool output is in English; answer the user in their own language.
 """
