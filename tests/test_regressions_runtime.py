@@ -138,8 +138,8 @@ def test_query_pt_devices_no_longer_calls_undefined_querytopology():
         registry_source()
     )
     assert '"queryTopology()"' not in src, "la llamada muerta a queryTopology() volvió"
-    assert "_LIVE_DEVICES_JS" in src
-    assert "def _live_devices(" in src
+    assert "LIVE_DEVICES_JS" in src
+    assert "def live_devices(" in src
 
 
 def test_script_engine_defines_all_helpers():
