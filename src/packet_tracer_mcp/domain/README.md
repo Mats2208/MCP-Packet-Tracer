@@ -1,8 +1,8 @@
 # domain/
 
-Lógica de negocio pura del proyecto. No depende de infraestructura ni de frameworks externos (solo Pydantic para modelos).
+Pure business logic of the project. It does not depend on infrastructure or external frameworks (only Pydantic for models).
 
-## Estructura
+## Structure
 
 ```
 domain/
@@ -15,122 +15,122 @@ domain/
 
 ## models/
 
-Modelos Pydantic que representan el contrato de datos del sistema.
+Pydantic models that represent the system's data contract.
 
 ### `requests.py` — TopologyRequest
-Entrada del LLM — define qué topología construir:
+Input from the LLM — defines which topology to build:
 
-| Campo | Tipo | Default | Descripción |
+| Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `template` | TopologyTemplate | multi_lan | Plantilla de topología |
-| `routers` | int (1-20) | 2 | Número de routers |
-| `switches_per_router` | int (0-4) | 1 | Switches por router |
-| `pcs_per_lan` | list[int] \| int | 3 | PCs por LAN |
-| `servers` | int (0-10) | 0 | Servidores |
-| `has_wan` | bool | False | Incluir nube WAN |
-| `dhcp` | bool | True | DHCP habilitado |
-| `routing` | RoutingProtocol | static | Protocolo de routing |
-| `router_model` / `switch_model` | str | 2911 / 2960-24TT | Modelos de dispositivos |
-| `base_network` / `inter_router_network` | str | 192.168.0.0/16 / 10.0.0.0/16 | Bases de direccionamiento |
-| `floating_routes` | bool | False | Rutas estáticas de respaldo (AD=254) |
-| `ospf_process_id` | int | 1 | ID de proceso OSPF |
-| `eigrp_as` | int | 100 | AS de EIGRP |
+| `template` | TopologyTemplate | multi_lan | Topology template |
+| `routers` | int (1-20) | 2 | Number of routers |
+| `switches_per_router` | int (0-4) | 1 | Switches per router |
+| `pcs_per_lan` | list[int] \| int | 3 | PCs per LAN |
+| `servers` | int (0-10) | 0 | Servers |
+| `has_wan` | bool | False | Include WAN cloud |
+| `dhcp` | bool | True | DHCP enabled |
+| `routing` | RoutingProtocol | static | Routing protocol |
+| `router_model` / `switch_model` | str | 2911 / 2960-24TT | Device models |
+| `base_network` / `inter_router_network` | str | 192.168.0.0/16 / 10.0.0.0/16 | Addressing bases |
+| `floating_routes` | bool | False | Backup static routes (AD=254) |
+| `ospf_process_id` | int | 1 | OSPF process ID |
+| `eigrp_as` | int | 100 | EIGRP AS |
 
-### `plans.py` — Modelos del plan
-Resultado validado y completo de la planificación:
+### `plans.py` — Plan models
+Validated, complete result of the planning:
 
-| Modelo | Campos clave | Propósito |
+| Model | Key fields | Purpose |
 |--------|-------------|-----------|
-| `DevicePlan` | name, model, category, role, x, y, interfaces, gateway | Un dispositivo concreto |
-| `LinkPlan` | from_device, from_port, to_device, to_port, cable_type | Un enlace entre dispositivos |
-| `DHCPPool` | pool_name, network, mask, gateway, dns, excluded_start, excluded_end | Pool DHCP en router |
-| `StaticRoute` | destination, mask, next_hop, admin_distance | Ruta estática |
-| `OSPFConfig` | process_id, router_id, networks (list of network/wildcard/area) | Config OSPF |
-| `RIPConfig` | version, networks | Config RIP |
-| `EIGRPConfig` | as_number, networks | Config EIGRP |
-| `ValidationCheck` | check_type, from_device, to_target, expected | Verificación post-deploy |
-| `TopologyPlan` | devices, links, dhcp_pools, static_routes, ospf_configs, etc. | Plan completo |
+| `DevicePlan` | name, model, category, role, x, y, interfaces, gateway | A concrete device |
+| `LinkPlan` | from_device, from_port, to_device, to_port, cable_type | A link between devices |
+| `DHCPPool` | pool_name, network, mask, gateway, dns, excluded_start, excluded_end | DHCP pool on a router |
+| `StaticRoute` | destination, mask, next_hop, admin_distance | Static route |
+| `OSPFConfig` | process_id, router_id, networks (list of network/wildcard/area) | OSPF config |
+| `RIPConfig` | version, networks | RIP config |
+| `EIGRPConfig` | as_number, networks | EIGRP config |
+| `ValidationCheck` | check_type, from_device, to_target, expected | Post-deploy verification |
+| `TopologyPlan` | devices, links, dhcp_pools, static_routes, ospf_configs, etc. | Complete plan |
 
-`TopologyPlan` incluye helpers: `device_by_name(name)`, `devices_by_category(cat)`.
+`TopologyPlan` includes helpers: `device_by_name(name)`, `devices_by_category(cat)`.
 
-### `errors.py` — Taxonomía de errores
-15 códigos de error tipados con mensajes, dispositivos afectados y sugerencias:
+### `errors.py` — Error taxonomy
+15 typed error codes with messages, affected devices and suggestions:
 
-| Categoría | Códigos |
+| Category | Codes |
 |-----------|---------|
-| Dispositivos | DUPLICATE_DEVICE, UNKNOWN_MODEL, INSUFFICIENT_PORTS |
-| Enlaces | INVALID_PORT, DUPLICATE_LINK, CABLE_MISMATCH, PORT_ALREADY_USED, LINK_DEVICE_NOT_FOUND |
+| Devices | DUPLICATE_DEVICE, UNKNOWN_MODEL, INSUFFICIENT_PORTS |
+| Links | INVALID_PORT, DUPLICATE_LINK, CABLE_MISMATCH, PORT_ALREADY_USED, LINK_DEVICE_NOT_FOUND |
 | IP | IP_CONFLICT, INVALID_IP_FORMAT, SUBNET_OVERFLOW |
 | DHCP | DHCP_POOL_OVERLAP, DHCP_GATEWAY_MISMATCH |
 | Routing | MISSING_ROUTE |
 | Template | TEMPLATE_CONSTRAINT_VIOLATION |
 
-Clases: `ErrorCode` (enum), `PlanError` (error + sugerencia), `ValidationResult` (errors + warnings + is_valid).
+Classes: `ErrorCode` (enum), `PlanError` (error + suggestion), `ValidationResult` (errors + warnings + is_valid).
 
 ---
 
 ## services/
 
-6 servicios de negocio stateless:
+6 stateless business services:
 
-### `orchestrator.py` — Pipeline principal
-Función: `plan_from_request(request) → (TopologyPlan, ValidationResult)`
+### `orchestrator.py` — Main pipeline
+Function: `plan_from_request(request) → (TopologyPlan, ValidationResult)`
 
-Flujo interno:
-1. `_create_devices()` → genera DevicePlan para routers, switches, PCs, servers, cloud
-2. `_create_links()` → conecta router↔switch, switch↔PC, router↔router, router↔cloud
-3. `ip_planner.plan_addressing()` → asigna IPs, DHCP, rutas
-4. `_create_validations()` → genera checks post-deploy (ping tests)
-5. `validator.validate_plan()` → valida el plan completo
+Internal flow:
+1. `_create_devices()` → generates DevicePlan for routers, switches, PCs, servers, cloud
+2. `_create_links()` → connects router↔switch, switch↔PC, router↔router, router↔cloud
+3. `ip_planner.plan_addressing()` → assigns IPs, DHCP, routes
+4. `_create_validations()` → generates post-deploy checks (ping tests)
+5. `validator.validate_plan()` → validates the complete plan
 
-### `ip_planner.py` — Direccionamiento IP
-Clase: `IPPlanner`
+### `ip_planner.py` — IP addressing
+Class: `IPPlanner`
 
-| Método | Descripción |
+| Method | Description |
 |--------|-------------|
-| `plan_addressing(plan, request)` | Asigna subredes LAN (/24), inter-router (/30), DHCP pools, rutas |
-| `_assign_lan_subnets()` | 192.168.x.0/24 secuencial por LAN |
-| `_assign_inter_router_ips()` | 10.0.x.0/30 por enlace router-router |
-| `_create_dhcp_pools()` | Pool por LAN con exclusión del gateway |
-| `_create_routes()` | Estáticas, floating, OSPF, RIP o EIGRP según el request |
+| `plan_addressing(plan, request)` | Assigns LAN subnets (/24), inter-router (/30), DHCP pools, routes |
+| `_assign_lan_subnets()` | 192.168.x.0/24 sequentially per LAN |
+| `_assign_inter_router_ips()` | 10.0.x.0/30 per router-router link |
+| `_create_dhcp_pools()` | One pool per LAN, excluding the gateway |
+| `_create_routes()` | Static, floating, OSPF, RIP or EIGRP depending on the request |
 
-Esquema: Gateway = .1, PCs desde .2, enlaces /30 (solo 2 hosts).
+Scheme: Gateway = .1, PCs from .2, /30 links (only 2 hosts).
 
-### `validator.py` — Orquestador de validación
-Función: `validate_plan(plan) → ValidationResult`
+### `validator.py` — Validation orchestrator
+Function: `validate_plan(plan) → ValidationResult`
 
-Ejecuta secuencialmente: `validate_devices()` → `validate_links()` → `validate_ips()` → `validate_dhcp()`.
+Runs sequentially: `validate_devices()` → `validate_links()` → `validate_ips()` → `validate_dhcp()`.
 
-### `auto_fixer.py` — Auto-corrección
-Función: `fix_plan(plan) → (TopologyPlan, list[str])`
+### `auto_fixer.py` — Auto-correction
+Function: `fix_plan(plan) → (TopologyPlan, list[str])`
 
-3 estrategias de corrección:
-- `_fix_cables()` — infiere tipo de cable correcto según categorías
-- `_fix_insufficient_ports()` — sube modelo de router si faltan puertos
-- `_fix_invalid_ports()` — reasigna puertos inválidos
+3 correction strategies:
+- `_fix_cables()` — infers the correct cable type from categories
+- `_fix_insufficient_ports()` — upgrades the router model if ports are missing
+- `_fix_invalid_ports()` — reassigns invalid ports
 
-### `explainer.py` — Explicaciones
-Función: `explain_plan(plan) → list[str]`
+### `explainer.py` — Explanations
+Function: `explain_plan(plan) → list[str]`
 
-Genera texto legible: conteo de dispositivos, estrategia de subredes, DHCP, WAN, routing.
+Generates readable text: device count, subnet strategy, DHCP, WAN, routing.
 
-### `estimator.py` — Estimación dry-run
-Funciones:
-- `estimate_from_request(request) → dict` — estimación rápida sin generar plan
-- `estimate_from_plan(plan) → dict` — estimación desde plan existente
+### `estimator.py` — Dry-run estimation
+Functions:
+- `estimate_from_request(request) → dict` — quick estimate without generating a plan
+- `estimate_from_plan(plan) → dict` — estimate from an existing plan
 
-Retorna: complejidad (simple/medium/complex), conteos, subnets estimadas.
+Returns: complexity (simple / moderate / complex / very complex), counts, estimated subnets.
 
 ---
 
 ## rules/
 
-3 módulos de reglas de validación independientes:
+3 independent validation rule modules:
 
-| Archivo | Función | Valida |
+| File | Function | Validates |
 |---------|---------|--------|
-| `device_rules.py` | `validate_devices(plan)` | Nombres duplicados, modelos desconocidos |
-| `cable_rules.py` | `validate_links(plan)` | Puertos válidos, duplicados, tipos de cable |
-| `ip_rules.py` | `validate_ips(plan)` + `validate_dhcp(plan)` | Conflictos IP, formato, gateway DHCP |
+| `device_rules.py` | `validate_devices(plan)` | Duplicate names, unknown models |
+| `cable_rules.py` | `validate_links(plan)` | Valid ports, duplicates, cable types |
+| `ip_rules.py` | `validate_ips(plan)` + `validate_dhcp(plan)` | IP conflicts, format, DHCP gateway |
 
-Cada función retorna `list[PlanError]` (errores) o `tuple[list[PlanError], list[PlanError]]` (errores + warnings).
+Each function returns `list[PlanError]` (errors) or `tuple[list[PlanError], list[PlanError]]` (errors + warnings).

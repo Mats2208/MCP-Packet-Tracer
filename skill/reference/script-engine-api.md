@@ -22,8 +22,8 @@ If a method is not here, do **not** assume it exists.
 - `d.getPorts()` → **Array of port-name strings** — use `.length`, `[i]`, `.join(",")`.
   ❌ never `.size()`, `.at(i)`, `.getName()` on it (TypeError → modal → freeze).
 - `d.getPort(name)` → Port | null · `d.getPower()/setPower(bool)/skipBoot()/setName(name)`
-- `d.moveToLocation(x, y)` → reposiciona en el canvas lógico. Es lo que usa `pt_move_device`;
-  en un solo `pt_send_raw` podés reacomodar decenas de dispositivos sin una llamada por cada uno.
+- `d.moveToLocation(x, y)` → repositions on the logical canvas. It is what `pt_move_device` uses;
+  in a single `pt_send_raw` you can rearrange dozens of devices without one call per device.
 - `d.addModule(slot, allModuleTypes[model], modelName)` → bool  (**slot is a STRING**)
 - `d.getProcess("AclProcess")` → AclProcess | null (routers) · `d.enterCommand(cmd, mode)`
 - `d.getCommandLine()` → console handle with `getOutput()`, `enterCommand(cmd)`, `getPrompt()`.
@@ -124,8 +124,7 @@ script = generate_executable_script(plan)
 
 bridge = FileBridge()
 assert bridge.pt_alive()                 # Script Engine heartbeat
-for batch in chunks(script.split("
-"), 25):
+for batch in chunks(script.split("\n"), 25):
     body = "".join(f"try{{{line}}}catch(e){{}}" for line in batch)
     bridge.send_and_wait(body + "reportResult('ok');", timeout=90.0)
 ```

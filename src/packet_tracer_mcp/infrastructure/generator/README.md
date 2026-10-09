@@ -1,22 +1,22 @@
 # infrastructure/generator/
 
-Generadores de código que transforman un `TopologyPlan` en artefactos ejecutables: scripts JavaScript para PTBuilder y configuraciones CLI IOS para routers/switches.
+Code generators that turn a `TopologyPlan` into executable artifacts: JavaScript scripts for PTBuilder and IOS CLI configurations for routers/switches.
 
-## Archivos
+## Files
 
-### `ptbuilder_generator.py` — Generador de scripts PTBuilder (JavaScript)
+### `ptbuilder_generator.py` — PTBuilder script generator (JavaScript)
 
-Genera código JavaScript compatible con el Script Engine de Packet Tracer Builder.
+Generates JavaScript code compatible with the Packet Tracer Builder Script Engine.
 
-**Funciones:**
+**Functions:**
 
-| Función | Salida | Descripción |
+| Function | Output | Description |
 |---------|--------|-------------|
-| `generate_ptbuilder_script(plan)` | `str` (JS) | Script básico: `addDevice()` + `addLink()` — solo topología física |
-| `generate_executable_script(plan)` | `str` (JS) | Script completo: topología + `configureIosDevice()` + `configurePcIp()` |
-| `generate_full_script(plan)` | `str` (JS) | Script básico + configuraciones CLI como comentarios de referencia |
+| `generate_ptbuilder_script(plan)` | `str` (JS) | Basic script: `addDevice()` + `addLink()` — physical topology only |
+| `generate_executable_script(plan)` | `str` (JS) | Full script: topology + `configureIosDevice()` + `configurePcIp()` |
+| `generate_full_script(plan)` | `str` (JS) | Basic script + CLI configurations as reference comments |
 
-**Comandos JS generados:**
+**Generated JS commands:**
 ```javascript
 // Topología (addDevice + addLink)
 addDevice('router', '2911', 'R1', 100, 100);
@@ -34,34 +34,34 @@ configurePcIp('PC2', false, '192.168.1.2', '255.255.255.0', '192.168.1.1');    /
 
 ---
 
-### `cli_config_generator.py` — Generador de configuraciones CLI IOS
+### `cli_config_generator.py` — IOS CLI configuration generator
 
-Genera configuraciones CLI estándar de Cisco IOS para cada dispositivo del plan.
+Generates standard Cisco IOS CLI configurations for each device in the plan.
 
-**Función principal:**
+**Main function:**
 ```python
 generate_all_configs(plan: TopologyPlan) → dict[str, str]
 ```
-Retorna `{device_name: config_text}` para todos los routers, switches y PCs del plan.
+Returns `{device_name: config_text}` for all routers, switches and PCs in the plan.
 
-**Funciones internas:**
+**Internal functions:**
 
-| Función | Para | Genera |
+| Function | For | Generates |
 |---------|------|--------|
-| `_router_config(router, plan)` | Routers | hostname, interfaces con IP, DHCP pools, static routes, OSPF, RIP, EIGRP |
-| `_switch_config(switch, plan)` | Switches | hostname básico |
-| `generate_pc_config(device, use_dhcp)` | PCs/Laptops | Instrucciones de IP estática o DHCP |
+| `_router_config(router, plan)` | Routers | hostname, interfaces with IP, DHCP pools, static routes, OSPF, RIP, EIGRP |
+| `_switch_config(switch, plan)` | Switches | basic hostname |
+| `generate_pc_config(device, use_dhcp)` | PCs/Laptops | Static IP or DHCP instructions |
 
-**Configuraciones de routing soportadas:**
+**Supported routing configurations:**
 
-| Protocolo | Comandos generados |
+| Protocol | Generated commands |
 |-----------|-------------------|
 | Static | `ip route {dest} {mask} {next_hop} [admin_distance]` |
 | OSPF | `router ospf {pid}`, `router-id`, `network {net} {wildcard} area 0` |
 | RIP | `router rip`, `version 2`, `network {net}`, `no auto-summary` |
 | EIGRP | `router eigrp {as}`, `network {net} {wildcard}`, `no auto-summary` |
 
-**DHCP generado:**
+**Generated DHCP:**
 ```
 ip dhcp excluded-address 192.168.1.1 192.168.1.1
 ip dhcp pool LAN1_POOL

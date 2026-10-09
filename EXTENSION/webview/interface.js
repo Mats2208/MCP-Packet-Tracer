@@ -36,11 +36,11 @@ var S = {
 
 var BRIDGE_BASE = "http://127.0.0.1:54321";
 
-// Token compartido con el servidor MCP. Este webview corre bajo el esquema
-// this-sm: y no tiene acceso al sistema de archivos, así que no puede leerlo del
-// disco: se lo pide al Script Engine con $se("getMcpToken"), que sí puede leer
-// archivos. Sin emparejamiento ni acción del usuario. No se cachea a propósito
-// (si el servidor rota el token, la copia quedaría obsoleta en silencio).
+// Token shared with the MCP server. This webview runs under the this-sm:
+// scheme and has no file system access, so it cannot read the token from
+// disk: it asks the Script Engine for it with $se("getMcpToken"), which can read
+// files. No pairing or user action is needed. It is deliberately not cached
+// (if the server rotates the token, the copy would silently go stale).
 var S_TOKEN = "";
 
 function bridgeUrl(path) {
@@ -53,9 +53,9 @@ function bootstrapSnippet() {
         '"setInterval(function(){var x=new XMLHttpRequest();' +
         "x.open('GET','http://127.0.0.1:54321/next?t=" + q + "',true);" +
         'x.onload=function(){if(x.status===200&&x.responseText)' +
-        // try/catch: sin él, un error dentro de runCode abre un modal de PT que
-        // congela el webview y mata el polling. Las otras copias del bootstrap
-        // ya lo tenían; esta se había quedado atrás.
+        // try/catch: without it, an error inside runCode opens a PT modal that
+        // freezes the webview and kills the polling. The other copies of the bootstrap
+        // already had it; this one had fallen behind.
         "{try{$se('runCode',x.responseText)}catch(e){}}};x.onerror=function(){};" +
         'x.send()},500)");';
 }
@@ -65,10 +65,10 @@ function refreshBootstrapSnippet() {
     if (el) el.textContent = bootstrapSnippet();
 }
 
-/* Carga el token desde el Script Engine, que lo lee del disco.
-   El webview no puede tocar archivos; el Script Engine si. $se() devuelve una
-   Promise. No hay emparejamiento ni accion del usuario: la extension arranca y
-   funciona. */
+/* Loads the token from the Script Engine, which reads it from disk.
+   The webview cannot touch files; the Script Engine can. $se() returns a
+   Promise. No pairing or user action is needed: the extension starts and
+   works. */
 function loadToken(onDone) {
     try {
         $se("getMcpToken").then(function(tok) {
@@ -91,8 +91,9 @@ function loadToken(onDone) {
     }
 }
 
-/* Sin token el bridge devuelve 401 en todo. Decir DONDE se busco, porque la
-   causa casi siempre es que el servidor MCP nunca corrio en esta maquina. */
+/* Without a token the bridge returns 401 for everything. Say WHERE it was
+   searched, because the cause is almost always that the MCP server never ran
+   on this machine. */
 function reportMissingToken() {
     log("No MCP token found on this machine.", "err");
     log("Start the MCP server once (it creates the token on first run), " +
@@ -108,9 +109,9 @@ function reportMissingToken() {
 // ------------------------------------------------------------------ Init ---
 
 function init() {
-    // El token se lee del disco a través del Script Engine en cada arranque.
-    // No se cachea con $putData a propósito: si el servidor MCP lo rota, la
-    // copia cacheada quedaría obsoleta y el fallo sería invisible.
+    // The token is read from disk through the Script Engine on every startup.
+    // It is deliberately not cached with $putData: if the MCP server rotates it, the
+    // cached copy would go stale and the failure would be invisible.
     loadToken();
     refreshBootstrapSnippet();
 
@@ -142,7 +143,7 @@ function init() {
     pollBridgeStatus();
 
     // Poll for commands every 500ms
-    // Se auto-reencadena (long-poll), no lleva setInterval.
+    // Re-chains itself (long-poll); it has no setInterval.
     pollCommands();
 
     updateQBPreview();
@@ -341,8 +342,8 @@ function pollBridgeStatus() {
         x.timeout = 2000;
         x.onload = function() {
             if (x.status === 401) {
-                // El bridge está vivo pero no nos reconoce: token ausente,
-                // caducado o rotado. Reintentar el emparejamiento una vez.
+                // The bridge is alive but does not recognize us: token missing,
+                // expired or rotated. Retry the pairing once.
                 handleUnauthorized();
                 setBridgeDown();
                 return;
@@ -367,9 +368,9 @@ function pollBridgeStatus() {
                     if (wasPT && !S.ptConnected) log("PT disconnected — polling stopped", "warn");
 
                     updateConnectionUI();
-                    // Estado del canal de archivo (corre en el Script Engine, con
-                    // o sin ventana). Le dice al usuario que puede cerrar la
-                    // ventana y PT va a seguir ejecutando comandos.
+                    // File channel status (runs in the Script Engine, with
+                    // or without the window). It tells the user they can close the
+                    // window and PT will keep executing commands.
                     try {
                         $se("fileBridgeStatus").then(function(s) {
                             try { S.fileBridge = JSON.parse(s); } catch(e) {}
@@ -399,8 +400,8 @@ function setBridgeDown() {
     updateConnectionUI();
 }
 
-/* Enciende el badge del file-bridge cuando el loop del Script Engine está vivo.
-   Verde = PT seguirá ejecutando aunque cierres esta ventana. */
+/* Lights up the file-bridge badge when the Script Engine loop is alive.
+   Green = PT keeps executing even when you close this window. */
 function updateFileBridgeBadge() {
     var el = document.getElementById("fbBadge");
     if (!el) return;
@@ -419,9 +420,9 @@ function updateFileBridgeBadge() {
     el.innerHTML = '<span class="conn-dot"></span>' + label;
 }
 
-/* Un 401 significa que el bridge está pero nuestro token no sirve — típicamente
-   porque el servidor lo rotó. Se relee del disco, con un tope para no entrar en
-   bucle si el archivo realmente no está. */
+/* A 401 means the bridge is up but our token is not valid — typically
+   because the server rotated it. It is re-read from disk, capped so it does
+   not loop if the file is really missing. */
 var _tokenReloads = 0;
 function handleUnauthorized() {
     if (_tokenReloads >= 3) return;
@@ -432,18 +433,18 @@ function handleUnauthorized() {
     });
 }
 
-/* Long-poll encadenado: el bridge retiene /next hasta que haya algo (o ~2s) y
-   devuelve TODOS los comandos en cola de una vez. Antes esto era un setInterval
-   de 500 ms que se traía un comando por vuelta, así que una topología de 40
-   comandos tardaba decenas de segundos. Se reencadena siempre — nunca hay una
-   rama que deje el bucle muerto. */
+/* Chained long-poll: the bridge holds /next until there is something (or ~2s) and
+   returns ALL queued commands at once. This used to be a setInterval of 500 ms
+   that fetched one command per round trip, so a 40-command topology took tens
+   of seconds. It always re-chains — there is never a branch that leaves the
+   loop dead. */
 function pollCommands() {
     if (!S.bridgeUp) { setTimeout(pollCommands, 500); return; }
     var again = function() { setTimeout(pollCommands, 0); };
     try {
         var x = new XMLHttpRequest();
         x.open("GET", bridgeUrl("/next"), true);
-        // Holgado respecto al long-poll del bridge, para no cortarlo nosotros.
+        // Looser than the bridge's long-poll, so we do not cut it off ourselves.
         x.timeout = 8000;
         x.onload = function() {
             if (x.status === 401) { handleUnauthorized(); setTimeout(pollCommands, 1000); return; }
@@ -453,8 +454,8 @@ function pollCommands() {
                 var preview = batch.length > 120 ? batch.substring(0, 120) + "…" : batch;
                 log("MCP → PT (" + n + " cmd" + (n > 1 ? "s" : "") + "): " + preview, "recv");
                 try {
-                    // El lote entero va en un solo runCode: cada comando ya
-                    // trae su try/catch, así que uno malo no tumba a los demás.
+                    // The whole batch goes in a single runCode: each command already
+                    // carries its own try/catch, so one bad one does not take down the others.
                     $se("runCode", batch);
                     S.commandCount += n;
                     log("Batch executed", "ok");
@@ -657,9 +658,9 @@ function executeCode() {
     });
 }
 
-/* Encola un lote en una sola petición ASÍNCRONA.
-   Antes era un XHR síncrono por comando dentro de un forEach: bloqueaba el hilo
-   de la UI del webview y hacía una ida y vuelta HTTP por línea. */
+/* Queues a batch in a single ASYNCHRONOUS request.
+   It used to be a synchronous XHR per command inside a forEach: it blocked the
+   webview UI thread and made one HTTP round trip per line. */
 function queueCommands(cmds, onDone) {
     if (!cmds || !cmds.length) { if (onDone) onDone(0); return; }
     try {

@@ -23,9 +23,9 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
 `pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs).
 **Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
-`pt_verify_connectivity` gives **three** verdicts, not two: `CONECTIVIDAD OK` (every packet returned),
-`CONECTIVIDAD PARCIAL` (some loss — normal on a first ping because of ARP, so re-run once before
-calling it a fault) and `SIN CONECTIVIDAD`. It works from routers and switches, not only hosts.
+`pt_verify_connectivity` gives **three** verdicts, not two: `CONNECTIVITY OK` (every packet returned),
+`PARTIAL CONNECTIVITY (packet loss)` (some loss — normal on a first ping because of ARP, so re-run once before
+calling it a fault) and `NO CONNECTIVITY`. It works from routers and switches, not only hosts.
 `pt_health_check` no longer lists layer-2 ports as "cabled without IP", so anything it does report
 there is a real host that never got its DHCP lease.
 **Live-state inspection (read the device, not the plan):** `pt_audit_security(device="")` (security
