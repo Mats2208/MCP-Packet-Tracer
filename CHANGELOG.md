@@ -47,6 +47,24 @@
   while it is still unconfigured (`drop_factory_pool=True`); a configured one is left
   alone.
 
+
+### Changed
+
+- **A tool layer that costs far less context.** `tool_registry.py` (221 KB, every tool a closure)
+  is now a 1 KB orchestrator over `adapters/mcp/tools/<topic>.py` modules, each with
+  `register(mcp, ctx)`, sharing one `BridgeContext` (`adapters/mcp/bridge_context.py`). Tool
+  replies are compact JSON (`reply_json`, generated JS dropped once sent). The server
+  instructions fit the 2,048 characters Claude Code keeps (they were 12,761, so 84% never
+  arrived); the full text is the `pt://guide` resource. Tool descriptions are capped at 1,500
+  characters, and the skill is a small core plus `skill/reference/*.md` read on demand.
+  `CODEMAP.md` is a generated tool → file index. New guards: a pyflakes undefined-name test and a
+  tool-API snapshot (`tests/fixtures/tool_api.json`, regenerate with `UPDATE_TOOL_API=1`).
+- **The codebase is English.** Code, comments, docstrings, runtime messages, generated IOS/PTBuilder
+  text, module READMEs and extension/workflow comments. Visible changes: `pt_verify_connectivity`
+  says `CONNECTIVITY OK` / `PARTIAL CONNECTIVITY (packet loss)` / `NO CONNECTIVITY`, estimator
+  complexity is `simple / moderate / complex / very complex`, template tags are English.
+  `AGENTS.md` asks agents to write the repo in English and answer users in their own language.
+
 ### Fixed
 
 - **`pt_add_module` always reported a timeout, even when the module was installed.**
