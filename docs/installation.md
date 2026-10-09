@@ -127,14 +127,14 @@ drives the MCP from verified facts instead of guessing. Install it **globally** 
 
     ```bash
     mkdir -p ~/.claude/skills/packet-tracer
-    cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+    cp -r skill/. ~/.claude/skills/packet-tracer/
     ```
 
 === "Windows PowerShell"
 
     ```powershell
     New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+    Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
     ```
 
 Then run `/reload-skills` (or restart Claude Code) and confirm with `/skills`. Full details, including

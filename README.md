@@ -141,13 +141,13 @@ invents method/model/port names). Install it **globally** from the repo root:
 _Linux · macOS · Git Bash:_
 
 ```bash
-mkdir -p ~/.claude/skills/packet-tracer && cp skill/SKILL.md ~/.claude/skills/packet-tracer/SKILL.md
+mkdir -p ~/.claude/skills/packet-tracer && cp -r skill/. ~/.claude/skills/packet-tracer/
 ```
 
 _Windows PowerShell:_
 
 ```powershell
-New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null; Copy-Item skill\SKILL.md "$HOME\.claude\skills\packet-tracer\SKILL.md"
+New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null; Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
 ```
 
 Then run `/reload-skills` in Claude Code (or restart it) and confirm with `/skills`. Details →
