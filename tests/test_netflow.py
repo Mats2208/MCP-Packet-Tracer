@@ -6,6 +6,7 @@ aplican y `isFullyConfigured()` pasa a true con destino y puerto puestos.
 """
 
 from tests._registry_src import registry_source
+import re
 from pathlib import Path
 
 import pytest
@@ -145,4 +146,4 @@ class TestPhase3Readers:
     def test_error_types_are_imported(self):
         """PlanError/ErrorCode se usan en el except de pt_apply_netflow."""
         src = self._src()
-        assert "from ...domain.models.errors import ErrorCode, PlanError" in src
+        assert re.search(r"from \.+domain\.models\.errors import ErrorCode, PlanError", src)

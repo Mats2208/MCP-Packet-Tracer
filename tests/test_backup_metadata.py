@@ -70,7 +70,7 @@ class TestWorkspaceOptions:
         """PT expone dos de estas en negativo (`setDisableAutoCabling`,
         `setHideDevLabel`). Si el flag amistoso no se invierte, la tool hace
         exactamente lo contrario de lo que pide el usuario y en silencio."""
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 
@@ -82,7 +82,7 @@ class TestWorkspaceOptions:
         assert workspace_setter_call("show_device_labels", 0) == ("setHideDevLabel", "true, true")
 
     def test_positive_polarity_setters_are_not_inverted(self):
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 
@@ -95,7 +95,7 @@ class TestWorkspaceOptions:
     def test_hide_dev_label_carries_its_second_argument(self):
         """PT rechaza `setHideDevLabel(x)` con un solo argumento:
         `Invalid arguments for IPC call`. Verificado contra PT 9.0.1."""
-        from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+        from src.packet_tracer_mcp.adapters.mcp.tools.project import (
             workspace_setter_call,
         )
 

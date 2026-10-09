@@ -53,3 +53,19 @@ def test_tool_api_matches_snapshot():
                             encoding="utf-8")
         pytest.skip("snapshot rewritten")
     assert current == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+
+
+def test_full_build_and_live_deploy_share_a_module():
+    """pt_full_build calls pt_live_deploy directly: they must be in one closure scope."""
+    src = (ADAPTERS / "tools" / "live.py").read_text(encoding="utf-8")
+    assert "def pt_full_build(" in src
+    assert "def pt_live_deploy(" in src
+
+
+def test_registry_is_small():
+    """The point of the split: no file you have to navigate is huge."""
+    assert len((ADAPTERS / "tool_registry.py").read_text(encoding="utf-8")) < 6000
+    modules = sorted((ADAPTERS / "tools").glob("*.py"))
+    assert len(modules) >= 13
+    for path in modules:
+        assert len(path.read_text(encoding="utf-8")) < 32000, path.name
