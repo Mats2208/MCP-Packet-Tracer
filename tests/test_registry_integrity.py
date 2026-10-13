@@ -45,6 +45,16 @@ def test_no_undefined_names():
     assert rep.found == []
 
 
+def test_no_description_promises_js_after_sending():
+    """reply_json drops `js_payload` once a command was sent: a description may
+    only offer it together with dry_run."""
+    stale = {name: line.strip()
+             for name, t in tool_api().items()
+             for line in (t["description"] or "").splitlines()
+             if "js_payload" in line and "dry_run" not in line}
+    assert stale == {}
+
+
 def test_tool_api_matches_snapshot():
     current = tool_api()
     if os.environ.get("UPDATE_TOOL_API") == "1":

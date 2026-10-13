@@ -227,7 +227,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
           NM on 2811/Router-PT    → "1"
           Cloud-PT / hosts        → "0".."7"
 
-        Returns JSON with summary, per-module status and js_payload.
+        Returns JSON with summary and per-module status (installed or not).
+        The JS (js_payload) is only included with dry_run; once sent it is dropped.
         """
         if not isinstance(modules, list) or not modules:
             return json.dumps({"error": "modules must be a non-empty list of {device, slot, module}."})
