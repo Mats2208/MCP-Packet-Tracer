@@ -70,6 +70,9 @@ def dhcp_pool_problems(pool: str, requested: dict, pools: list[dict],
 
 
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
+    # Last URL each host's browser loaded through pt_web_browser (this server
+    # process only): tells "same URL again" apart from a failed navigation.
+    last_url: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Web Browser
@@ -86,6 +89,9 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         """
         A host's Desktop > Web Browser: opens a URL (http://IP, http://name
         with DNS, https://...) and returns the text of the page it received.
+        If the browser still shows its previous page (failed or slow load),
+        the reply is ok=false with a warning, not that old page; re-opening
+        the URL it last loaded returns the page again.
 
         In UI mode (or show=True) the window's own browser does the
         navigation, so the capture shows the rendered page.
@@ -119,6 +125,10 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
                 return error
             if not started.get("started"):
                 return f"{device}'s browser rejected the URL '{target}'."
+        # PT only exposes the last page received, not the URL it came from:
+        # an unchanged page proves nothing unless this same URL is what the
+        # browser last loaded through this tool.
+        same_url = last_url.get(device) == target
         content = previous
         deadline = time.monotonic() + timeout
         stable_since = None
@@ -130,11 +140,10 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
             content = data.get("content", "")
             if content and content != previous:
                 break
-            # Same page as before (the same URL was requested twice): wait a
-            # little in case it changes, then keep what is there.
+            # Same URL as last time: wait a little in case it changes, then
+            # keep what is there. A different URL waits for new content.
             stable_since = stable_since or time.monotonic()
-            if content and time.monotonic() - stable_since > 3.0:
-                notes.append("The page is identical to the last one loaded in this browser.")
+            if same_url and content and time.monotonic() - stable_since > 3.0:
                 break
         if hwnd and capture:
             time.sleep(0.6)
@@ -143,6 +152,19 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
             return with_notes(
                 f"{device} → {target}: no answer within {timeout:.0f}s "
                 "(right IP/DNS? HTTP on at the server? is there a route?).", notes)
+        if content == previous:
+            if not same_url:
+                return with_notes({
+                    "device": device, "url": target, "ok": False,
+                    "warning": (
+                        f"{device}'s browser still shows the page it had before: {target} "
+                        f"gave no new page within {timeout:.0f}s (right IP/DNS? HTTP on at the "
+                        "server? is there a route? still loading?), or it serves byte-for-byte "
+                        "that same page. The old page is not returned as this URL's content."
+                    ),
+                }, notes)
+            notes.append("The page is identical to the last one loaded in this browser.")
+        last_url[device] = target
         text = html_to_text(content)
         cut = len(text) > _TEXT_CAP
         out = {

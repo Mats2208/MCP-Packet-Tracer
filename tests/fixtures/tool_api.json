@@ -2997,7 +2997,7 @@
   }
  },
  "pt_web_browser": {
-  "description": "A host's Desktop > Web Browser: opens a URL (http://IP, http://name\nwith DNS, https://...) and returns the text of the page it received.\n\nIn UI mode (or show=True) the window's own browser does the\nnavigation, so the capture shows the rendered page.",
+  "description": "A host's Desktop > Web Browser: opens a URL (http://IP, http://name\nwith DNS, https://...) and returns the text of the page it received.\nIf the browser still shows its previous page (failed or slow load),\nthe reply is ok=false with a warning, not that old page; re-opening\nthe URL it last loaded returns the page again.\n\nIn UI mode (or show=True) the window's own browser does the\nnavigation, so the capture shows the rendered page.",
   "inputSchema": {
    "properties": {
     "capture": {

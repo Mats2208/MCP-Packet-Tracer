@@ -527,6 +527,30 @@ class TestWebBrowser:
         out = call("pt_web_browser", device="PC0", url="http://10.9.9.9", timeout=0.2)
         assert "no answer" in out
 
+    def test_unchanged_page_is_not_the_new_urls_content(self, tmp_path):
+        # The browser keeps showing the last page: the navigation failed or
+        # is still loading. That old page must not come back as 10.9.9.9's.
+        call, _ = _tools(tmp_path, reply=_browser_reply(["<h1>Old site</h1>"]))
+        out = json.loads(call("pt_web_browser", device="PC0", url="http://10.9.9.9", timeout=0.3))
+        assert out["ok"] is False and "warning" in out
+        assert "text" not in out and "Old site" not in json.dumps(out)
+
+    def test_same_url_twice_returns_the_same_page(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_browser_reply(["", "<h1>Lab</h1>"]))
+        first = json.loads(call("pt_web_browser", device="PC0", url="http://10.0.0.20"))
+        again = json.loads(call("pt_web_browser", device="PC0", url="http://10.0.0.20",
+                                timeout=0.3))
+        assert first["text"] == again["text"] == "Lab"
+        assert again.get("ok", True) is True
+        assert any("identical" in n for n in again["notes"])
+
+    def test_a_different_url_after_a_good_one_still_needs_new_content(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_browser_reply(["", "<h1>Lab</h1>"]))
+        call("pt_web_browser", device="PC0", url="http://10.0.0.20")
+        out = json.loads(call("pt_web_browser", device="PC0", url="http://10.0.0.99",
+                              timeout=0.3))
+        assert out["ok"] is False and "text" not in out
+
     def test_url_with_newline_is_rejected(self, tmp_path):
         call, sent = _tools(tmp_path)
         assert "Validation failed" in call("pt_web_browser", device="PC0", url="http://a\nb")
