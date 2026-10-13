@@ -36,6 +36,11 @@ SendAndWait = Callable[[str, float], Optional[str]]
 # 1 MiB per result; a large `show running-config` is around 10-20 KB.
 OUTPUT_CAP = 60_000
 
+# Most --More-- pages one command may turn before it is aborted. A large
+# `show running-config` is a few dozen pages; this only stops a console that
+# keeps paging forever (the per-command timeout stops it too).
+MAX_MORE_PRESSES = 400
+
 # States of the tail of the output.
 DONE = "done"
 MORE = "more"
@@ -378,47 +383,57 @@ def _drive_pending(
     deadline = clock() + timeout
     from_index = int(snap.get("from", 0))
     confirms = 0
+    more_presses = 0
     lookup_aborted = False
     timed_out = False
+    abort_note = f"aborted after {timeout:.0f}s without the prompt coming back"
     cur = snap
 
     while True:
         state = classify_tail(cur.get("out", ""), cur.get("prompt", ""))
         if state == DONE:
             if timed_out:
-                return _finish(command, cur, host, status=ST_TIMEOUT,
-                               note=f"aborted after {timeout:.0f}s without the prompt coming back")
+                return _finish(command, cur, host, status=ST_TIMEOUT, note=abort_note)
             if lookup_aborted:
                 return _finish(command, cur, host, status=ST_UNKNOWN,
                                note="IOS did not recognise the command and took it as a "
                                     "hostname; the DNS lookup was aborted")
             return _finish(command, cur, host)
 
-        action = ""
-        if state == MORE:
-            action = "space"
-        elif state == TRANSLATING and not lookup_aborted:
-            action = "abort_ios"
-            lookup_aborted = True
-        elif state == CONFIRM and auto_confirm and confirms < 5:
-            action = "enter"
-            confirms += 1
-        elif state in (CONFIRM, QUESTION):
+        if state == QUESTION or (state == CONFIRM and not (auto_confirm and confirms < 5)):
             return _finish(command, cur, host, status=ST_QUESTION,
                            note="the console is waiting for an answer; send it as the "
                                 "next command")
 
-        if not action:
-            if clock() >= deadline:
-                if timed_out:
-                    # Already aborted once and the prompt did not come back: stop.
-                    return _finish(command, cur, host, status=ST_TIMEOUT,
-                                   note="the console did not respond to the abort")
-                timed_out = True
-                deadline = clock() + 5.0
-                action = "abort_host" if host else "abort_ios"
-            else:
-                sleep(poll_interval)
+        # The deadline (and the --More-- cap) is checked on EVERY iteration:
+        # a key press is not progress, and a console stuck on --More-- used
+        # to skip this check and loop forever.
+        out_of_time = clock() >= deadline
+        too_many_pages = state == MORE and more_presses >= MAX_MORE_PRESSES
+        action = ""
+        if out_of_time or too_many_pages:
+            if timed_out:
+                # Already aborted once and the prompt did not come back: stop.
+                return _finish(command, cur, host, status=ST_TIMEOUT,
+                               note=abort_note + "; the console did not respond to the abort")
+            timed_out = True
+            if too_many_pages and not out_of_time:
+                abort_note = (f"aborted after {more_presses} --More-- pages without "
+                              "the prompt coming back")
+            deadline = clock() + 5.0
+            more_presses = MAX_MORE_PRESSES  # no more paging during the grace period
+            action = "abort_host" if host else "abort_ios"
+        elif state == MORE:
+            action = "space"
+            more_presses += 1
+        elif state == TRANSLATING and not lookup_aborted:
+            action = "abort_ios"
+            lookup_aborted = True
+        elif state == CONFIRM:
+            action = "enter"
+            confirms += 1
+        else:
+            sleep(poll_interval)
 
         data = _parse(send_and_wait(
             build_poll_js(device, from_index, command, action), call_timeout

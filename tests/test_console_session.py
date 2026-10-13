@@ -18,6 +18,7 @@ from src.packet_tracer_mcp.infrastructure.execution.console_session import (
     build_poll_js, build_run_js, classify_tail, clean_output, format_run,
     is_done, run_commands,
 )
+from src.packet_tracer_mcp.infrastructure.execution import console_session as cs_mod
 
 
 def snap(i, out, prompt="Router#", done=None, mode="enable", frm=100):
@@ -177,6 +178,39 @@ class TestRunCommands:
         r = run(s, ["show run"])
         assert "cl.enterChar(32,0)" in s.sent[1]
         assert r.results[0].output == "line1\nline2"
+
+    @staticmethod
+    def _stuck_on_more(clock, per_call: float, guard: int = 5000):
+        """A console that answers --More-- forever; each PT call costs `per_call` s."""
+        first = run_reply(snap(0, "show run\nline\n --More-- ", done=False))
+        more = poll_reply("show run\nline\n --More-- ")
+        sent: list[str] = []
+
+        def send(js, timeout):
+            sent.append(js)
+            if len(sent) > guard:
+                raise AssertionError("the console loop never gave up on --More--")
+            clock.t += per_call
+            return first if len(sent) == 1 else more
+        return send, sent
+
+    def test_more_forever_honours_the_deadline(self):
+        clock = FakeClock()
+        send, sent = self._stuck_on_more(clock, per_call=0.25)
+        r = run_commands(send, "R1", ["show run"], timeout=5.0, clock=clock, sleep=clock.sleep)
+        assert r.results[0].status == ST_TIMEOUT
+        # It gave up shortly after the deadline (+ the grace after the abort),
+        # not after the 5000-call guard.
+        assert clock.t < 5.0 + 5.0 + 1.0
+        assert any("cl.enterChar(30,0)" in js for js in sent)
+
+    def test_more_presses_are_capped_even_if_time_stands_still(self):
+        clock = FakeClock()
+        send, sent = self._stuck_on_more(clock, per_call=0.0)
+        r = run_commands(send, "R1", ["show run"], timeout=30.0, clock=clock, sleep=clock.sleep)
+        assert r.results[0].status == ST_TIMEOUT
+        presses = sum("cl.enterChar(32,0)" in js for js in sent)
+        assert presses <= cs_mod.MAX_MORE_PRESSES
 
     def test_dns_hang_is_aborted_and_flagged(self):
         s = Script([
