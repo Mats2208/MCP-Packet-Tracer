@@ -709,6 +709,95 @@ class TestDhcpRemoveRules:
         assert '"pool": ""' in sent[0] and '"remove": "serverPool"' in sent[0]
 
 
+# ---------------------------------------------------------------------------
+# pt_server_http: PT only replaces pages that already exist. Live on PT 9.0.0,
+# setPageContents("about.html", ...) on a server without that page threw
+# "File not exist: about.html" (the bridge returned it as PT_ERROR).
+# ---------------------------------------------------------------------------
+
+_HTTP_FAKE = r"""
+var __pages = {'index.html': '<h1>factory</h1>'};
+var __on = false;
+var s = {
+  setPageContents: function (k, v) {
+    if (!Object.prototype.hasOwnProperty.call(__pages, k)) { throw 'File not exist: ' + k; }
+    __pages[k] = v; },
+  getPage: function (k) { return __pages[k]; },
+  setEnable: function (x) { __on = x; }, isEnabled: function () { return __on; },
+  getPortNumber: function () { return 80; }
+};
+var d = {getProcess: function (n) { return n === 'HttpServer' ? s : null; }};
+var ipc = {network: function () { return {getDevice: function () { return d; }}; }};
+"""
+
+
+def _run_http(tmp_path, **kw) -> str:
+    # Wrapped the way the bridge wraps every command (bridge_context.py).
+    js = "try{" + server_http_js("Server0", **kw) + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+    reports = run_pt_js(js, _HTTP_FAKE, tmp_path)
+    assert len(reports) == 1
+    return reports[0]
+
+
+@requires_node
+class TestHttpPagesJs:
+    def test_missing_page_is_reported_and_the_rest_still_applies(self, tmp_path):
+        raw = _run_http(tmp_path, pages={"about.html": "<p>new</p>", "index.html": "<p>x</p>"},
+                        enable=True)
+        out = json.loads(raw)  # not a bare PT_ERROR
+        assert out["failed"] == [{"page": "about.html", "error": "File not exist: about.html"}]
+        assert out["done"] == ["page index.html", "HTTP On"]
+        assert out["page_sizes"] == {"index.html": len("<p>x</p>")}
+
+    def test_existing_pages_report_nothing_failed(self, tmp_path):
+        out = json.loads(_run_http(tmp_path, pages={"index.html": "<p>x</p>"}))
+        assert out["failed"] == [] and out["done"] == ["page index.html"]
+
+
+def _http_tool_reply(failed):
+    def reply(js):
+        return json.dumps({"ok": True, "done": ["page index.html", "HTTP On"], "http": True,
+                           "https": None, "port": 80, "page_sizes": {"index.html": 8},
+                           "failed": failed})
+    return reply
+
+
+class TestHttpToolHonesty:
+    def test_missing_page_names_it_and_says_only_existing_pages_work(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_http_tool_reply(
+            [{"page": "about.html", "error": "File not exist: about.html"}]))
+        out = json.loads(call("pt_server_http", device="Server0",
+                              pages={"index.html": "<p>x</p>", "about.html": "<p>y</p>"}))
+        assert out["ok"] is False
+        assert len(out["not_applied"]) == 1
+        problem = out["not_applied"][0]
+        assert "about.html" in problem and "does not exist on Server0" in problem
+        assert "only replace pages that already exist" in problem
+        assert "File not exist: about.html" in problem  # PT's own words, kept
+        assert "about.html" in out["warning"]
+        assert "failed" not in out
+        assert out["done"] == ["page index.html", "HTTP On"]
+
+    def test_other_page_errors_are_not_called_missing(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_http_tool_reply(
+            [{"page": "index.html", "error": "something else"}]))
+        out = json.loads(call("pt_server_http", device="Server0", pages={"index.html": "x"}))
+        assert out["ok"] is False
+        assert "something else" in out["not_applied"][0]
+        assert "does not exist" not in out["not_applied"][0]
+
+    def test_all_pages_written_is_ok(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_http_tool_reply([]))
+        out = json.loads(call("pt_server_http", device="Server0", pages={"index.html": "x"}))
+        assert out["ok"] is True and "not_applied" not in out and "failed" not in out
+
+    def test_description_does_not_promise_new_pages(self):
+        from tests._registry_src import tool_api
+        desc = tool_api()["pt_server_http"]["description"]
+        assert "creates the page" not in desc
+        assert "already exist" in desc.lower()
+
+
 def _dhcp_tool_reply(pools, not_applied=()):
     def reply(js):
         return json.dumps({"ok": True, "port": "FastEthernet0", "done": ["pool serverPool updated"],

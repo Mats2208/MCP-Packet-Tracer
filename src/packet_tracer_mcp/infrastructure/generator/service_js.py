@@ -7,7 +7,9 @@ against PT 9.0.1:
   process, with editable pools (DhcpPool.set*) and addNewPool(...). That is what
   issue #23 was missing ("DhcpServerMain does not expose pools").
 - DnsServer.addARecordToNameServerDb / addCNAMEToNameServerDb + setEnable.
-- HttpServer.setPageContents(url, html) / getPage(url).
+- HttpServer.setPageContents(url, html) / getPage(url). setPageContents only
+  replaces a page that already exists: for a new one PT 9.0.0 throws
+  "File not exist: <page>" (not checked on 9.0.1). No API in use here creates one.
 
 Same rules as host_js: an IIFE and a single `json.dumps` object with the data.
 """
@@ -187,20 +189,26 @@ def server_http_js(
     enable: bool | None = None,
     https_enable: bool | None = None,
 ) -> str:
-    """Services > HTTP: switch HTTP/HTTPS on/off and replace page contents."""
+    """Services > HTTP: switch HTTP/HTTPS on/off and replace page contents.
+
+    Only pages that already exist can be replaced: for a new one PT 9.0.0's
+    setPageContents throws "File not exist: <page>". Each page is tried on its
+    own; a refused page goes to `failed` and the rest still applies.
+    """
     cfg = {"device": device, "pages": pages or {}, "enable": enable, "https": https_enable}
     return (
         _head(cfg) + _proc("HttpServer") +
-        "var done=[];var sizes={};"
+        "var done=[];var sizes={};var failed=[];"
         "for(var k in c.pages){if(Object.prototype.hasOwnProperty.call(c.pages,k)){"
-        "s.setPageContents(k,c.pages[k]);sizes[k]=String(s.getPage(k)).length;done.push('page '+k);}}"
+        "try{s.setPageContents(k,c.pages[k]);}catch(e){failed.push({page:k,error:String(e)});continue;}"
+        "sizes[k]=String(s.getPage(k)).length;done.push('page '+k);}}"
         "if(c.enable!==null){s.setEnable(!!c.enable);done.push(c.enable?'HTTP On':'HTTP Off');}"
         "var hs=null;try{hs=d.getProcess('HttpsServer');}catch(e){}"
         "if(c.https!==null&&hs&&typeof hs.setEnable==='function'){hs.setEnable(!!c.https);"
         "done.push(c.https?'HTTPS On':'HTTPS Off');}"
         "reportResult(JSON.stringify({ok:true,done:done,http:!!s.isEnabled(),"
         "https:(hs&&typeof hs.isEnabled==='function')?!!hs.isEnabled():null,"
-        "port:s.getPortNumber(),page_sizes:sizes}));"
+        "port:s.getPortNumber(),page_sizes:sizes,failed:failed}));"
         + _TAIL
     )
 

@@ -89,7 +89,7 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |
 | `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
 | `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
-| `pt_server_http` | Services › HTTP | Replace or create pages, switch HTTP/HTTPS. |
+| `pt_server_http` | Services › HTTP | Replace existing pages (it cannot create new ones), switch HTTP/HTTPS. |
 | `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts. |
 | `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
 

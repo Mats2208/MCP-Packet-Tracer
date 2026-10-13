@@ -71,6 +71,24 @@ def dhcp_pool_problems(pool: str, requested: dict, pools: list[dict],
     return problems
 
 
+def http_page_problems(device: str, failed: list[dict]) -> list[str]:
+    """One line per page PT refused, from server_http_js's `failed`.
+
+    PT 9.0.0 answers a page that is not on the server with "File not exist:
+    <page>": no API in use creates pages, so say so instead of echoing PT.
+    """
+    problems = []
+    for f in failed:
+        page, err = str(f.get("page", "?")), str(f.get("error", ""))
+        if "not exist" in err.lower():
+            problems.append(f"page '{page}' does not exist on {device}: pt_server_http can only "
+                            "replace pages that already exist there (a Server-PT has index.html), "
+                            f"not create new ones. Put the content in an existing page. (PT: {err})")
+        else:
+            problems.append(f"page '{page}' was not written: PT answered: {err}")
+    return problems
+
+
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
     # Last URL each host's browser loaded through pt_web_browser (this server
     # process only): tells "same URL again" apart from a failed navigation.
@@ -302,8 +320,11 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         """
         A Server-PT's Services > HTTP: switches HTTP/HTTPS and edits pages.
 
-        - pages: {"index.html": "<html>...</html>", "about.html": "..."}
-          (replaces the content; creates the page if it didn't exist).
+        - pages: {"index.html": "<html>...</html>"} replaces the content of
+          pages that ALREADY exist on the server (a Server-PT has index.html).
+          New pages cannot be created: PT 9.0.0 answers "File not exist"
+          (9.0.1 unverified). Such a page comes back in not_applied with
+          ok=false; the other pages and switches are still applied.
         - enable / https_enable: True/False/None (None = leave alone).
         Check it with pt_web_browser(host, "http://<server ip>").
         """
@@ -318,7 +339,14 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
                                              https_enable=https_enable), device)
         if error:
             return error
-        data.pop("ok", None)
+        failed = data.pop("failed", None) or []
+        problems = http_page_problems(device, failed)
+        data["ok"] = not problems
+        if problems:
+            data["not_applied"] = problems
+            data["warning"] = (f"{len(problems)} page(s) not written ("
+                               + ", ".join(str(f.get("page", "?")) for f in failed)
+                               + "); see not_applied.")
         notes = ps.show_after(device, show, capture, output_dir, "http", tab="Services", section="HTTP")
         return with_notes(data, notes)
 

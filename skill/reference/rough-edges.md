@@ -113,7 +113,8 @@ with the default outline.
   No firewall process: the host firewall is `port.setInboundFirewallService(bool)`.
 - Server: `DhcpServerMain.getDhcpServerProcessByPortName(port)` → pools via `getPool/addNewPool/
   removePool/addExcludedAddress/setEnable`; `DnsServer` (`addARecordToNameServerDb`,
-  `addCNAMEToNameServerDb`, `remove…`, `setEnable`); `HttpServer` (`setPageContents/getPage`);
+  `addCNAMEToNameServerDb`, `remove…`, `setEnable`); `HttpServer` (`setPageContents/getPage`;
+  replaces an existing page only, a new one throws `File not exist: <page>` on PT 9.0.0);
   `TftpServer`/`FtpServer` (`setEnabled`; FTP users via `getFtpUserAccountManager().addFtpUser`);
   `SyslogServer`; `EmailServer` (`addUser/changePassword`, no domain or on/off API).
 - ⚠️ `DnsServer.getIpAddOfDomain` / `isDomainNameExisted` read a different table and return

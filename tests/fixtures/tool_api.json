@@ -2547,7 +2547,7 @@
   }
  },
  "pt_server_http": {
-  "description": "A Server-PT's Services > HTTP: switches HTTP/HTTPS and edits pages.\n\n- pages: {\"index.html\": \"<html>...</html>\", \"about.html\": \"...\"}\n  (replaces the content; creates the page if it didn't exist).\n- enable / https_enable: True/False/None (None = leave alone).\nCheck it with pt_web_browser(host, \"http://<server ip>\").",
+  "description": "A Server-PT's Services > HTTP: switches HTTP/HTTPS and edits pages.\n\n- pages: {\"index.html\": \"<html>...</html>\"} replaces the content of\n  pages that ALREADY exist on the server (a Server-PT has index.html).\n  New pages cannot be created: PT 9.0.0 answers \"File not exist\"\n  (9.0.1 unverified). Such a page comes back in not_applied with\n  ok=false; the other pages and switches are still applied.\n- enable / https_enable: True/False/None (None = leave alone).\nCheck it with pt_web_browser(host, \"http://<server ip>\").",
   "inputSchema": {
    "properties": {
     "capture": {
