@@ -478,6 +478,12 @@ class TestTerminal:
         assert p.buttons == ["OK"]
 
 
+def test_terminal_unbounded_timeout_is_rejected_before_pt(tmp_path):
+    call, sent = _tools(tmp_path, reply=_terminal_reply("R1"))
+    out = call("pt_terminal", device="PC1", commands=["show clock"], timeout=1e9)
+    assert "Validation failed" in out and not any("var cmds=" in js for js in sent)
+
+
 def _browser_reply(pages):
     """Cada lectura de getLastPageContent devuelve la siguiente página de la lista."""
     state = {"reads": 0}
@@ -550,6 +556,11 @@ class TestWebBrowser:
         out = json.loads(call("pt_web_browser", device="PC0", url="http://10.0.0.99",
                               timeout=0.3))
         assert out["ok"] is False and "text" not in out
+
+    def test_unbounded_timeout_is_rejected_before_pt(self, tmp_path):
+        call, sent = _tools(tmp_path)
+        out = call("pt_web_browser", device="PC0", url="http://a", timeout=1e9)
+        assert "Validation failed" in out and sent == []
 
     def test_url_with_newline_is_rejected(self, tmp_path):
         call, sent = _tools(tmp_path)

@@ -16,7 +16,9 @@ import time
 from mcp.server.fastmcp import FastMCP
 
 from ...domain.rules.console_rules import split_commands
-from ...domain.rules.panel_rules import normalize_mask
+from ...domain.rules.panel_rules import (
+    MAX_BROWSER_TIMEOUT_S, normalize_mask, validate_wait_seconds,
+)
 from ...domain.rules.service_rules import (
     EMAIL_ACTIONS, SERVICES, parse_range, validate_dhcp, validate_dns, validate_texts,
     validate_users,
@@ -91,12 +93,14 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         with DNS, https://...) and returns the text of the page it received.
         If the browser still shows its previous page (failed or slow load),
         the reply is ok=false with a warning, not that old page; re-opening
-        the URL it last loaded returns the page again.
+        the URL it last loaded returns the page again. timeout: up to 120 s.
 
         In UI mode (or show=True) the window's own browser does the
         navigation, so the capture shows the rendered page.
         """
         v = validate_texts(device, url=url)
+        v.errors.extend(validate_wait_seconds(device, "timeout", timeout,
+                                              MAX_BROWSER_TIMEOUT_S).errors)
         if not v.is_valid:
             return errors_text(v)
         err = ps.check_bridge()

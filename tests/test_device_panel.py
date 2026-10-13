@@ -444,6 +444,16 @@ class TestTools:
         assert "before:before" in js
         assert js.index("var before=__port(d,pn);") < js.index("setDhcpFlag")
 
+    @pytest.mark.parametrize("tool,args", [
+        ("pt_cli", {"device": "R1", "commands": ["show clock"], "timeout": 1e9}),
+        ("pt_host_command", {"device": "PC0", "command": "ping 1.1.1.1", "timeout": 1e9}),
+        ("pt_host_ip_config", {"device": "PC0", "mode": "dhcp", "wait_dhcp_s": 1e9}),
+    ])
+    def test_unbounded_waits_are_rejected_before_pt(self, tmp_path, tool, args):
+        call, sent, _ = _tools(tmp_path, FakePresenter())
+        out = call(tool, **args)
+        assert "Validation failed" in out and sent == []
+
     def test_ip_config_validation(self, tmp_path):
         call, sent, _ = _tools(tmp_path, FakePresenter())
         out = call("pt_host_ip_config", device="PC0", mode="dhcp", ip="10.0.0.2", mask="24")

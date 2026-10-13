@@ -893,7 +893,7 @@
   }
  },
  "pt_cli": {
-  "description": "Types commands into a router/switch console (CLI tab) and returns each\none's output. Same as typing in the IOS CLI: enable, configure\nterminal, interface..., show ip route, ping, copy run start...\n\nWithout taking the screen: it goes through PT's API, and what is typed\nshows up in the device's real CLI tab.\n\nParameters:\n- device: exact name (pt_query_topology).\n- commands: a list of commands, or a block of text with one per line.\n  Typed in order, waiting for the prompt between them.\n- timeout: maximum seconds per command (ping/traceroute take a while).\n  When it runs out the command is aborted with Ctrl+Shift+6.\n- auto_confirm: presses Enter on \"[confirm]\" and \"Destination filename [..]?\".\n  [yes/no] and Password: questions are NOT answered automatically: put\n  the answer as the next command (e.g. [\"reload\", \"no\", \"\"]).\n- show: True/False opens (or not) the device's window on the CLI tab.\n  None = per pt_ui_mode.\n- capture: saves a PNG of the window when done (implies show).\n\nEach command comes back marked: ok, ERROR (% Invalid input...), UNKNOWN\nCOMMAND (IOS took it as a hostname: the DNS lookup is aborted), WAITING\nFOR ANSWER or TIMEOUT. A freshly created router is primed automatically\n(answers 'no' to the initial dialog).",
+  "description": "Types commands into a router/switch console (CLI tab) and returns each\none's output. Same as typing in the IOS CLI: enable, configure\nterminal, interface..., show ip route, ping, copy run start...\n\nWithout taking the screen: it goes through PT's API, and what is typed\nshows up in the device's real CLI tab.\n\nParameters:\n- device: exact name (pt_query_topology).\n- commands: a list of commands, or a block of text with one per line.\n  Typed in order, waiting for the prompt between them.\n- timeout: maximum seconds per command, up to 300 (ping/traceroute take a while).\n  When it runs out the command is aborted with Ctrl+Shift+6.\n- auto_confirm: presses Enter on \"[confirm]\" and \"Destination filename [..]?\".\n  [yes/no] and Password: questions are NOT answered automatically: put\n  the answer as the next command (e.g. [\"reload\", \"no\", \"\"]).\n- show: True/False opens (or not) the device's window on the CLI tab.\n  None = per pt_ui_mode.\n- capture: saves a PNG of the window when done (implies show).\n\nEach command comes back marked: ok, ERROR (% Invalid input...), UNKNOWN\nCOMMAND (IOS took it as a hostname: the DNS lookup is aborted), WAITING\nFOR ANSWER or TIMEOUT. A freshly created router is primed automatically\n(answers 'no' to the initial dialog).",
   "inputSchema": {
    "properties": {
     "auto_confirm": {
@@ -1510,7 +1510,7 @@
   }
  },
  "pt_host_command": {
-  "description": "Runs a command in a PC/Laptop/Server's Desktop > Command Prompt\n(ping, ipconfig, ipconfig /all, ipconfig /renew, tracert, arp -a,\nnslookup, netstat, telnet, ssh -l user ip, ftp...) and returns the output.\n\nParameters:\n- device: the host's name.\n- command: the line to run (e.g. \"ping 192.168.1.1\").\n- inputs: answers to whatever the command asks afterwards, in order\n  (e.g. a telnet/ssh password, then commands for the remote device).\n- timeout: maximum seconds per line (a failing ping takes ~15 s).\n- show / capture / output_dir: as in pt_cli; opens Desktop > Command Prompt.",
+  "description": "Runs a command in a PC/Laptop/Server's Desktop > Command Prompt\n(ping, ipconfig, ipconfig /all, ipconfig /renew, tracert, arp -a,\nnslookup, netstat, telnet, ssh -l user ip, ftp...) and returns the output.\n\nParameters:\n- device: the host's name.\n- command: the line to run (e.g. \"ping 192.168.1.1\").\n- inputs: answers to whatever the command asks afterwards, in order\n  (e.g. a telnet/ssh password, then commands for the remote device).\n- timeout: maximum seconds per line, up to 300 (a failing ping takes ~15 s).\n- show / capture / output_dir: as in pt_cli; opens Desktop > Command Prompt.",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -1640,7 +1640,7 @@
   }
  },
  "pt_host_ip_config": {
-  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
+  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -2997,7 +2997,7 @@
   }
  },
  "pt_web_browser": {
-  "description": "A host's Desktop > Web Browser: opens a URL (http://IP, http://name\nwith DNS, https://...) and returns the text of the page it received.\nIf the browser still shows its previous page (failed or slow load),\nthe reply is ok=false with a warning, not that old page; re-opening\nthe URL it last loaded returns the page again.\n\nIn UI mode (or show=True) the window's own browser does the\nnavigation, so the capture shows the rendered page.",
+  "description": "A host's Desktop > Web Browser: opens a URL (http://IP, http://name\nwith DNS, https://...) and returns the text of the page it received.\nIf the browser still shows its previous page (failed or slow load),\nthe reply is ok=false with a warning, not that old page; re-opening\nthe URL it last loaded returns the page again. timeout: up to 120 s.\n\nIn UI mode (or show=True) the window's own browser does the\nnavigation, so the capture shows the rendered page.",
   "inputSchema": {
    "properties": {
     "capture": {

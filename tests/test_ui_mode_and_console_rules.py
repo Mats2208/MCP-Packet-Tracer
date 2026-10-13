@@ -6,7 +6,10 @@ import pytest
 
 from src.packet_tracer_mcp.domain.models.errors import ErrorCode
 from src.packet_tracer_mcp.domain.rules.console_rules import (
-    MAX_COMMANDS, split_commands, validate_console_commands,
+    MAX_COMMANDS, MAX_CONSOLE_TIMEOUT_S, split_commands, validate_console_commands,
+)
+from src.packet_tracer_mcp.domain.rules.panel_rules import (
+    MAX_BROWSER_TIMEOUT_S, MAX_DHCP_WAIT_S, validate_host_ip_config, validate_wait_seconds,
 )
 from src.packet_tracer_mcp.shared.ui_mode import (
     ENV_VAR, HEADLESS, UI, UiModeStore, normalize_mode,
@@ -79,3 +82,34 @@ class TestConsoleRules:
     def test_empty_command_is_a_valid_enter(self):
         # "" es pulsar Enter: lo usan las respuestas a [confirm].
         assert validate_console_commands("R1", [""]).is_valid
+
+
+class TestWaitLimits:
+    """Waits come from the model: an unbounded or NaN one parks a tool for ever."""
+
+    @pytest.mark.parametrize("timeout", [0.5, 30.0, MAX_CONSOLE_TIMEOUT_S])
+    def test_console_timeout_in_range(self, timeout):
+        assert validate_console_commands("R1", ["show clock"], timeout=timeout).is_valid
+
+    @pytest.mark.parametrize("timeout", [0, -1, MAX_CONSOLE_TIMEOUT_S + 1, 1e9,
+                                         float("nan"), float("inf")])
+    def test_console_timeout_out_of_range(self, timeout):
+        res = validate_console_commands("R1", ["show clock"], timeout=timeout)
+        assert ErrorCode.CONSOLE_INVALID_TIMEOUT in {e.code for e in res.errors}
+
+    @pytest.mark.parametrize("value,ok", [
+        (10.0, True), (MAX_BROWSER_TIMEOUT_S, True), (MAX_BROWSER_TIMEOUT_S + 1, False),
+        (0, False), (float("nan"), False), (float("inf"), False),
+    ])
+    def test_browser_timeout(self, value, ok):
+        res = validate_wait_seconds("PC0", "timeout", value, MAX_BROWSER_TIMEOUT_S)
+        assert res.is_valid is ok
+
+    @pytest.mark.parametrize("value,ok", [
+        (0, True), (12.0, True), (MAX_DHCP_WAIT_S, True), (MAX_DHCP_WAIT_S + 1, False),
+        (-1, False), (float("nan"), False),
+    ])
+    def test_dhcp_wait(self, value, ok):
+        res = validate_host_ip_config("PC0", mode="dhcp", wait_dhcp_s=value)
+        assert res.is_valid is ok
+

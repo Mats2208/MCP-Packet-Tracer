@@ -130,7 +130,7 @@ def console_tool_run(ps: PanelSupport, device: str, cmds: list[str], *, timeout:
     `gui_device`/`gui_app` show a DIFFERENT window from the device being typed
     on (pt_terminal: typing goes to the router, the PC's Terminal is shown).
     """
-    res = validate_console_commands(device, cmds)
+    res = validate_console_commands(device, cmds, timeout=timeout)
     if not res.is_valid:
         return errors_text(res)
     err = ps.check_bridge()

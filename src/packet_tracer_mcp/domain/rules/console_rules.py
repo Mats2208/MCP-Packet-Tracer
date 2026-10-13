@@ -9,11 +9,16 @@ lines sends several commands.
 
 from __future__ import annotations
 
+import math
+
 from ..models.errors import ErrorCode, PlanError, ValidationResult
 from .text_rules import has_control_chars
 
 MAX_COMMANDS = 200
 MAX_COMMAND_LEN = 1024
+# Per-command wait. A tracert through unreachable hops is the slowest thing a
+# console does; beyond this a call would just hold the MCP request open.
+MAX_CONSOLE_TIMEOUT_S = 300.0
 
 # Other control characters mean something else on a real console (Ctrl+C,
 # Ctrl+Z, ESC...). Tab is allowed: IOS uses it for completion.
@@ -34,8 +39,22 @@ def split_commands(commands: list[str] | str | None) -> list[str]:
     return [str(c) for c in commands]
 
 
-def validate_console_commands(device: str, commands: list[str]) -> ValidationResult:
+def validate_console_commands(device: str, commands: list[str],
+                              timeout: float | None = None) -> ValidationResult:
+    """Commands for one console call; `timeout` (per command) is checked when given."""
     errors: list[PlanError] = []
+
+    if timeout is not None and not (
+        isinstance(timeout, (int, float)) and math.isfinite(timeout)
+        and 0 < timeout <= MAX_CONSOLE_TIMEOUT_S
+    ):
+        errors.append(PlanError(
+            code=ErrorCode.CONSOLE_INVALID_TIMEOUT,
+            device=device,
+            message=f"timeout={timeout!r} is out of range (more than 0, up to "
+                    f"{MAX_CONSOLE_TIMEOUT_S:.0f} seconds per command).",
+            suggestion="A failing ping takes ~15 s; 30-60 s covers almost everything.",
+        ))
 
     if not (device or "").strip():
         errors.append(PlanError(

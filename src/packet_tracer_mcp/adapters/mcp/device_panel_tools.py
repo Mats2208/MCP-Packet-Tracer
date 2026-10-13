@@ -136,7 +136,7 @@ def register_device_panel_tools(
         - device: exact name (pt_query_topology).
         - commands: a list of commands, or a block of text with one per line.
           Typed in order, waiting for the prompt between them.
-        - timeout: maximum seconds per command (ping/traceroute take a while).
+        - timeout: maximum seconds per command, up to 300 (ping/traceroute take a while).
           When it runs out the command is aborted with Ctrl+Shift+6.
         - auto_confirm: presses Enter on "[confirm]" and "Destination filename [..]?".
           [yes/no] and Password: questions are NOT answered automatically: put
@@ -174,7 +174,7 @@ def register_device_panel_tools(
         - command: the line to run (e.g. "ping 192.168.1.1").
         - inputs: answers to whatever the command asks afterwards, in order
           (e.g. a telnet/ssh password, then commands for the remote device).
-        - timeout: maximum seconds per line (a failing ping takes ~15 s).
+        - timeout: maximum seconds per line, up to 300 (a failing ping takes ~15 s).
         - show / capture / output_dir: as in pt_cli; opens Desktop > Command Prompt.
         """
         cmds = [command] + [str(x) for x in (inputs or [])]
@@ -275,7 +275,7 @@ def register_device_panel_tools(
 
         Parameters (empty = leave alone):
         - mode: "static" | "dhcp". With "dhcp" a lease is requested and the
-          tool waits up to wait_dhcp_s seconds for it.
+          tool waits up to wait_dhcp_s seconds (0-120) for it.
         - ip, mask: IPv4 and mask ("255.255.255.0" or "24").
         - gateway, dns: IPv4. "0.0.0.0" to clear.
         - interface: port (default: the first Ethernet, or Wireless0).
@@ -289,6 +289,7 @@ def register_device_panel_tools(
         res = validate_host_ip_config(
             device, mode=mode, ip=ip, mask=mask, gateway=gateway, dns=dns,
             ipv6_mode=ipv6_mode, ipv6_gateway=ipv6_gateway, ipv6_dns=ipv6_dns,
+            wait_dhcp_s=wait_dhcp_s,
         )
         if not res.is_valid:
             return errors_text(res)

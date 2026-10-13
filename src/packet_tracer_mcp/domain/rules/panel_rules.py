@@ -8,12 +8,32 @@ with spaces is stored as is and the host just doesn't work, with no visible erro
 from __future__ import annotations
 
 import ipaddress
+import math
 
 from ..models.errors import ErrorCode, PlanError, ValidationResult
 from .text_rules import has_control_chars
 
 IP_MODES = ("", "static", "dhcp")
 IPV6_MODES = ("", "auto", "off")
+
+# Upper bounds for the waits the panel tools accept from the model.
+MAX_BROWSER_TIMEOUT_S = 120.0
+MAX_DHCP_WAIT_S = 120.0
+
+
+def validate_wait_seconds(device: str, name: str, value: float, maximum: float, *,
+                          allow_zero: bool = False) -> ValidationResult:
+    """A wait in seconds: finite, positive (or 0 if allowed) and at most `maximum`."""
+    lowest_ok = (lambda v: v >= 0) if allow_zero else (lambda v: v > 0)
+    ok = (isinstance(value, (int, float)) and math.isfinite(value)
+          and lowest_ok(value) and value <= maximum)
+    errors = [] if ok else [PlanError(
+        code=ErrorCode.PANEL_INVALID_VALUE, device=device,
+        message=f"{name}={value!r} is out of range "
+                f"({'0' if allow_zero else 'more than 0'} to {maximum:.0f} seconds).",
+        suggestion=f"Use a value up to {maximum:.0f}.",
+    )]
+    return ValidationResult(errors=errors)
 
 
 def normalize_mask(mask: str | None) -> str | None:
@@ -73,8 +93,10 @@ def validate_host_ip_config(
     ipv6_mode: str = "",
     ipv6_gateway: str = "",
     ipv6_dns: str = "",
+    wait_dhcp_s: float = 12.0,
 ) -> ValidationResult:
-    errors: list[PlanError] = []
+    errors: list[PlanError] = list(validate_wait_seconds(
+        device, "wait_dhcp_s", wait_dhcp_s, MAX_DHCP_WAIT_S, allow_zero=True).errors)
 
     def bad(code: ErrorCode, msg: str, hint: str = "") -> None:
         errors.append(PlanError(code=code, device=device, message=msg, suggestion=hint))
