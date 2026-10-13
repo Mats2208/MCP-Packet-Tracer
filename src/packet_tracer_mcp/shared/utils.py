@@ -162,6 +162,11 @@ def reply_json(obj: Any) -> str:
     The JS only helps before sending (dry_run, or bridge down so it can be pasted
     by hand); after a send it is kilobytes of noise in the conversation.
     """
-    if isinstance(obj, dict) and obj.get("sent") is True and not obj.get("dry_run")             and "js_payload" in obj:
+    if (
+        isinstance(obj, dict)
+        and obj.get("sent") is True
+        and not obj.get("dry_run")
+        and "js_payload" in obj
+    ):
         obj = {k: v for k, v in obj.items() if k != "js_payload"}
     return to_json(obj)
