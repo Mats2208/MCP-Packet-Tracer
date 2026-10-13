@@ -30,5 +30,12 @@ def register_tools(mcp: FastMCP, ctx: BridgeContext | None = None) -> None:
     )
     # Descriptions come from docstrings, which Python 3.13+ dedents and 3.11/3.12
     # do not: normalize once so every interpreter serves the same (shorter) text.
-    for tool in mcp._tool_manager.list_tools():
-        tool.description = inspect.cleandoc(tool.description or "")
+    # `_tool_manager` is private SDK API (there is no public way to edit a
+    # registered tool): guarded like `_mcp_server` in server.py, so an SDK that
+    # renames it only skips this cosmetic step instead of breaking startup.
+    manager = getattr(mcp, "_tool_manager", None)
+    try:
+        for tool in manager.list_tools():
+            tool.description = inspect.cleandoc(tool.description or "")
+    except Exception:
+        pass

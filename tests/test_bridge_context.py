@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
+from mcp.server.fastmcp import FastMCP
+
 from src.packet_tracer_mcp.adapters.mcp import bridge_context
 from src.packet_tracer_mcp.adapters.mcp.bridge_context import BridgeContext
+from src.packet_tracer_mcp.adapters.mcp.tool_registry import register_tools
+from src.packet_tracer_mcp.infrastructure.execution.file_bridge import FileBridge
 
 
 class FakeFileBridge:
@@ -83,3 +90,36 @@ def test_ensure_bridge_starts_a_single_instance(monkeypatch):
     ctx.ensure_bridge()
     assert len(built) == 1
     assert ctx.instance is built[0]
+
+
+class _FrozenTool:
+    """A tool object from an SDK where `description` became read-only."""
+
+    name = "frozen"
+
+    @property
+    def description(self) -> str:
+        return "  indented"
+
+    @description.setter
+    def description(self, value: str) -> None:
+        raise AttributeError("can't set attribute 'description'")
+
+
+def _boom():
+    raise AttributeError("'ToolManager' object has no attribute 'list_tools'")
+
+
+@pytest.mark.parametrize("broken", ["list_tools", "description"])
+def test_registration_survives_a_changed_sdk_internal(monkeypatch, tmp_path, broken):
+    """The docstring dedent relies on FastMCP's private `_tool_manager`: if an
+    SDK release renames it, only that cosmetic step may be skipped, never startup."""
+    mcp = FastMCP("t")
+    manager = mcp._tool_manager
+    monkeypatch.setattr(manager, "list_tools",
+                        _boom if broken == "list_tools" else (lambda: [_FrozenTool()]))
+    register_tools(mcp, BridgeContext(file_bridge=FileBridge(tmp_path)))
+    monkeypatch.undo()
+    names = {t.name for t in asyncio.run(mcp.list_tools())}
+    assert {"pt_cli", "pt_server_dhcp", "pt_live_deploy"} <= names
+
