@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 from mcp.server.fastmcp import FastMCP
 
+from src.packet_tracer_mcp.adapters.mcp import device_panel_tools
 from src.packet_tracer_mcp.adapters.mcp.device_panel_tools import (
     register_device_panel_tools, screenshot_path,
 )
@@ -392,6 +393,56 @@ class TestTools:
         assert out["ip"] == "10.0.0.2"
         assert p.opened[0]["app"] == "ip_configuration" and p.opened[0]["reopen"] is True
         assert '"mask": "255.255.255.0"' in sent[0]
+
+    @staticmethod
+    def _dhcp_send(before: dict, after_ips: list[str]):
+        """Host that had `before` and whose port reads `after_ips` in turn afterwards."""
+        reads = {"n": 0}
+
+        def state(ip, dhcp=True):
+            return {"ip": ip, "mask": "255.255.255.0", "dhcp": dhcp}
+
+        def send(js):
+            if "setIpSubnetMask" in js:
+                return json.dumps({"ok": True, "port": "FastEthernet0", "applied": ["dhcp"],
+                                   "before": before, "state": state(after_ips[0])})
+            reads["n"] += 1
+            ip = after_ips[min(reads["n"], len(after_ips) - 1)]
+            return json.dumps({"ok": True, "state": state(ip)})
+        return send, reads
+
+    @pytest.fixture
+    def _no_sleep(self, monkeypatch):
+        monkeypatch.setattr(device_panel_tools.time, "sleep", lambda s: None)
+
+    def test_dhcp_waits_past_the_old_static_address(self, tmp_path, _no_sleep):
+        static = {"ip": "192.168.1.50", "mask": "255.255.255.0", "dhcp": False}
+        send, reads = self._dhcp_send(static, ["192.168.1.50", "192.168.1.50", "192.168.1.101"])
+        call, _, _ = _tools(tmp_path, FakePresenter(), send=send)
+        out = json.loads(call("pt_host_ip_config", device="PC0", mode="dhcp", wait_dhcp_s=5))
+        assert out["ip"] == "192.168.1.101" and reads["n"] >= 2
+        assert "notes" not in out
+
+    def test_stale_static_address_is_not_reported_as_a_lease(self, tmp_path, _no_sleep):
+        static = {"ip": "192.168.1.50", "mask": "255.255.255.0", "dhcp": False}
+        send, _ = self._dhcp_send(static, ["192.168.1.50"])
+        call, _, _ = _tools(tmp_path, FakePresenter(), send=send)
+        out = json.loads(call("pt_host_ip_config", device="PC0", mode="dhcp", wait_dhcp_s=0.2))
+        assert out["lease"] is False
+        assert any("192.168.1.50" in n and "not a DHCP lease" in n for n in out["notes"])
+
+    def test_existing_dhcp_lease_is_accepted_at_once(self, tmp_path, _no_sleep):
+        leased = {"ip": "192.168.1.101", "mask": "255.255.255.0", "dhcp": True}
+        send, reads = self._dhcp_send(leased, ["192.168.1.101"])
+        call, _, _ = _tools(tmp_path, FakePresenter(), send=send)
+        out = json.loads(call("pt_host_ip_config", device="PC0", mode="dhcp", wait_dhcp_s=5))
+        assert out["ip"] == "192.168.1.101" and reads["n"] == 0
+        assert "notes" not in out
+
+    def test_ip_config_js_reads_the_port_before_changing_it(self):
+        js = host_ip_config_js("PC0", mode="dhcp")
+        assert "before:before" in js
+        assert js.index("var before=__port(d,pn);") < js.index("setDhcpFlag")
 
     def test_ip_config_validation(self, tmp_path):
         call, sent, _ = _tools(tmp_path, FakePresenter())

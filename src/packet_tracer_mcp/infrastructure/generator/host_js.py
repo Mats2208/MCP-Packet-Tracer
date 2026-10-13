@@ -67,6 +67,9 @@ def host_ip_config_js(
         "if(!p){reportResult(JSON.stringify({ok:false,error:'port_not_found',ports:String(names.join(','))}));return;}"
         "if(typeof p.setIpSubnetMask!=='function'||typeof p.setDnsServerIp!=='function')"
         "{reportResult(JSON.stringify({ok:false,error:'not_host_port',port:pn}));return;}"
+        # The port as it was: a DHCP request must not mistake the old static
+        # address, still there right after dhcpRun, for a lease.
+        "var before=__port(d,pn);"
         "var applied=[];"
         "if(c.mode==='dhcp'){"
         "if(typeof d.setDhcpFlag==='function'){d.setDhcpFlag(true);}"
@@ -90,7 +93,8 @@ def host_ip_config_js(
         "if(c.ipv6_gateway&&typeof p.setv6DefaultGateway==='function'){p.setv6DefaultGateway(c.ipv6_gateway);applied.push('ipv6 gateway');}"
         "if(c.ipv6_dns&&typeof p.setv6ServerIp==='function'){p.setv6ServerIp(c.ipv6_dns);applied.push('ipv6 dns');}"
         "reportResult(JSON.stringify({ok:true,port:pn,applied:applied,"
-        "dhcp_flag:(typeof d.getDhcpFlag==='function')?!!d.getDhcpFlag():null,state:__port(d,pn)}));"
+        "dhcp_flag:(typeof d.getDhcpFlag==='function')?!!d.getDhcpFlag():null,before:before,"
+        "state:__port(d,pn)}));"
         "})();"
     )
 

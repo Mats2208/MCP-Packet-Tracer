@@ -36,6 +36,27 @@ __all__ = ["register_device_panel_tools", "screenshot_path"]
 
 SendAndWait = Callable[[str, float], Optional[str]]
 
+_NO_IP = (None, "", "0.0.0.0")
+
+
+def stale_dhcp_ip(before: dict | None) -> str | None:
+    """The address a DHCP request must see replaced before calling it a lease.
+
+    Right after `dhcpRun` the port still shows its previous address. If that
+    was a static one, seeing it again is not a lease. If the port was already
+    a DHCP client, its address is a lease (a renewal may keep it).
+    """
+    before = before or {}
+    ip = before.get("ip")
+    if ip in _NO_IP or before.get("dhcp"):
+        return None
+    return ip
+
+
+def is_new_lease(state: dict, stale: str | None) -> bool:
+    ip = (state or {}).get("ip")
+    return ip not in _NO_IP and ip != stale
+
 
 def register_device_panel_tools(
     mcp: FastMCP,
@@ -285,14 +306,25 @@ def register_device_panel_tools(
             return error
         notes: list[str] = []
         state = data.get("state") or {}
+        lease: bool | None = None
         if mode == "dhcp" and wait_dhcp_s > 0:
+            stale = stale_dhcp_ip(data.get("before"))
             deadline = time.monotonic() + wait_dhcp_s
-            while state.get("ip") in (None, "", "0.0.0.0") and time.monotonic() < deadline:
+            while not is_new_lease(state, stale) and time.monotonic() < deadline:
                 time.sleep(1.0)
                 again, _ = ps.call(port_state_js(device, data["port"]), device, 8.0)
                 if again:
                     state = again.get("state") or state
-            if state.get("ip") in (None, "", "0.0.0.0"):
+            lease = is_new_lease(state, stale)
+            if not lease and stale and state.get("ip") == stale:
+                notes.append(
+                    f"DHCP: no new lease after {wait_dhcp_s:.0f}s. The host still shows its "
+                    f"previous static address {stale}, which is not a DHCP lease. Is a DHCP "
+                    "server reachable (a router with ip dhcp pool, or a Server with "
+                    "pt_server_dhcp)? If that server hands out this same address, confirm "
+                    f"with pt_host_command('{device}', 'ipconfig /all')."
+                )
+            elif not lease:
                 notes.append(
                     f"DHCP: no lease after {wait_dhcp_s:.0f}s. Is a DHCP server reachable "
                     "(a router with ip dhcp pool, or a Server with pt_server_dhcp)?"
@@ -312,9 +344,12 @@ def register_device_panel_tools(
             "link_local": state.get("link_local"),
             "summary": f"{device}/{data.get('port')}: {', '.join(data.get('applied', []))} → "
                        f"{state.get('ip')}/{state.get('mask')}"
-                       + (" (DHCP)" if state.get("dhcp") else ""),
+                       + (" (DHCP requested, no lease yet)" if lease is False
+                          else " (DHCP)" if state.get("dhcp") else ""),
             "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the gateway and DNS.",
         }
+        if lease is not None:
+            out["lease"] = lease
         return with_notes(out, notes)
 
     @mcp.tool()
