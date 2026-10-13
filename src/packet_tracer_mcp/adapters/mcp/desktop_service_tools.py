@@ -40,6 +40,35 @@ def html_to_text(page: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
+_NO_SETTER = {"tftp": "TFTP", "wlc": "WLC"}
+
+
+def dhcp_pool_problems(pool: str, requested: dict, pools: list[dict],
+                       skipped: list[str]) -> list[str]:
+    """Requested pool fields that PT did not end up holding, read back from PT.
+
+    `requested` maps read-back keys (gateway, dns, start, mask, max_users,
+    tftp, wlc) to what was asked; empty/0 means "leave alone" and is not
+    checked. `skipped` are fields the JS could not set on an existing pool
+    (PT has no TFTP/WLC setter). Nothing requested → nothing to report.
+    """
+    wanted = {k: v for k, v in requested.items() if v}
+    if not wanted:
+        return []
+    got = next((p for p in pools if p.get("name") == pool), None)
+    if got is None:
+        return [f"pool '{pool}' is not on the server after the change"]
+    problems = []
+    for key, value in wanted.items():
+        if key in skipped:
+            problems.append(f"{key}: PT has no setter for an existing pool's {_NO_SETTER.get(key, key)} "
+                            f"address, so it was not applied (still {got.get(key)}); delete and "
+                            "recreate the pool to set it")
+        elif str(got.get(key)) != str(value):
+            problems.append(f"{key}: requested {value}, PT has {got.get(key)}")
+    return problems
+
+
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
 
     # ------------------------------------------------------------------
@@ -153,7 +182,10 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
           common case). Touched only if a pool field below is given; if it
           doesn't exist it is created with those values.
         - gateway, dns, start_ip, mask ("255.255.255.0" or "24"), max_users,
-          tftp, wlc: empty/0 = leave alone.
+          tftp, wlc: empty/0 = leave alone. tftp/wlc can only be set when the
+          pool is created (PT has no setter for an existing pool's).
+          Every field is read back: any PT does not hold comes back in
+          not_applied, with ok=false.
         - enable: True = Service On (default), False = Off, None = leave alone.
         - remove_pool: deletes that pool (alone, it creates nothing).
         - exclude: ranges to exclude, ["192.168.1.1-192.168.1.9"]; they apply
@@ -162,6 +194,7 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         Hosts use it with pt_host_ip_config(mode="dhcp").
         """
         ex = list(exclude or [])
+        norm_mask = (normalize_mask(mask) or "") if mask else ""
         v = validate_dhcp(device, pool=pool, gateway=gateway, dns=dns, start_ip=start_ip,
                           mask=mask, max_users=int(max_users or 0), tftp=tftp, wlc=wlc, exclude=ex,
                           remove_pool=remove_pool)
@@ -172,14 +205,23 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
             return err
         js = server_dhcp_js(
             device, port=interface.strip(), pool=pool.strip(), gateway=gateway, dns=dns,
-            start_ip=start_ip, mask=(normalize_mask(mask) or "") if mask else "",
+            start_ip=start_ip, mask=norm_mask,
             max_users=int(max_users or 0), tftp=tftp, wlc=wlc, enable=enable,
             remove_pool=remove_pool.strip(), exclude=[parse_range(r) for r in ex],
         )
         data, error = ps.call(js, device)
         if error:
             return error
-        data.pop("ok", None)
+        requested = {"gateway": gateway, "dns": dns, "start": start_ip, "mask": norm_mask,
+                     "max_users": int(max_users or 0), "tftp": tftp, "wlc": wlc}
+        problems = dhcp_pool_problems(pool.strip(), requested, data.get("pools") or [],
+                                      data.get("not_applied") or [])
+        data["ok"] = not problems
+        data.pop("not_applied", None)
+        if problems:
+            data["not_applied"] = problems
+            data["warning"] = (f"Pool '{pool.strip()}': {len(problems)} requested field(s) "
+                               "are not what PT now holds; see not_applied.")
         notes = ps.show_after(device, show, capture, output_dir, "dhcp",
                               tab="Services", section="DHCP")
         return with_notes(data, notes)

@@ -625,6 +625,23 @@ class TestDhcpTouchesOnlyWhatWasAsked:
         assert (lan["gateway"], lan["start"], lan["tftp"]) == ("10.0.10.1", "10.0.10.10",
                                                                "10.0.10.5")
 
+    def test_existing_pool_applies_mask_without_start(self, tmp_path):
+        out = _run_dhcp(tmp_path, mask="255.255.0.0")
+        pool = out["pools"][0]
+        assert pool["mask"] == "255.255.0.0" and pool["network"] == "192.168.0.0"
+
+    def test_existing_pool_applies_every_settable_field(self, tmp_path):
+        out = _run_dhcp(tmp_path, gateway="192.168.1.1", dns="192.168.1.20",
+                        start_ip="192.168.1.100", mask="255.255.255.0", max_users=50)
+        pool = out["pools"][0]
+        assert (pool["gateway"], pool["dns"], pool["start"], pool["mask"], pool["max_users"]) == \
+            ("192.168.1.1", "192.168.1.20", "192.168.1.100", "255.255.255.0", 50)
+        assert pool["network"] == "192.168.1.0"
+
+    def test_existing_pool_reports_tftp_and_wlc_as_not_applied(self, tmp_path):
+        out = _run_dhcp(tmp_path, tftp="192.168.1.5", wlc="192.168.1.6", gateway="192.168.1.1")
+        assert set(out["not_applied"]) == {"tftp", "wlc"}
+        assert out["pools"][0]["gateway"] == "192.168.1.1"
 
 
 class TestDhcpRemoveRules:
@@ -642,3 +659,37 @@ class TestDhcpRemoveRules:
         call, sent = _tools(tmp_path)
         call("pt_server_dhcp", device="Server0", remove_pool="serverPool")
         assert '"pool": ""' in sent[0] and '"remove": "serverPool"' in sent[0]
+
+
+def _dhcp_tool_reply(pools, not_applied=()):
+    def reply(js):
+        return json.dumps({"ok": True, "port": "FastEthernet0", "done": ["pool serverPool updated"],
+                           "enabled": True, "pools": pools, "excluded": 0,
+                           "not_applied": list(not_applied)})
+    return reply
+
+
+_FACTORY_READBACK = {"name": "serverPool", "network": "192.168.1.0", "mask": "255.255.255.0",
+                     "start": "192.168.1.0", "end": "192.168.1.255", "gateway": "0.0.0.0",
+                     "dns": "0.0.0.0", "max_users": 256, "tftp": "0.0.0.0", "wlc": "0.0.0.0"}
+
+
+class TestDhcpToolHonesty:
+    def test_tftp_not_applied_is_not_reported_as_success(self, tmp_path):
+        call, _ = _tools(tmp_path, reply=_dhcp_tool_reply([_FACTORY_READBACK], ["tftp"]))
+        out = json.loads(call("pt_server_dhcp", device="Server0", tftp="192.168.1.5"))
+        assert out["ok"] is False
+        assert any(x.startswith("tftp") for x in out["not_applied"])
+        assert "warning" in out
+
+    def test_read_back_mismatch_is_reported(self, tmp_path):
+        # PT kept another value (e.g. it capped max_users): the read-back says so.
+        call, _ = _tools(tmp_path, reply=_dhcp_tool_reply([_FACTORY_READBACK]))
+        out = json.loads(call("pt_server_dhcp", device="Server0", gateway="192.168.1.1"))
+        assert out["ok"] is False and any("gateway" in x for x in out["not_applied"])
+
+    def test_matching_read_back_is_ok(self, tmp_path):
+        pool = dict(_FACTORY_READBACK, gateway="192.168.1.1")
+        call, _ = _tools(tmp_path, reply=_dhcp_tool_reply([pool]))
+        out = json.loads(call("pt_server_dhcp", device="Server0", gateway="192.168.1.1"))
+        assert out["ok"] is True and "not_applied" not in out

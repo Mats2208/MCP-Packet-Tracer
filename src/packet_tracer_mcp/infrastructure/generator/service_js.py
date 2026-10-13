@@ -69,6 +69,9 @@ _DHCP_READ = (
     "mask:String(p.getSubnetMask()),start:String(p.getStartIp()),end:String(p.getEndIp()),"
     "gateway:String(p.getDefaultRouter()),dns:String(p.getDnsServerIp()),max_users:p.getMaxUsers(),"
     "tftp:String(p.getTftpAddress()),wlc:String(p.getWlcAddress())});}return r;}"
+    # Network address of `ip` under `mask` (plain JS, no PT call).
+    "function __net(ip,m){var a=String(ip).split('.'),b=String(m).split('.'),r=[];"
+    "for(var i=0;i<4;i++){r.push((parseInt(a[i],10)&parseInt(b[i],10))>>>0);}return r.join('.');}"
 )
 
 
@@ -108,24 +111,31 @@ def server_dhcp_js(
         "var names=d.getPorts();var pn=c.port||String(names[0]);"
         "var dp=null;try{dp=dm.getDhcpServerProcessByPortName(pn);}catch(e){}"
         "if(!dp){reportResult(JSON.stringify({ok:false,error:'port_not_found',ports:String(names.join(','))}));return;}"
-        "var done=[];"
+        "var done=[];var skipped=[];"
         "if(c.remove){if(dp.getPool(c.remove)){dp.removePool(c.remove);done.push('pool '+c.remove+' deleted');}"
         "else{done.push('pool '+c.remove+' did not exist');}}"
         "if(c.pool){var p=dp.getPool(c.pool);"
         "if(!p){dp.addNewPool(c.pool,c.gateway||'0.0.0.0',c.dns||'0.0.0.0',c.start||'0.0.0.0',"
         "c.mask||'0.0.0.0',c.max||256,c.tftp||'0.0.0.0',c.wlc||'0.0.0.0');p=dp.getPool(c.pool);"
         "done.push('pool '+c.pool+' created');}"
-        "else{if(c.start&&c.mask){p.setNetworkMask(c.start,c.mask);}"
-        "if(c.start){p.setStartIp(c.start);}"
+        # Editing uses the same setters as pt_configure_dhcp_server, in its
+        # order: network + mask (two-argument setNetworkMask), gateway, dns,
+        # start, then max users (it recomputes the end from the start). A mask
+        # without start_ip re-fits the pool's current network to it.
+        "else{if(c.mask){var nw=__net(c.start||String(p.getNetworkAddress()),c.mask);"
+        "p.setNetworkAddress(nw);p.setNetworkMask(nw,c.mask);}"
         "if(c.gateway){p.setDefaultRouter(c.gateway);}"
         "if(c.dns){p.setDnsServerIp(c.dns);}"
+        "if(c.start){p.setStartIp(c.start);}"
         "if(c.max){p.setMaxUsers(c.max);}"
+        # PT's DhcpPool has no setter for TFTP or WLC: only addNewPool takes them.
+        "if(c.tftp){skipped.push('tftp');}if(c.wlc){skipped.push('wlc');}"
         "done.push('pool '+c.pool+' updated');}}"
         "for(var k=0;k<c.exclude.length;k++){dp.addExcludedAddress(c.exclude[k][0],c.exclude[k][1]);"
         "done.push('excluded '+c.exclude[k][0]+'-'+c.exclude[k][1]);}"
         "if(c.enable!==null){dp.setEnable(!!c.enable);done.push(c.enable?'service On':'service Off');}"
-        "reportResult(JSON.stringify({ok:true,port:pn,done:done,enabled:!!dp.isEnable(),pools:__pools(dp),"
-        "excluded:dp.getExcludedAddressCount()}));"
+        "reportResult(JSON.stringify({ok:true,port:pn,done:done,not_applied:skipped,"
+        "enabled:!!dp.isEnable(),pools:__pools(dp),excluded:dp.getExcludedAddressCount()}));"
         + _TAIL
     )
 
