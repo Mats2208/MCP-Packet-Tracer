@@ -369,6 +369,119 @@ class TestBatchSize:
         assert "1 MiB" in note
 
 
+# ---------------------------------------------------------------------------
+# Priming: waking a console that sits at "Press RETURN to get started".
+# Seen live on PT 9.0.0: a 2960 linked to a powered-on PC prints %LINK /
+# %LINEPROTO lines AFTER the banner, getPrompt() is '', and the first command
+# of pt_cli was spent as the RETURN (reported as an empty [ok]).
+# ---------------------------------------------------------------------------
+
+_BANNER = "Press RETURN to get started!\n\n\n"
+_LINK_LOGS = (
+    "%LINK-5-CHANGED: Interface FastEthernet0/1, changed state to up\n\n"
+    "%LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up\n"
+)
+_DIALOG_Q = "Would you like to enter the initial configuration dialog? [yes/no]: "
+
+
+def _ios_console_fake(buffer: str, prompt: str, state: str) -> str:
+    """A switch console. `state`: 'asleep' (waiting for RETURN), 'awake', 'dialog'.
+
+    Asleep, any line only wakes it (what is typed is dropped, like on IOS);
+    awake, a command prints `BODY OF <cmd>` and the prompt. Every report also
+    carries `__typed`, everything entered on the line in order.
+    """
+    return (
+        f"var __out={json.dumps(buffer)};var __pr={json.dumps(prompt)};"
+        f"var __state={json.dumps(state)};var __typed=[];var __dq={json.dumps(_DIALOG_Q)};"
+        "var cl={getOutput:function(){return __out;},getPrompt:function(){return __pr;},"
+        "getMode:function(){return __state==='awake'?'user':'';},enterChar:function(){},"
+        "enterCommand:function(c){__typed.push(c);"
+        "if(__state==='asleep'){__out+='\\n\\nSwitch>';__state='awake';__pr='Switch>';return;}"
+        "if(__state==='dialog'){if(c==='no'){__out+='no\\n\\n\\nPress RETURN to get started!\\n\\n\\n';"
+        "__state='asleep';__pr='';}else{__out+=c+\"\\n% Please answer 'yes' or 'no'.\\n\"+__dq;}return;}"
+        "__out+=c+(c?'\\nBODY OF '+c:'')+'\\nSwitch>';}};"
+        "var d={getCommandLine:function(){return cl;}};"
+        "var ipc={network:function(){return {getDevice:function(){return d;}};}};"
+        "var __report=reportResult;reportResult=function(x){var o=JSON.parse(x);"
+        "o.__typed=__typed;__report(JSON.stringify(o));};"
+    )
+
+
+def _prime_run(tmp_path, buffer, prompt, state, cmds=("show vlan brief",)):
+    reports = run_pt_js(build_run_js("SW1", list(cmds), 0),
+                        _ios_console_fake(buffer, prompt, state), tmp_path)
+    assert len(reports) == 1
+    return json.loads(reports[0])
+
+
+@requires_node
+class TestPriming:
+    def test_banner_followed_by_async_log_lines_is_woken(self, tmp_path):
+        # The live repro, end to end through run_commands and format_run.
+        fake = _ios_console_fake("Switch boot...\n" + _BANNER + _LINK_LOGS, "", "asleep")
+        cmds = ["show vlan brief", "show interfaces status"]
+        sent: list[str] = []
+
+        def send(js, timeout):
+            sent.append(js)
+            return run_pt_js(js, fake, tmp_path)[0]
+
+        r = run_commands(send, "SW1", cmds)
+        assert r.ok and len(sent) == 1
+        assert r.primed == [""]
+        assert [x.output for x in r.results] == ["BODY OF show vlan brief",
+                                                 "BODY OF show interfaces status"]
+        text = format_run(r, "CLI")
+        assert "(console primed" in text and "BODY OF show vlan brief" in text
+        assert json.loads(run_pt_js(sent[0], fake, tmp_path)[0])["__typed"] == [""] + cmds
+
+    @pytest.mark.parametrize("banner,prompt", [
+        ("Press RETURN to get started!\n", ""),
+        ("Press RETURN to get started!", ""),
+        # exec-timeout: "Router con0 is now available ... started."
+        ("Switch con0 is now available\n\n\n\n\n\nPress RETURN to get started.\n", ""),
+        ("Press RETURN to get started!\n", "Switch>"),
+    ])
+    def test_banner_at_the_very_end_is_still_woken(self, tmp_path, banner, prompt):
+        out = _prime_run(tmp_path, "boot\n" + banner, prompt, "asleep")
+        assert out["primed"] == [""] and out["__typed"] == ["", "show vlan brief"]
+        assert out["results"][0]["out"].endswith("BODY OF show vlan brief\nSwitch>")
+
+    @pytest.mark.parametrize("buffer,prompt", [
+        # Woken earlier: the prompt follows the banner, then more async logs.
+        (_BANNER + "\nSwitch>\n" + _LINK_LOGS, "Switch>"),
+        (_BANNER + "\nSwitch>" + _LINK_LOGS, "Switch>"),
+        ("show clock\n*0:0:35 UTC\nSwitch>", "Switch>"),
+        ("show clock\n*0:0:35 UTC\nSwitch>\n" + _LINK_LOGS, "Switch>"),
+        # Empty prompt, but the buffer itself ends at a prompt.
+        ("show clock\n*0:0:35 UTC\nSwitch>\n" + _LINK_LOGS, ""),
+        # A pager or a question is not a sleeping console.
+        ("show run\nline1\n --More-- ", "Switch#"),
+        ("show run\nline1\n --More-- ", ""),
+        (_BANNER + "User Access Verification\n\nPassword: ", "Password: "),
+    ])
+    def test_console_not_asleep_gets_no_extra_return(self, tmp_path, buffer, prompt):
+        out = _prime_run(tmp_path, buffer, prompt, "awake")
+        assert out["primed"] == [] and out["__typed"] == ["show vlan brief"]
+
+    def test_empty_prompt_without_banner_in_the_tail_is_woken(self, tmp_path):
+        # The banner scrolled out of PT's buffer under a pile of link logs:
+        # getPrompt() is '' and the buffer does not end at a prompt.
+        out = _prime_run(tmp_path, _LINK_LOGS * 40, "", "asleep")
+        assert out["primed"] == [""] and out["__typed"] == ["", "show vlan brief"]
+        assert "BODY OF show vlan brief" in out["results"][0]["out"]
+
+    def test_initial_dialog_followed_by_async_log_lines_is_answered(self, tmp_path):
+        # Same fault one step earlier: more than 600 chars of logs after the
+        # dialog's question pushed it out of the window that was searched.
+        buf = "--- System Configuration Dialog ---\n\n" + _DIALOG_Q + "\n" + _LINK_LOGS * 6
+        out = _prime_run(tmp_path, buf, _DIALOG_Q, "dialog")
+        assert out["primed"] == ["no", ""]
+        assert out["__typed"] == ["no", "", "show vlan brief"]
+        assert "BODY OF show vlan brief" in out["results"][0]["out"]
+
+
 def test_bridge_timeout_mid_run_says_commands_may_have_run():
     # The first batch stopped after "enable"; the reply to the second batch
     # never arrives, although PT may well have typed "conf t" and "hostname X".

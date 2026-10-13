@@ -78,6 +78,14 @@ _QUESTION_RE = re.compile(
 # "Destination filename [startup-config]? "): such a prompt does not mean "the
 # prompt came back". The JS uses the same pattern (syntax common to Python and JS).
 PROMPT_QUESTION_RE = re.compile(_CONFIRM_RE.pattern + "|" + _QUESTION_RE.pattern, re.I)
+# An unsolicited IOS log line (`%LINK-5-CHANGED: ...`), optionally after a
+# timestamp or sequence number. IOS prints them whenever they happen, so they
+# can land after the "Press RETURN" banner or the initial dialog's question
+# (seen live on PT 9.0.0: a 2960 with an active link). The prefix excludes `>`
+# and `#`, so a prompt with a log glued to it is not taken for a log line.
+_LOG_LINE_RE = re.compile(r"^[*.]?[\w :.]*%[A-Z0-9_]+-\d-[A-Z0-9_]+:")
+# An IOS prompt alone on its line: `Switch>`, `R1(config-if)#`.
+_PROMPT_LINE_RE = re.compile(r"^[^\s>#()]+(\([^)\n]*\))?[>#]$")
 _IOS_ERROR_RE = re.compile(
     r"^%\s*(Invalid input|Incomplete command|Ambiguous command|Unknown command|"
     r"Unrecognized|Bad |Invalid |Error)", re.M | re.I,
@@ -129,6 +137,42 @@ _SIZE_JS = (
 )
 
 
+# `__core(o)`: the buffer without its trailing blank and async log lines, i.e.
+# what the console last showed on its own. The banner / dialog checks look at
+# this, not at the raw end of the buffer, which a %LINK line can follow.
+_CORE_JS = (
+    f"var __lre=new RegExp({json.dumps(_LOG_LINE_RE.pattern)});"
+    "function __core(o){var end=o.length;while(end>0){var s=o.lastIndexOf('\\n',end-1);"
+    "var t=o.slice(s+1,end).replace(/^\\s+|\\s+$/g,'');"
+    "if(t!==''&&!__lre.test(t)){break;}end=s<0?0:s;}return o.slice(0,end);}"
+)
+
+
+# Priming, on the first batch only. A RETURN is sent when the console is
+# waiting for one:
+# - its core ends with the banner ("started!" at boot; "started." when
+#   exec-timeout disconnected it, "con0 is now available"); or
+# - on IOS, getPrompt() is '' (what PT 9.0.0 returns at the banner) and the
+#   core does not end at a prompt, --More-- or a question: the banner may have
+#   scrolled out of the buffer under the logs.
+# Without it, the first command is spent as the RETURN (and reported as an
+# empty `ok`). A console at a prompt, a pager or a question gets nothing.
+_PRIME_JS = (
+    _CORE_JS +
+    f"var __pre=new RegExp({json.dumps(_PROMPT_LINE_RE.pattern)});"
+    f"var __mre=new RegExp({json.dumps(_MORE_RE.pattern)});"
+    f"var __qre=new RegExp({json.dumps(PROMPT_QUESTION_RE.pattern)},'i');"
+    "var o=String(cl.getOutput());var pr=String(cl.getPrompt()||'');var core=__core(o);"
+    "if(pr.indexOf('[yes/no]')>=0&&core.slice(-600).indexOf('initial configuration dialog')>=0)"
+    "{cl.enterCommand('no');primed.push('no');"
+    "o=String(cl.getOutput());pr=String(cl.getPrompt()||'');core=__core(o);}"
+    "var last=core.slice(core.lastIndexOf('\\n')+1).replace(/^\\s+|\\s+$/g,'');"
+    "if(/Press RETURN to get started[.!]?\\s*$/.test(core)"
+    "||(!host&&pr.replace(/\\s+/g,'')===''&&!__pre.test(last)&&!__mre.test(core)&&!__qre.test(core)))"
+    "{cl.enterCommand('');primed.push('');}"
+)
+
+
 def build_run_js(device: str, commands: list[str], start: int, cap: int = OUTPUT_CAP) -> str:
     """Type `commands[start:]` one by one while each finishes immediately.
 
@@ -137,7 +181,8 @@ def build_run_js(device: str, commands: list[str], start: int, cap: int = OUTPUT
     the reported output reaches BATCH_SOFT_BYTES, so the reply stays under the
     bridge's body limit; Python types the rest in the next batch. On the first
     batch (start == 0) it primes the console: answers `no` to a new router's
-    initial dialog and presses Enter on "Press RETURN to get started".
+    initial dialog and presses Enter on "Press RETURN to get started", even
+    when async log lines were printed after either (see `_PRIME_JS`).
     """
     dev = json.dumps(device)
     return (
@@ -149,15 +194,7 @@ def build_run_js(device: str, commands: list[str], start: int, cap: int = OUTPUT
         "var host=(typeof d.getCommandPrompt==='function');"
         "if(typeof d.isBooting==='function'&&d.isBooting()&&typeof d.skipBoot==='function'){d.skipBoot();}"
         "var primed=[];"
-        "if(start===0){"
-        "var o=String(cl.getOutput());var pr=String(cl.getPrompt()||'');"
-        "if(pr.indexOf('[yes/no]')>=0&&o.slice(-600).indexOf('initial configuration dialog')>=0)"
-        "{cl.enterCommand('no');primed.push('no');o=String(cl.getOutput());}"
-        # "started!" at boot; "started." when the console was disconnected by
-        # exec-timeout ("Router con0 is now available"). Without priming, the
-        # first command is spent as the RETURN.
-        "if(/Press RETURN to get started[.!]?\\s*$/.test(o)){cl.enterCommand('');primed.push('');}"
-        "}"
+        "if(start===0){" + _PRIME_JS + "}"
         "var res=[];"
         "for(var i=start;i<cmds.length;i++){"
         "var base=String(cl.getOutput()).length;"
