@@ -1,8 +1,9 @@
 """
 Global server configuration.
-"""
 
-VERSION = "0.8.0"
+The version is not here: it is the installed package's (`__version__` in
+`packet_tracer_mcp/__init__.py`, read from the distribution metadata).
+"""
 
 SERVER_NAME = "Packet Tracer MCP"
 

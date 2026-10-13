@@ -41,7 +41,7 @@ Request → TopologyRequest → Orchestrator → TopologyPlan → Validator
 |---------|-----------|
 | `server.py` | Creates the `FastMCP` instance, registers tools/resources, starts over HTTP (:39000) or stdio |
 | `__main__.py` | Entry point for `python -m packet_tracer_mcp` — calls `server.main()` |
-| `settings.py` | Global constants: `VERSION` (0.4.0), `SERVER_NAME`, `SERVER_INSTRUCTIONS` |
+| `settings.py` | Global constants: `SERVER_NAME`, `SERVER_INSTRUCTIONS`, `GUIDE` (the version is the package's `__version__`) |
 
 ## Running
 
