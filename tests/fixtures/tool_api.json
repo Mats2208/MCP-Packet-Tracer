@@ -2350,7 +2350,7 @@
   }
  },
  "pt_server_dhcp": {
-  "description": "A Server-PT's Services > DHCP: creates or edits a pool and switches it on.\n\n- pool: name (\"serverPool\" is the factory one: editing it is the most\n  common case). If it doesn't exist it is created with the given values.\n- gateway, dns, start_ip, mask (\"255.255.255.0\" or \"24\"), max_users,\n  tftp, wlc: empty/0 = leave alone.\n- enable: True = Service On (default), False = Off, None = leave alone.\n- remove_pool: deletes that pool.\n- exclude: ranges to exclude, [\"192.168.1.1-192.168.1.9\"].\n- interface: the server's port (default: the first one).\nHosts use it with pt_host_ip_config(mode=\"dhcp\").",
+  "description": "A Server-PT's Services > DHCP: creates or edits a pool and switches it on.\n\n- pool: name (\"serverPool\" is the factory one: editing it is the most\n  common case). Touched only if a pool field below is given; if it\n  doesn't exist it is created with those values.\n- gateway, dns, start_ip, mask (\"255.255.255.0\" or \"24\"), max_users,\n  tftp, wlc: empty/0 = leave alone.\n- enable: True = Service On (default), False = Off, None = leave alone.\n- remove_pool: deletes that pool (alone, it creates nothing).\n- exclude: ranges to exclude, [\"192.168.1.1-192.168.1.9\"]; they apply\n  to the port's DHCP server, never create or edit a pool.\n- interface: the server's port (default: the first one).\nHosts use it with pt_host_ip_config(mode=\"dhcp\").",
   "inputSchema": {
    "properties": {
     "capture": {

@@ -26,6 +26,7 @@ from src.packet_tracer_mcp.infrastructure.generator.service_js import (
 )
 from src.packet_tracer_mcp.infrastructure.ui.presenter import PresenterError
 from src.packet_tracer_mcp.shared.ui_mode import UiModeStore
+from tests._pt_js import requires_node, run_pt_js
 
 
 def _codes(res) -> set:
@@ -535,3 +536,109 @@ class TestWebBrowser:
         call, _ = _tools(tmp_path, reply=_browser_reply(["", "<p>" + "x" * 9000 + "</p>"]))
         out = json.loads(call("pt_web_browser", device="PC0", url="http://a"))
         assert out["text"].endswith("(cut)") and out["html_bytes"] == 9007
+
+
+# ---------------------------------------------------------------------------
+# pt_server_dhcp: only touch what was asked (executed under Node, fake PT)
+# ---------------------------------------------------------------------------
+
+# A DhcpServerProcess with PT's factory "serverPool". Only the methods the
+# generated JS calls are faked; addNewPool takes PT's 8 positional arguments.
+_DHCP_FAKE = r"""
+function __Pool(name, gw, dns, start, mask, max, tftp, wlc) {
+  var p = {n: name, net: '0.0.0.0', gw: gw, dns: dns, start: start, mask: mask, max: max,
+           tftp: tftp, wlc: wlc};
+  return {
+    getDhcpPoolName: function () { return p.n; },
+    getNetworkAddress: function () { return p.net; }, setNetworkAddress: function (x) { p.net = x; },
+    getSubnetMask: function () { return p.mask; },
+    setNetworkMask: function (net, m) {
+      if (arguments.length !== 2) { throw new Error('Invalid arguments for IPC call'); }
+      p.net = net; p.mask = m; },
+    getStartIp: function () { return p.start; }, setStartIp: function (x) { p.start = x; },
+    getEndIp: function () { return '0.0.0.0'; },
+    getDefaultRouter: function () { return p.gw; }, setDefaultRouter: function (x) { p.gw = x; },
+    getDnsServerIp: function () { return p.dns; }, setDnsServerIp: function (x) { p.dns = x; },
+    getMaxUsers: function () { return p.max; }, setMaxUsers: function (x) { p.max = x; },
+    getTftpAddress: function () { return p.tftp; }, getWlcAddress: function () { return p.wlc; }
+  };
+}
+var __pools = FACTORY ? [__Pool('serverPool', '0.0.0.0', '0.0.0.0', '192.168.1.0',
+                                '255.255.255.0', 256, '0.0.0.0', '0.0.0.0')] : [];
+if (FACTORY) { __pools[0].setNetworkAddress('192.168.1.0'); }
+var __ex = [];
+var __on = false;
+var dp = {
+  getPool: function (n) { for (var i = 0; i < __pools.length; i++) {
+    if (__pools[i].getDhcpPoolName() === n) { return __pools[i]; } } return null; },
+  addNewPool: function (n, gw, dns, start, mask, max, tftp, wlc) {
+    if (arguments.length !== 8) { throw new Error('Invalid arguments for IPC call'); }
+    __pools.push(__Pool(n, gw, dns, start, mask, max, tftp, wlc)); },
+  removePool: function (n) { __pools = __pools.filter(function (p) {
+    return p.getDhcpPoolName() !== n; }); },
+  getPoolCount: function () { return __pools.length; },
+  getPoolAt: function (i) { return __pools[i]; },
+  addExcludedAddress: function (a, b) { __ex.push([a, b]); },
+  getExcludedAddressCount: function () { return __ex.length; },
+  setEnable: function (x) { __on = x; }, isEnable: function () { return __on; }
+};
+var dm = {getDhcpServerProcessByPortName: function (n) { return n === 'FastEthernet0' ? dp : null; }};
+var d = {getPorts: function () { return ['FastEthernet0']; },
+         getProcess: function (n) { return n === 'DhcpServerMain' ? dm : null; }};
+var ipc = {network: function () { return {getDevice: function () { return d; }}; }};
+"""
+
+
+def _run_dhcp(tmp_path, *, factory=True, **kw) -> dict:
+    kw.setdefault("pool", "serverPool")  # the tool's default
+    js = server_dhcp_js("Server0", **kw)
+    fake = _DHCP_FAKE.replace("FACTORY", "true" if factory else "false")
+    reports = run_pt_js(js, fake, tmp_path)
+    assert len(reports) == 1
+    return json.loads(reports[0])
+
+
+@requires_node
+class TestDhcpTouchesOnlyWhatWasAsked:
+    def test_remove_only_does_not_recreate_the_pool(self, tmp_path):
+        out = _run_dhcp(tmp_path, remove_pool="serverPool", enable=None)
+        assert out["pools"] == []
+        assert not any("created" in x or "updated" in x for x in out["done"])
+
+    def test_exclude_only_creates_no_pool(self, tmp_path):
+        out = _run_dhcp(tmp_path, factory=False, exclude=[("10.0.0.1", "10.0.0.9")], enable=None)
+        assert out["pools"] == [] and out["excluded"] == 1
+
+    def test_exclude_only_leaves_the_factory_pool_alone(self, tmp_path):
+        out = _run_dhcp(tmp_path, exclude=[("192.168.1.1", "192.168.1.9")], enable=True)
+        assert not any("updated" in x or "created" in x for x in out["done"])
+        assert out["pools"][0]["gateway"] == "0.0.0.0" and out["excluded"] == 1
+
+    def test_enable_only_touches_no_pool(self, tmp_path):
+        out = _run_dhcp(tmp_path, factory=False, enable=True)
+        assert out["pools"] == [] and out["enabled"] is True
+
+    def test_fields_still_create_a_missing_pool(self, tmp_path):
+        out = _run_dhcp(tmp_path, pool="LAN10", gateway="10.0.10.1", start_ip="10.0.10.10",
+                        mask="255.255.255.0", tftp="10.0.10.5")
+        lan = {p["name"]: p for p in out["pools"]}["LAN10"]
+        assert (lan["gateway"], lan["start"], lan["tftp"]) == ("10.0.10.1", "10.0.10.10",
+                                                               "10.0.10.5")
+
+
+
+class TestDhcpRemoveRules:
+    def test_removing_and_editing_the_same_pool_is_contradictory(self):
+        res = _dhcp(remove_pool="serverPool", gateway="192.168.1.1")
+        assert ErrorCode.PANEL_INVALID_VALUE in _codes(res)
+
+    def test_removing_the_default_pool_alone_is_fine(self):
+        assert _dhcp(remove_pool="serverPool").is_valid
+
+    def test_remove_pool_name_with_newline_is_rejected(self):
+        assert ErrorCode.PANEL_INVALID_CHARS in _codes(_dhcp(remove_pool="a\nb"))
+
+    def test_tool_remove_only_sends_no_pool_edit(self, tmp_path):
+        call, sent = _tools(tmp_path)
+        call("pt_server_dhcp", device="Server0", remove_pool="serverPool")
+        assert '"pool": ""' in sent[0] and '"remove": "serverPool"' in sent[0]

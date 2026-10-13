@@ -59,9 +59,16 @@ def parse_range(text: str) -> tuple[str, str] | None:
 
 
 def validate_dhcp(device: str, *, pool: str, gateway: str, dns: str, start_ip: str, mask: str,
-                  max_users: int, tftp: str, wlc: str, exclude: list[str]) -> ValidationResult:
+                  max_users: int, tftp: str, wlc: str, exclude: list[str],
+                  remove_pool: str = "") -> ValidationResult:
     c = _Collector(device)
     c.text("pool", pool)
+    c.text("remove_pool", remove_pool)
+    has_fields = any((gateway, dns, start_ip, mask, max_users, tftp, wlc))
+    if remove_pool and has_fields and remove_pool.strip() == (pool or "").strip():
+        c.bad(ErrorCode.PANEL_INVALID_VALUE,
+              f"remove_pool deletes '{remove_pool}' and the pool fields edit that same pool.",
+              "Delete it in one call, or edit it without remove_pool.")
     for name, value in (("gateway", gateway), ("dns", dns), ("start_ip", start_ip),
                         ("tftp", tftp), ("wlc", wlc)):
         c.ipv4(name, value)

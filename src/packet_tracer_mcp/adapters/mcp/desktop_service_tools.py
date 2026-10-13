@@ -150,18 +150,21 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         A Server-PT's Services > DHCP: creates or edits a pool and switches it on.
 
         - pool: name ("serverPool" is the factory one: editing it is the most
-          common case). If it doesn't exist it is created with the given values.
+          common case). Touched only if a pool field below is given; if it
+          doesn't exist it is created with those values.
         - gateway, dns, start_ip, mask ("255.255.255.0" or "24"), max_users,
           tftp, wlc: empty/0 = leave alone.
         - enable: True = Service On (default), False = Off, None = leave alone.
-        - remove_pool: deletes that pool.
-        - exclude: ranges to exclude, ["192.168.1.1-192.168.1.9"].
+        - remove_pool: deletes that pool (alone, it creates nothing).
+        - exclude: ranges to exclude, ["192.168.1.1-192.168.1.9"]; they apply
+          to the port's DHCP server, never create or edit a pool.
         - interface: the server's port (default: the first one).
         Hosts use it with pt_host_ip_config(mode="dhcp").
         """
         ex = list(exclude or [])
         v = validate_dhcp(device, pool=pool, gateway=gateway, dns=dns, start_ip=start_ip,
-                          mask=mask, max_users=int(max_users or 0), tftp=tftp, wlc=wlc, exclude=ex)
+                          mask=mask, max_users=int(max_users or 0), tftp=tftp, wlc=wlc, exclude=ex,
+                          remove_pool=remove_pool)
         if not v.is_valid:
             return errors_text(v)
         err = ps.check_bridge()

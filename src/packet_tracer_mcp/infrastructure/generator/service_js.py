@@ -88,9 +88,18 @@ def server_dhcp_js(
     remove_pool: str = "",
     exclude: list[tuple[str, str]] | None = None,
 ) -> str:
-    """Services > DHCP: create or edit a pool, switch it on, exclude ranges, delete pools."""
+    """Services > DHCP: create or edit a pool, switch it on, exclude ranges, delete pools.
+
+    `pool` is only created or edited when at least one pool field (gateway,
+    dns, start_ip, mask, max_users, tftp, wlc) is given: a bare name, a
+    `remove_pool`, an `exclude` or an `enable` never create a pool (PT would
+    get one full of 0.0.0.0). Exclusions belong to the port's DHCP process,
+    not to a pool, so they never touch one either.
+    """
+    has_fields = any((gateway, dns, start_ip, mask, max_users, tftp, wlc))
     cfg = {
-        "device": device, "port": port, "pool": pool, "gateway": gateway, "dns": dns,
+        "device": device, "port": port, "pool": pool if has_fields else "",
+        "gateway": gateway, "dns": dns,
         "start": start_ip, "mask": mask, "max": int(max_users or 0), "tftp": tftp, "wlc": wlc,
         "enable": enable, "remove": remove_pool, "exclude": [list(x) for x in (exclude or [])],
     }
