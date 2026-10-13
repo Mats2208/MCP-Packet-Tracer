@@ -36,6 +36,15 @@ SendAndWait = Callable[[str, float], Optional[str]]
 # 1 MiB per result; a large `show running-config` is around 10-20 KB.
 OUTPUT_CAP = 60_000
 
+# One reportResult carries a whole batch, and the bridge answers 413 above
+# MAX_BODY_BYTES (1 MiB) — after the batch's commands have already run. Sizes
+# are UTF-8 bytes of the JSON as PT sends it (an upper bound is computed in
+# the JS). A batch stops typing once BATCH_SOFT_BYTES are reported (the rest
+# goes in the next batch); a single output that would push the reply past
+# BATCH_HARD_BYTES is trimmed to its tail and flagged `trimmed`.
+BATCH_SOFT_BYTES = 256 * 1024
+BATCH_HARD_BYTES = 768 * 1024
+
 # Most --More-- pages one command may turn before it is aborted. A large
 # `show running-config` is a few dozen pages; this only stops a console that
 # keeps paging forever (the per-command timeout stops it too).
@@ -112,18 +121,30 @@ _SNAPSHOT_JS = (
 )
 
 
+# Upper bound of the UTF-8 bytes of `JSON.stringify(o)`: escapes are already
+# ASCII in the string; a non-ASCII UTF-16 unit takes at most 3 bytes.
+_SIZE_JS = (
+    "function __sz(o){var s=JSON.stringify(o);var m=s.match(/[^\\x00-\\x7f]/g);"
+    "return s.length+(m?2*m.length:0);}"
+)
+
+
 def build_run_js(device: str, commands: list[str], start: int, cap: int = OUTPUT_CAP) -> str:
     """Type `commands[start:]` one by one while each finishes immediately.
 
     Stops at the first one left pending (asynchronous, --More--, a question...)
-    and returns it with `done:false` for Python to handle. On the first batch
-    (start == 0) it primes the console: answers `no` to a new router's initial
-    dialog and presses Enter on "Press RETURN to get started".
+    and returns it with `done:false` for Python to handle. It also stops once
+    the reported output reaches BATCH_SOFT_BYTES, so the reply stays under the
+    bridge's body limit; Python types the rest in the next batch. On the first
+    batch (start == 0) it primes the console: answers `no` to a new router's
+    initial dialog and presses Enter on "Press RETURN to get started".
     """
     dev = json.dumps(device)
     return (
         "(function(){"
         f"var cmds={json.dumps(list(commands))};var start={int(start)};var cap={int(cap)};"
+        f"var soft={int(BATCH_SOFT_BYTES)};var hard={int(BATCH_HARD_BYTES)};var used=256;"
+        + _SIZE_JS
         + _resolve_line_js(dev) +
         "var host=(typeof d.getCommandPrompt==='function');"
         "if(typeof d.isBooting==='function'&&d.isBooting()&&typeof d.skipBoot==='function'){d.skipBoot();}"
@@ -145,7 +166,13 @@ def build_run_js(device: str, commands: list[str], start: int, cap: int = OUTPUT
         # If PT trimmed the buffer, re-anchor on the command's echo.
         "var from=out.length>=base?base:Math.max(0,out.lastIndexOf(cmds[i]));"
         + _SNAPSHOT_JS +
-        "snap.i=i;res.push(snap);if(!done){break;}"
+        "snap.i=i;var sz=__sz(snap);"
+        # The command has already run, so its result must be reported: if its
+        # output alone would overflow the reply, keep the tail (6 bytes per char
+        # is the worst case, a JSON-escaped control character) and flag it.
+        "if(used+sz>hard){var room=hard-used-1024;var keep=room>0?Math.floor(room/6):0;"
+        "snap.out=keep>0?snap.out.slice(-keep):'';snap.cut=true;snap.trimmed=true;sz=__sz(snap);}"
+        "used+=sz;res.push(snap);if(!done||used>=soft){break;}"
         "}"
         "reportResult(JSON.stringify({ok:true,host:host,primed:primed,results:res}));"
         "})();"
@@ -295,7 +322,10 @@ def _finish(command: str, snap: dict, host: bool | None, *, status: str | None =
             note: str = "") -> CommandResult:
     prompt = snap.get("prompt", "")
     output = clean_output(command, snap.get("out", ""), prompt)
-    if snap.get("cut"):
+    if snap.get("trimmed"):
+        note = ((note + " " if note else "")
+                + "(output trimmed to its tail to fit the bridge's 1 MiB reply limit)")
+    elif snap.get("cut"):
         note = (note + " " if note else "") + f"(output cut to the last {OUTPUT_CAP} characters)"
     return CommandResult(
         command=command,
@@ -333,8 +363,15 @@ def run_commands(
     while i < len(commands):
         data = _parse(send_and_wait(build_run_js(device, commands, i), call_timeout))
         if data is None:
+            # The JS may have run anyway (a lost or rejected reply looks the
+            # same as no reply): say so, a blind retry types the commands again.
             run.ok = False
-            run.error = "No answer from PT (bridge timeout)."
+            run.error = (
+                f"No answer from PT (bridge timeout). Commands from #{i + 1} "
+                f"({commands[i]!r}) on may already have run on {device}: check its "
+                "state (e.g. show running-config) before retrying, since a retry "
+                "types them again."
+            )
             return run
         if not data.get("ok"):
             run.ok = False

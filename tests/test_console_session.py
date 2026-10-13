@@ -19,6 +19,9 @@ from src.packet_tracer_mcp.infrastructure.execution.console_session import (
     is_done, run_commands,
 )
 from src.packet_tracer_mcp.infrastructure.execution import console_session as cs_mod
+from src.packet_tracer_mcp.infrastructure.execution.live_bridge import MAX_BODY_BYTES
+
+from tests._pt_js import requires_node, run_pt_js
 
 
 def snap(i, out, prompt="Router#", done=None, mode="enable", frm=100):
@@ -311,3 +314,66 @@ class TestJsBuilders:
         # El argumento entero es UN literal: la comilla del nombre va escapada.
         assert 'getDevice("\\"); evil(); //")' in js
         assert 'getDevice(""); evil()' not in js
+
+
+# ---------------------------------------------------------------------------
+# Reply size: the bridge rejects a result above MAX_BODY_BYTES (413), and the
+# commands of that batch have already run by then.
+# ---------------------------------------------------------------------------
+
+def _console_fake(chunk_js: str) -> str:
+    """A console where every command prints `chunk_js` (a JS expression)."""
+    return (
+        "var __big=" + chunk_js + ";var __out='';var __typed=[];"
+        "var cl={getOutput:function(){return __out;},getPrompt:function(){return 'R1#';},"
+        "getMode:function(){return 'enable';},enterChar:function(){},"
+        "enterCommand:function(c){__typed.push(c);__out+=c+'\\n'+__big+'\\nR1#';}};"
+        "var d={getCommandLine:function(){return cl;}};"
+        "var ipc={network:function(){return {getDevice:function(){return d;}};}};"
+    )
+
+
+def _utf8_len(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+@requires_node
+class TestBatchSize:
+    # Plain ASCII; control characters (6 bytes each once JSON-escaped); and
+    # non-ASCII text (2-3 bytes each in UTF-8).
+    @pytest.mark.parametrize("chunk", ["'x'.repeat(70000)", "'\\u0001'.repeat(70000)",
+                                       "'\\u00e9'.repeat(70000)"])
+    def test_a_full_batch_stays_under_the_bridge_body_limit(self, tmp_path, chunk):
+        cmds = [f"show cmd {n}" for n in range(200)]
+        reports = run_pt_js(build_run_js("R1", cmds, 0), _console_fake(chunk), tmp_path)
+        assert len(reports) == 1
+        assert _utf8_len(reports[0]) < MAX_BODY_BYTES
+        data = json.loads(reports[0])
+        # The batch stopped early instead of piling up 200 outputs; every
+        # reported command keeps its own status, and the Python loop types
+        # the rest in the next batch.
+        assert 0 < len(data["results"]) < len(cmds)
+        assert all(r["done"] for r in data["results"])
+        assert [r["i"] for r in data["results"]] == list(range(len(data["results"])))
+
+    def test_an_oversized_single_output_is_trimmed_with_a_marker(self, tmp_path):
+        js = build_run_js("R1", ["show tech"], 0, cap=3_000_000)
+        reports = run_pt_js(js, _console_fake("'\\u0001'.repeat(2000000)"), tmp_path)
+        assert _utf8_len(reports[0]) < MAX_BODY_BYTES
+        res = json.loads(reports[0])["results"][0]
+        assert res["trimmed"] is True and res["cut"] is True and res["done"] is True
+
+    def test_trimmed_output_is_flagged_in_the_result(self):
+        s = Script([run_reply(dict(snap(0, "show tech\nx\nRouter#"), trimmed=True, cut=True))])
+        note = run(s, ["show tech"]).results[0].note
+        assert "1 MiB" in note
+
+
+def test_bridge_timeout_mid_run_says_commands_may_have_run():
+    # The first batch stopped after "enable"; the reply to the second batch
+    # never arrives, although PT may well have typed "conf t" and "hostname X".
+    s = Script([run_reply(snap(0, "enable\nRouter#")), None])
+    r = run(s, ["enable", "conf t", "hostname X"])
+    assert not r.ok
+    assert "timeout" in r.error.lower()
+    assert "may already have run" in r.error and "before retrying" in r.error
