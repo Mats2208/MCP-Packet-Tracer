@@ -478,6 +478,19 @@ class TestTerminal:
         assert p.buttons == ["OK"]
 
 
+@pytest.mark.parametrize("args", [
+    {"commands": ["hostname X\nreload"]},
+    {"commands": ["show clock"], "timeout": 1e9},
+    {"commands": []},
+])
+def test_terminal_rejected_input_never_touches_pt_or_the_gui(tmp_path, args):
+    p = FakePresenter()
+    call, sent = _tools(tmp_path, p, mode="ui", reply=_terminal_reply("R1"))
+    out = call("pt_terminal", device="PC1", **args)
+    assert "Validation failed" in out
+    assert sent == [] and p.opened == [] and p.buttons == []
+
+
 def test_terminal_unbounded_timeout_is_rejected_before_pt(tmp_path):
     call, sent = _tools(tmp_path, reply=_terminal_reply("R1"))
     out = call("pt_terminal", device="PC1", commands=["show clock"], timeout=1e9)

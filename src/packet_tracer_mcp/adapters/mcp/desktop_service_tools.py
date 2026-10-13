@@ -15,7 +15,7 @@ import time
 
 from mcp.server.fastmcp import FastMCP
 
-from ...domain.rules.console_rules import split_commands
+from ...domain.rules.console_rules import split_commands, validate_console_commands
 from ...domain.rules.panel_rules import (
     MAX_BROWSER_TIMEOUT_S, normalize_mask, validate_wait_seconds,
 )
@@ -465,6 +465,11 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         - show/capture: shows the PC's Terminal app (its 9600 8N1 settings
           window is accepted automatically).
         """
+        # Validate first: rejected input must neither query PT nor open a window.
+        cmds = split_commands(commands)
+        res = validate_console_commands(device, cmds, timeout=timeout)
+        if not res.is_valid:
+            return errors_text(res)
         err = ps.check_bridge()
         if err:
             return err
@@ -484,7 +489,7 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
                 except Exception:
                     pass
             prefix += ("\n".join(notes) + "\n") if notes else ""
-        out = console_tool_run(ps, peer, split_commands(commands), timeout=timeout,
+        out = console_tool_run(ps, peer, cmds, timeout=timeout,
                                auto_confirm=auto_confirm, show=False, capture=False,
                                output_dir=output_dir, prefer_host=False)
         if capture:
