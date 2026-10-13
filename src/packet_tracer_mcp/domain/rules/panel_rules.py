@@ -17,20 +17,33 @@ IPV6_MODES = ("", "auto", "off")
 
 
 def normalize_mask(mask: str | None) -> str | None:
-    """'255.255.255.0', '24' or '/24' → '255.255.255.0'. None if it is not a valid mask."""
-    raw = (mask or "").strip().lstrip("/")
-    if not raw:
+    """'255.255.255.0', '24' or '/24' → '255.255.255.0'. None if it is not a valid mask.
+
+    Accepted: prefixes /1../32 and contiguous dotted netmasks. Rejected (None):
+    /0 and 0.0.0.0 (never a host or pool mask), wildcard masks such as
+    0.0.0.255 (`IPv4Network` would silently read them as a hostmask), and
+    non-ASCII digits ('²' passes `str.isdigit()` but makes `int()` raise).
+    """
+    raw = (mask or "").strip()
+    if raw.startswith("/"):
+        raw = raw[1:]
+    if not raw or not raw.isascii():
         return None
     if raw.isdigit():
         n = int(raw)
-        if not 0 <= n <= 32:
+        if not 1 <= n <= 32:
             return None
         return str(ipaddress.IPv4Network(f"0.0.0.0/{n}").netmask)
     try:
-        net = ipaddress.IPv4Network(f"0.0.0.0/{raw}")
+        value = int(ipaddress.IPv4Address(raw))
     except ValueError:
         return None
-    return str(net.netmask)
+    # A netmask is a run of 1s followed by 0s: its complement plus one is a
+    # power of two. 0.0.0.0 has no network bits at all.
+    inverted = ~value & 0xFFFFFFFF
+    if value == 0 or inverted & (inverted + 1):
+        return None
+    return str(ipaddress.IPv4Address(value))
 
 
 def _is_v4(value: str) -> bool:

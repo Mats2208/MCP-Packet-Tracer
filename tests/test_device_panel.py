@@ -21,6 +21,7 @@ from src.packet_tracer_mcp.domain.models.errors import ErrorCode
 from src.packet_tracer_mcp.domain.rules.panel_rules import (
     normalize_mask, validate_host_ip_config,
 )
+from src.packet_tracer_mcp.domain.rules.service_rules import validate_dhcp
 from src.packet_tracer_mcp.infrastructure.execution.console_session import build_run_js
 from src.packet_tracer_mcp.infrastructure.generator.host_js import (
     host_ip_config_js, read_device_panel_js, remove_module_js,
@@ -188,6 +189,36 @@ class TestPanelRules:
     @pytest.mark.parametrize("raw", ["33", "255.0.255.0", "abc", ""])
     def test_bad_masks(self, raw):
         assert normalize_mask(raw) is None
+
+    @pytest.mark.parametrize("raw,mask", [
+        ("/1", "128.0.0.0"), ("32", "255.255.255.255"), ("8", "255.0.0.0"),
+        ("255.255.255.255", "255.255.255.255"), ("128.0.0.0", "128.0.0.0"),
+        (" 255.255.255.252 ", "255.255.255.252"),
+    ])
+    def test_prefix_and_dotted_edges_still_accepted(self, raw, mask):
+        assert normalize_mask(raw) == mask
+
+    @pytest.mark.parametrize("raw", [
+        "0.0.0.255",    # a wildcard (ACL-style) mask, not a netmask
+        "0.0.255.255",  # same
+        "0", "/0",      # /0 is never a host or pool mask
+        "0.0.0.0",
+        "²",       # superscript two: str.isdigit() is True, int() raises
+        "٣",       # Arabic-Indic three: a non-ASCII decimal digit
+        "2⁴",      # mixed ASCII and superscript digits
+    ])
+    def test_wildcard_zero_and_non_ascii_masks_are_rejected(self, raw):
+        assert normalize_mask(raw) is None
+
+    @pytest.mark.parametrize("raw", ["²", "0.0.0.255", "0"])
+    def test_bad_mask_is_a_validation_error_not_an_exception(self, raw):
+        res = validate_host_ip_config("PC0", mode="static", ip="10.0.0.2", mask=raw)
+        assert ErrorCode.PANEL_INVALID_IP in {e.code for e in res.errors}
+
+    def test_dhcp_rules_reject_non_ascii_mask_without_raising(self):
+        res = validate_dhcp("S0", pool="serverPool", gateway="", dns="", start_ip="",
+                            mask="²", max_users=0, tftp="", wlc="", exclude=[])
+        assert ErrorCode.PANEL_INVALID_IP in {e.code for e in res.errors}
 
     def test_static_ok(self):
         assert validate_host_ip_config("PC0", mode="static", ip="10.0.0.2", mask="24",
