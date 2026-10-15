@@ -1,6 +1,6 @@
-"""Alias de nombres de dispositivos."""
+"""Device name aliases."""
 
-# Mapeo de nombres comunes que el LLM podría usar → pt_type
+# Maps common names the LLM might use → pt_type
 MODEL_ALIASES: dict[str, str] = {
     # Generic names
     "router":       "2911",

@@ -44,7 +44,7 @@ def apply_hardening_uc(
             warnings.extend(tr.warnings)
         except Exception as exc:  # pragma: no cover
             warnings.append(PlanError(code=ErrorCode.VALIDATION_ERROR,
-                                      message=f"No se pudo validar contra PT: {exc}"))
+                                      message=f"Could not validate against PT: {exc}"))
     cli_lines = generate_hardening_cli(cfg)
     js_call = build_hardening_js_call(cfg.device, build_hardening_payload(cfg))
     sent = False

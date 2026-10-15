@@ -1,11 +1,11 @@
 """
-Catálogo de módulos de expansión para Packet Tracer.
+Expansion module catalog for Packet Tracer.
 
-Los módulos se instalan en slots de dispositivos para agregar puertos
-adicionales (serial, ethernet, wireless, etc.)
+Modules are installed in device slots to add extra ports
+(serial, ethernet, wireless, etc.)
 
-Cada módulo tiene un tipo numérico que PTBuilder usa internamente,
-y uno o más puertos que agrega al dispositivo.
+Each module has a numeric type that PTBuilder uses internally,
+and one or more ports that it adds to the device.
 """
 
 from __future__ import annotations
@@ -15,21 +15,21 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ModuleSpec:
-    """Especificación de un módulo de expansión."""
-    name: str           # Nombre del módulo (e.g. "HWIC-2T")
-    module_type: int    # Tipo numérico de PT
+    """Specification of an expansion module."""
+    name: str           # Module name (e.g. "HWIC-2T")
+    module_type: int    # Numeric PT type
     category: str       # router_nm, router_wic, switch_nm, etc.
-    ports_added: tuple[str, ...]  # Puertos que agrega (e.g. ("Serial0/0/0", "Serial0/0/1"))
+    ports_added: tuple[str, ...]  # Ports it adds (e.g. ("Serial0/0/0", "Serial0/0/1"))
     description: str = ""
-    compatible_with: tuple[str, ...] = ()  # pt_types compatibles (vacío = genérico)
+    compatible_with: tuple[str, ...] = ()  # compatible pt_types (empty = generic)
 
 
 # =====================================================================
 # Type 1 — Router NM Modules (Network Modules)
 # =====================================================================
-# Solo los routers ISR G1 / 2600 series y el genérico Router-PT aceptan NM.
-# Los ISR G2 (1941/2901/2911) NO tienen slot NM — solo HWIC + SM.
-# Para 4 seriales en un 2911, instala 2× HWIC-2T en slots "0/0" y "0/1".
+# Only the ISR G1 / 2600 series routers and the generic Router-PT accept NM.
+# The ISR G2 (1941/2901/2911) have NO NM slot — only HWIC + SM.
+# For 4 serials on a 2911, install 2× HWIC-2T in slots "0/0" and "0/1".
 _NM_COMPATIBLE = ("Router-PT", "Router-PT-Empty", "2811", "2620XM", "2621XM")
 
 NM_1E = ModuleSpec(
@@ -916,7 +916,7 @@ MERAKI_POWER_ADAPTER = ModuleSpec(
 
 
 # =====================================================================
-# CATÁLOGO INDEXADO
+# INDEXED CATALOG
 # =====================================================================
 ALL_MODULES: dict[str, ModuleSpec] = {
     m.name: m for m in [
@@ -1005,9 +1005,9 @@ ALL_MODULES: dict[str, ModuleSpec] = {
     ]
 }
 
-# Módulos más comunes por caso de uso
+# Most common modules by use case
 SERIAL_MODULES: dict[str, str] = {
-    # router pt_type → módulo que agrega serial
+    # router pt_type → module that adds serial
     "1941":    "HWIC-2T",
     "2901":    "HWIC-2T",
     "2911":    "HWIC-2T",
@@ -1017,7 +1017,7 @@ SERIAL_MODULES: dict[str, str] = {
 
 
 def get_serial_module(router_model: str) -> ModuleSpec | None:
-    """Retorna el módulo serial apropiado para un modelo de router."""
+    """Returns the appropriate serial module for a router model."""
     module_name = SERIAL_MODULES.get(router_model)
     if module_name:
         return ALL_MODULES.get(module_name)
@@ -1025,26 +1025,26 @@ def get_serial_module(router_model: str) -> ModuleSpec | None:
 
 
 def resolve_module(name: str) -> ModuleSpec | None:
-    """Resuelve un nombre de módulo."""
+    """Resolves a module name."""
     return ALL_MODULES.get(name) or ALL_MODULES.get(name.upper())
 
 
-# Nombre de puerto tipo `Serial0/0/1`: prefijo alfabético + chassis/subslot/índice.
+# Port name such as `Serial0/0/1`: alphabetic prefix + chassis/subslot/index.
 _SLOTTED_PORT = re.compile(r"^([A-Za-z]+)(\d+)/(\d+)/(\d+)$")
 
 
 def ports_for_slot(spec: ModuleSpec, slot: str) -> list[str]:
-    """Puertos que agrega `spec` instalado en `slot`.
+    """Ports that `spec` adds when installed in `slot`.
 
-    `ModuleSpec.ports_added` los lista para el PRIMER slot de la familia
-    (un HWIC-2T dice `Serial0/0/0`, `Serial0/0/1`), pero el nombre real
-    lleva el slot adentro: el mismo módulo en `"0/1"` da `Serial0/1/0` y
-    `Serial0/1/1`. Devolver la lista del catálogo tal cual hacía que un
-    batch informara puertos que no existen, y cablear a ese nombre falla.
+    `ModuleSpec.ports_added` lists them for the FIRST slot of the family
+    (an HWIC-2T says `Serial0/0/0`, `Serial0/0/1`), but the real name carries the
+    slot inside it: the same module in `"0/1"` gives `Serial0/1/0` and `Serial0/1/1`.
+    Returning the catalog list as-is made a batch report ports that do not exist,
+    and cabling to that name fails.
 
-    Solo se reescriben los puertos con forma `Tipo<chassis>/<subslot>/<idx>`
-    y solo si el slot viene como `"chassis/subslot"` (HWIC, NIM). Un slot NM
-    (`"1"`) no lleva subslot y sus puertos ya vienen bien del catálogo.
+    Only ports shaped `Type<chassis>/<subslot>/<idx>` are rewritten, and only when the
+    slot comes as `"chassis/subslot"` (HWIC, NIM). An NM slot (`"1"`) has no subslot
+    and its ports already come out right from the catalog.
     """
     slot_s = str(slot).strip()
     if "/" not in slot_s:

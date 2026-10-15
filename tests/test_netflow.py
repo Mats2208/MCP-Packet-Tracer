@@ -5,6 +5,8 @@ contra un 2911: `createNFExporter(name)` devuelve el exportador, los setters
 aplican y `isFullyConfigured()` pasa a true con destino y puerto puestos.
 """
 
+from tests._registry_src import registry_source
+import re
 from pathlib import Path
 
 import pytest
@@ -110,9 +112,7 @@ class TestPhase3Readers:
     """Guards sobre el JS. Closures en register_tools → verificación por texto."""
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_netflow_reuses_an_existing_exporter(self):
         """Reaplicar la misma config no debe duplicar el exportador.
@@ -146,4 +146,4 @@ class TestPhase3Readers:
     def test_error_types_are_imported(self):
         """PlanError/ErrorCode se usan en el except de pt_apply_netflow."""
         src = self._src()
-        assert "from ...domain.models.errors import ErrorCode, PlanError" in src
+        assert re.search(r"from \.+domain\.models\.errors import ErrorCode, PlanError", src)

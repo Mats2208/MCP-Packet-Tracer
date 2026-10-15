@@ -1,5 +1,5 @@
 """
-Base abstracta para ejecutores de topologías.
+Abstract base for topology executors.
 """
 
 from __future__ import annotations
@@ -8,14 +8,14 @@ from ...domain.models.plans import TopologyPlan
 
 
 class ExecutorBase(ABC):
-    """Interfaz para ejecutar un plan en Packet Tracer."""
+    """Interface for executing a plan in Packet Tracer."""
 
     @abstractmethod
     def execute(self, plan: TopologyPlan, project_name: str | None = None) -> dict:
-        """Ejecuta un plan y retorna resultado."""
+        """Executes a plan and returns the result."""
         ...
 
     @abstractmethod
     def is_available(self) -> bool:
-        """Verifica si el ejecutor está disponible."""
+        """Checks whether the executor is available."""
         ...

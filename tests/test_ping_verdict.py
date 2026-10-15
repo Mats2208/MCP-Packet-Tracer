@@ -15,7 +15,7 @@ Dos regresiones distintas, las dos en pt_verify_connectivity:
 import pytest
 
 from src.packet_tracer_mcp.shared.utils import classify_ping, interpret_ping
-from src.packet_tracer_mcp.adapters.mcp.tool_registry import (
+from src.packet_tracer_mcp.adapters.mcp.tools.live import (
     console_ping_arm_js, console_ping_poll_js,
 )
 

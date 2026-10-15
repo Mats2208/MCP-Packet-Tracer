@@ -1,4 +1,4 @@
-"""Use case: corregir plan automáticamente."""
+"""Use case: automatically fix a plan."""
 
 from __future__ import annotations
 from ...domain.models.plans import TopologyPlan
@@ -8,7 +8,7 @@ from ..dto.responses import FixResponse
 
 
 def fix_plan_uc(plan: TopologyPlan) -> FixResponse:
-    """Intenta corregir un plan automáticamente."""
+    """Attempts to fix a plan automatically."""
     fixed_plan, fixes = fix_plan(plan)
     validation = validate_plan(fixed_plan)
     return FixResponse(

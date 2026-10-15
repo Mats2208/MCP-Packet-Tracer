@@ -1,9 +1,9 @@
-"""Catálogo de cables y reglas de cableado."""
+"""Cable catalog and cabling rules."""
 
 from __future__ import annotations
 
-# Tipos de cable en Packet Tracer (key → display name)
-# Keys son los strings que PTBuilder acepta en addLink()
+# Cable types in Packet Tracer (key → display name)
+# Keys are the strings PTBuilder accepts in addLink()
 CABLE_TYPES: dict[str, str] = {
     "straight":  "Copper Straight-Through",
     "cross":     "Copper Cross-Over",
@@ -22,8 +22,8 @@ CABLE_TYPES: dict[str, str] = {
     "custom_io": "Custom IoT I/O",
 }
 
-# Tipos de cable completos de PT (para referencia/validación extendida)
-# Estos son todos los que PT soporta internamente
+# Full PT cable types (for reference / extended validation)
+# These are all the ones PT supports internally
 ALL_LINK_TYPES: dict[str, int] = {
     "ethernet-straight": 8100,
     "ethernet-cross":    8101,
@@ -44,7 +44,7 @@ ALL_LINK_TYPES: dict[str, int] = {
     "custom_io": 8114,
 }
 
-# Reglas: (categoría_a, categoría_b) → tipo de cable
+# Rules: (category_a, category_b) → cable type
 CABLE_RULES: dict[tuple[str, str], str] = {
     ("router", "switch"):       "straight",
     ("switch", "router"):       "straight",
@@ -155,5 +155,5 @@ CABLE_RULES: dict[tuple[str, str], str] = {
 
 
 def infer_cable(cat_a: str, cat_b: str) -> str:
-    """Infiere el tipo de cable correcto entre dos categorías de dispositivo."""
+    """Infers the correct cable type between two device categories."""
     return CABLE_RULES.get((cat_a, cat_b), "straight")

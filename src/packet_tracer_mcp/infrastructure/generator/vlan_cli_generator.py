@@ -1,12 +1,12 @@
 """
-Generador CLI para VLAN / trunk / inter-VLAN routing (router-on-a-stick).
+CLI generator for VLAN / trunk / inter-VLAN routing (router-on-a-stick).
 
-- Switch: define VLANs, puertos access y trunks.
-- Router: subinterfaces .1q (encapsulation dot1Q + ip address).
+- Switch: defines VLANs, access ports and trunks.
+- Router: .1q subinterfaces (encapsulation dot1Q + ip address).
 
-`build_*_configure_payload` envuelve con enable/configure terminal/end/write memory.
-`build_*_js_call` produce la llamada `configureIosDevice("dev","...\\n...")` en una sola
-línea JS (los `\n` viajan como escapes literales, no como saltos de código que executeCode strippea).
+`build_*_configure_payload` wraps with enable/configure terminal/end/write memory.
+`build_*_js_call` produces the call `configureIosDevice("dev","...\\n...")` on a single
+JS line (the `\n` travel as literal escapes, not as code line breaks that executeCode strips).
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from ...domain.models.vlans import (
 from ...shared.utils import prefix_to_mask
 
 
-# Modelos de switch que soportan múltiples encapsulaciones y por tanto REQUIEREN
-# `switchport trunk encapsulation dot1q` antes de `switchport mode trunk`.
-# El 2960 es dot1q-only y RECHAZA ese comando.
+# Switch models that support multiple encapsulations and therefore REQUIRE
+# `switchport trunk encapsulation dot1q` before `switchport mode trunk`.
+# The 2960 is dot1q-only and REJECTS that command.
 _MULTI_ENCAP_SWITCHES = ("3560", "3650")
 
 
@@ -34,17 +34,17 @@ def generate_switch_vlan_cli(
     trunks: list[TrunkConfig],
     supports_encap: bool = False,
 ) -> list[str]:
-    """Líneas IOS para configurar VLANs + puertos access + trunks en UN switch."""
+    """IOS lines to configure VLANs + access ports + trunks on ONE switch."""
     lines: list[str] = []
 
-    # Definir las VLANs en la base de datos
+    # Define the VLANs in the database
     for v in vlans:
         lines.append(f"vlan {v.vlan_id}")
         if v.name:
             lines.append(f" name {v.name}")
         lines.append(" exit")
 
-    # Puertos access
+    # Access ports
     for ap in access_ports:
         lines.append(f"interface {ap.port}")
         lines.append(" switchport mode access")
@@ -68,9 +68,9 @@ def generate_switch_vlan_cli(
 
 
 def generate_router_subinterface_cli(subinterfaces: list[SubinterfaceConfig]) -> list[str]:
-    """Líneas IOS para subinterfaces .1q de inter-VLAN routing en UN router."""
+    """IOS lines for .1q subinterfaces of inter-VLAN routing on ONE router."""
     lines: list[str] = []
-    # El puerto físico padre debe estar 'no shutdown' para que las subinterfaces suban.
+    # The physical parent port must be 'no shutdown' for the subinterfaces to come up.
     parents = []
     for s in subinterfaces:
         if s.parent_port not in parents:
@@ -111,7 +111,7 @@ def build_router_subinterface_payload(subinterfaces) -> str:
 
 
 def build_vlan_js_call(device: str, ios_payload: str) -> str:
-    """Envuelve el payload IOS en `configureIosDevice` como una sola línea JS."""
+    """Wraps the IOS payload in `configureIosDevice` as a single JS line."""
     safe_dev = device.replace("\\", "\\\\").replace('"', '\\"')
     safe_payload = (
         ios_payload

@@ -1,8 +1,8 @@
 # infrastructure/
 
-Preocupaciones externas — catálogo de dispositivos, generación de código, ejecución/despliegue y persistencia.
+External concerns — device catalog, code generation, execution/deployment and persistence.
 
-## Estructura
+## Structure
 
 ```
 infrastructure/
@@ -16,12 +16,12 @@ infrastructure/
 
 ## catalog/
 
-Datos verificados contra Packet Tracer 8.x. Todos los modelos usan `frozen=True` (inmutables).
+Data verified against Packet Tracer 8.x. All models use `frozen=True` (immutable).
 
-### `devices.py` — Catálogo de dispositivos
-**11 modelos verificados:**
+### `devices.py` — Device catalog
+**11 verified models:**
 
-| Modelo | Categoría | Puertos notables |
+| Model | Category | Notable ports |
 |--------|-----------|-----------------|
 | `1941` | Router | 2× GigabitEthernet |
 | `2901` | Router | 2× GigabitEthernet |
@@ -35,129 +35,129 @@ Datos verificados contra Packet Tracer 8.x. Todos los modelos usan `frozen=True`
 | `Cloud-PT` | Cloud | 1× Ethernet |
 | `AccessPoint-PT` | AP | 1× FastEthernet |
 
-**Nota importante:** Ningún router tiene puertos serial por defecto — requiere módulos HWIC.
+**Important note:** No router has serial ports by default — they require HWIC modules.
 
-Funciones: `resolve_model(name)`, `get_ports_by_speed(model, speed)`, `get_valid_ports(model)`.
+Functions: `resolve_model(name)`, `get_ports_by_speed(model, speed)`, `get_valid_ports(model)`.
 
-### `cables.py` — Tipos de cable
-5 tipos: straight, cross, serial, fiber, console.
+### `cables.py` — Cable types
+5 types: straight, cross, serial, fiber, console.
 
-Reglas automáticas:
+Automatic rules:
 - Router ↔ Router = **cross**
 - Router ↔ PC = **cross**
-- Switch ↔ cualquier cosa = **straight**
+- Switch ↔ anything = **straight**
 
-Función: `infer_cable(cat_a, cat_b) → str`
+Function: `infer_cable(cat_a, cat_b) → str`
 
-### `aliases.py` — Alias de modelos
-20+ alias comunes que un LLM podría usar:
+### `aliases.py` — Model aliases
+20+ common aliases an LLM might use:
 - `"router"` → `"2911"`, `"switch"` → `"2960-24TT"`, `"cloud"` → `"Cloud-PT"`, etc.
 
 Dict: `MODEL_ALIASES`
 
-### `templates.py` — Templates de topología
+### `templates.py` — Topology templates
 **9 TemplateSpec** (frozen dataclass):
 
-| Template | Routers | Default Routing | Nota |
+| Template | Routers | Default Routing | Note |
 |----------|---------|----------------|------|
 | single_lan | 1 | none | 1 router, 1 LAN |
-| multi_lan | 2-6 | static | Múltiples LANs conectadas |
-| multi_lan_wan | 2-6 | static | Con nube WAN |
-| star | 3-8 | static | Topología estrella |
+| multi_lan | 2-6 | static | Multiple connected LANs |
+| multi_lan_wan | 2-6 | static | With WAN cloud |
+| star | 3-8 | static | Star topology |
 | hub_spoke | 3-8 | static | Hub & spoke |
-| branch_office | 2-4 | ospf | Oficinas sucursales |
-| three_router_triangle | 3 | ospf | Triángulo de 3 routers |
+| branch_office | 2-4 | ospf | Branch offices |
+| three_router_triangle | 3 | ospf | Triangle of 3 routers |
 | router_on_a_stick | 1 | none | Router-on-a-stick |
-| custom | 1-20 | static | Sin restricciones |
+| custom | 1-20 | static | No restrictions |
 
-Función: `list_templates() → list[TemplateSpec]`
+Function: `list_templates() → list[TemplateSpec]`
 
 ---
 
 ## generator/
 
-### `ptbuilder_generator.py` — Scripts PTBuilder (JavaScript)
-3 niveles de generación:
+### `ptbuilder_generator.py` — PTBuilder scripts (JavaScript)
+3 generation levels:
 
-| Función | Incluye | Uso |
+| Function | Includes | Use |
 |---------|---------|-----|
-| `generate_ptbuilder_script(plan)` | `addDevice()` + `addLink()` | Solo topología |
-| `generate_executable_script(plan)` | + `configureIosDevice()` + `configurePcIp()` | Topología + configuración |
-| `generate_full_script(plan)` | + configs CLI como comentarios | Todo junto |
+| `generate_ptbuilder_script(plan)` | `addDevice()` + `addLink()` | Topology only |
+| `generate_executable_script(plan)` | + `configureIosDevice()` + `configurePcIp()` | Topology + configuration |
+| `generate_full_script(plan)` | + CLI configs as comments | Everything together |
 
-### `cli_config_generator.py` — Configs CLI (IOS)
-Genera bloques de comandos listos para pegar en terminal de router/switch:
+### `cli_config_generator.py` — CLI configs (IOS)
+Generates command blocks ready to paste into a router/switch terminal:
 
-| Función | Descripción |
+| Function | Description |
 |---------|-------------|
-| `generate_all_configs(plan)` | `dict[device_name, cli_block]` para todos los dispositivos |
-| `generate_pc_config(device, use_dhcp)` | Instrucciones de configuración para PCs |
+| `generate_all_configs(plan)` | `dict[device_name, cli_block]` for all devices |
+| `generate_pc_config(device, use_dhcp)` | Configuration instructions for PCs |
 
-Soporta: hostname, interfaces, DHCP pools (con excluded-address), static routes (con AD), OSPF (router-id + networks), RIP v2, EIGRP.
+Supports: hostname, interfaces, DHCP pools (with excluded-address), static routes (with AD), OSPF (router-id + networks), RIP v2, EIGRP.
 
 ---
 
 ## execution/
 
-Executors de despliegue + dos canales de comunicación con Packet Tracer.
+Deployment executors + two communication channels with Packet Tracer.
 
-### `executor_base.py` — Interfaz base
-Clase abstracta: `ExecutorBase`
+### `executor_base.py` — Base interface
+Abstract class: `ExecutorBase`
 - `execute(plan, project_name) → dict`
 - `is_available() → bool`
 
-### `manual_executor.py` — Exportación a disco
-Genera archivos bajo `projects/{safe_name}/`:
-- `topology.js` — Script PTBuilder
-- `full_build.js` — Script completo con configs
-- `{device}_config.txt` — Config CLI por dispositivo
-- `plan.json` — Plan serializado
-- `metadata.json` — Timestamps, conteos, nombre
+### `manual_executor.py` — Export to disk
+Generates files under `projects/{safe_name}/`:
+- `topology.js` — PTBuilder script
+- `full_build.js` — Full script with configs
+- `{device}_config.txt` — CLI config per device
+- `plan.json` — Serialized plan
+- `metadata.json` — Timestamps, counts, name
 
-### `deploy_executor.py` — Despliegue con clipboard
-Extiende ManualExecutor + copia `topology.js` al clipboard (Windows vía `clip.exe`) + genera instrucciones paso a paso.
+### `deploy_executor.py` — Deployment with clipboard
+Extends ManualExecutor + copies `topology.js` to the clipboard (Windows via `clip.exe`) + generates step-by-step instructions.
 
-### Canales hacia PT — el servidor elige UNO por comando
+### Channels to PT — the server picks ONE per command
 
-El despliegue en vivo envía los comandos del plan por lotes. Según si la ventana de la
-extensión está abierta o cerrada, el servidor enruta cada comando por HTTP o por el buzón
-de archivos (ver `_pick_channel` en `adapters/mcp/tool_registry.py`), nunca por ambos.
+Live deployment sends the plan's commands in batches. Depending on whether the extension
+window is open or closed, the server routes each command over HTTP or through the file
+mailbox (see `_pick_channel` in `adapters/mcp/tool_registry.py`), never both.
 
-### `live_bridge.py` — HTTP Bridge (ventana abierta)
-Servidor HTTP en `127.0.0.1:54321` para comunicación bidireccional con PT:
+### `live_bridge.py` — HTTP Bridge (window open)
+HTTP server on `127.0.0.1:54321` for bidirectional communication with PT:
 
-| Endpoint | Método | Propósito |
+| Endpoint | Method | Purpose |
 |----------|--------|-----------|
-| `/next` | GET | PT polls para siguiente comando |
-| `/queue` | POST | Python encola comando JS |
+| `/next` | GET | PT polls for the next command |
+| `/queue` | POST | Python enqueues a JS command |
 | `/ping` | GET | Heartbeat |
-| `/result` | POST | PT reporta resultado de ejecución |
-| `/status` | GET | Estado de conectividad PT |
+| `/result` | POST | PT reports execution result |
+| `/status` | GET | PT connectivity status |
 
-Clase: `PTCommandBridge` — Singleton con `ThreadingHTTPServer`, thread-safe Queue, CORS.
-Autenticado con un token local auto-generado (ver `bridge_token.py`).
+Class: `PTCommandBridge` — Singleton with `ThreadingHTTPServer`, thread-safe Queue, CORS.
+Authenticated with an auto-generated local token (see `bridge_token.py`).
 
-### `file_bridge.py` — File Bridge (ventana cerrada)
-Buzón de archivos bajo `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`: el servidor escribe
-`req_*.js`, el Script Engine lo lee, lo ejecuta y devuelve `res_*.txt`.
-Clase: `FileBridge` — `send(js)`, `send_and_wait(js, timeout)`.
+### `file_bridge.py` — File Bridge (window closed)
+File mailbox under `%LOCALAPPDATA%\packet-tracer-mcp\bridge\`: the server writes
+`req_*.js`, the Script Engine reads it, runs it and returns `res_*.txt`.
+Class: `FileBridge` — `send(js)`, `send_and_wait(js, timeout)`.
 
-### `bridge_token.py` — Token del bridge HTTP
-Token local auto-generado (bajo `%LOCALAPPDATA%`) que autentica el bridge HTTP. Sin
-bootstrap manual ni pairing; servidor y extensión lo leen desde disco.
+### `bridge_token.py` — HTTP bridge token
+Auto-generated local token (under `%LOCALAPPDATA%`) that authenticates the HTTP bridge. No
+manual bootstrap or pairing; the server and the extension read it from disk.
 
 ---
 
 ## persistence/
 
-### `project_repository.py` — Repositorio de proyectos
-CRUD para topologías guardadas en disco:
+### `project_repository.py` — Project repository
+CRUD for topologies saved to disk:
 
-| Método | Descripción |
+| Method | Description |
 |--------|-------------|
-| `save_plan(plan, name)` | Guarda plan.json + metadata.json |
-| `load_plan(name)` | Carga TopologyPlan desde JSON |
-| `list_projects()` | Lista nombres de proyectos guardados |
-| `delete_project(name)` | Elimina proyecto |
+| `save_plan(plan, name)` | Saves plan.json + metadata.json |
+| `load_plan(name)` | Loads TopologyPlan from JSON |
+| `list_projects()` | Lists saved project names |
+| `delete_project(name)` | Deletes a project |
 
-Almacenamiento: `projects/{name}/plan.json` con timestamps timezone-aware.
+Storage: `projects/{name}/plan.json` with timezone-aware timestamps.

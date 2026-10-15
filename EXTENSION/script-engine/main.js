@@ -28,17 +28,17 @@ function startBridge() {
 }
 
 /*
- * Token compartido con el servidor MCP.
+ * Token shared with the MCP server.
  *
- * El bridge exige un token en cada peticion: sin el, cualquier pagina web
- * abierta en el navegador podia encolar JS que PT ejecuta con new Function()
- * (un POST text/plain es una peticion CORS "simple", asi que escuchar en
- * 127.0.0.1 no lo impedia).
+ * The bridge requires a token on every request: without it, any web page
+ * open in the browser could queue JS that PT runs with new Function()
+ * (a text/plain POST is a "simple" CORS request, so listening on
+ * 127.0.0.1 did not prevent it).
  *
- * El webview no tiene acceso al sistema de archivos, pero el Script Engine si,
- * via ipc.systemFileManager(). Asi que el token se lee de disco aca y el
- * webview lo pide con $se("getMcpToken"), que devuelve una Promise.
- * El usuario no hace nada: instala la extension y funciona.
+ * The webview has no access to the file system, but the Script Engine does,
+ * via ipc.systemFileManager(). So the token is read from disk here and the
+ * webview requests it with $se("getMcpToken"), which returns a Promise.
+ * The user does nothing: they install the extension and it works.
  */
 function mcpTokenCandidates() {
     var paths = [];
@@ -67,8 +67,8 @@ function getMcpToken() {
         try {
             if (fm.fileExists(paths[i])) {
                 var raw = String(fm.getFileContents(paths[i]));
-                // El archivo se escribe sin salto final, pero no cuesta nada
-                // tolerar espacios o un BOM si alguien lo abrio con el Notepad.
+                // The file is written without a trailing newline, but it costs nothing
+                // to tolerate spaces or a BOM if someone opened it with Notepad.
                 return raw.replace(/^﻿/, "").replace(/^\s+|\s+$/g, "");
             }
         } catch (e) {}
@@ -76,7 +76,7 @@ function getMcpToken() {
     return "";
 }
 
-/* Diagnostico para la UI: donde se busco, sin revelar el token. */
+/* Diagnostics for the UI: where it was searched, without revealing the token. */
 function getMcpTokenInfo() {
     var paths = mcpTokenCandidates();
     var found = getMcpToken();
@@ -88,28 +88,28 @@ function getMcpTokenInfo() {
 }
 
 /* ==================================================================
- * BRIDGE POR ARCHIVO (funciona con la ventana CERRADA)
+ * FILE BRIDGE (works with the window CLOSED)
  *
- * El polling HTTP vive en el webview (la ventana). Este canal vive en el
- * Script Engine, que corre siempre que PT esta abierto. El servidor MCP deja
- * comandos como archivos req_*.js en el buzon; aca se ejecutan y se devuelve el
- * resultado como res_*.txt. Coexiste con el HTTP: el servidor elige un solo
- * canal por comando, asi que nunca se ejecuta dos veces.
+ * The HTTP polling lives in the webview (the window). This channel lives in the
+ * Script Engine, which runs whenever PT is open. The MCP server drops commands
+ * as req_*.js files in the mailbox; they are executed here and the result is
+ * returned as res_*.txt. It coexists with HTTP: the server picks a single
+ * channel per command, so it never runs twice.
  *
- * No usa XMLHttpRequest (el Script Engine no lo tiene): solo systemFileManager,
- * que si esta disponible aca.
+ * It does not use XMLHttpRequest (the Script Engine does not have it): only
+ * systemFileManager, which is available here.
  * ================================================================== */
 
-var FILE_BRIDGE_TICK_FAST_MS = 250;   // hubo actividad reciente
-var FILE_BRIDGE_TICK_IDLE_MS = 1500;  // buzon vacio hace rato
-var FILE_BRIDGE_ORPHAN_S = 60;        // req/res mas viejos que esto se purgan
+var FILE_BRIDGE_TICK_FAST_MS = 250;   // there was recent activity
+var FILE_BRIDGE_TICK_IDLE_MS = 1500;  // mailbox has been empty for a while
+var FILE_BRIDGE_ORPHAN_S = 60;        // req/res older than this are purged
 var _fileBridgeTimer = null;
 var _fileBridgeDir = "";
-var _fileBridgeCount = 0;   // comandos ejecutados por el canal de archivo
+var _fileBridgeCount = 0;   // commands executed by the file channel
 
-/* Estado del canal de archivo, para que el webview lo muestre. El file-bridge
-   corre con la ventana abierta o cerrada; esto le dice al usuario que puede
-   cerrar la ventana y PT va a seguir ejecutando. */
+/* State of the file channel, so the webview can display it. The file-bridge
+   runs with the window open or closed; this tells the user they can close
+   the window and PT will keep executing. */
 function fileBridgeStatus() {
     return JSON.stringify({
         active: _fileBridgeTimer !== null,
@@ -119,7 +119,7 @@ function fileBridgeStatus() {
 }
 
 function mcpBridgeDir() {
-    // El buzon vive junto al token: <dir del token>/bridge.
+    // The mailbox lives next to the token: <token dir>/bridge.
     var paths = mcpTokenCandidates();
     for (var i = 0; i < paths.length; i++) {
         var base = paths[i].replace(/\/bridge_token$/, "");
@@ -128,8 +128,8 @@ function mcpBridgeDir() {
     return "";
 }
 
-/* Ejecuta el JS de un req capturando lo que reporte, sin tocar el resto del
- * entorno. reportResult() local: el comando la llama y su valor va al res. */
+/* Runs the JS of a req, capturing whatever it reports, without touching the
+ * rest of the environment. Local reportResult(): the command calls it and its value goes to the res. */
 function runFileBridgeCommand(js) {
     var captured = "";
     var report = function (d) { captured = String(d); };
@@ -150,8 +150,8 @@ function fileBridgeTick() {
 
     try {
         if (!fm.directoryExists(dir)) { fm.makeDirectory(dir); }
-        // Heartbeat: el servidor mira la fecha de este archivo para saber si PT
-        // (con la ventana cerrada) sigue vivo.
+        // Heartbeat: the server checks this file's date to know whether PT
+        // (with the window closed) is still alive.
         fm.writePlainTextToFile(dir + "/alive.txt", String(Date.now()));
     } catch (e) {
         return schedule(FILE_BRIDGE_TICK_IDLE_MS);
@@ -166,8 +166,8 @@ function fileBridgeTick() {
         var f = String(files[i]);
         if (f === "." || f === "..") continue;
 
-        // Purga de huerfanos: res sin dueno (fire-and-forget o timeouts) y req
-        // muy viejos que quedaron sin procesar. Evita que el buzon crezca.
+        // Orphan purge: res with no owner (fire-and-forget or timeouts) and req
+        // files that are too old and were never processed. Keeps the mailbox from growing.
         if (f.indexOf("res_") === 0 || f.indexOf("req_") === 0) {
             try {
                 if (now - fm.getFileModificationTime(dir + "/" + f) > FILE_BRIDGE_ORPHAN_S) {
@@ -196,37 +196,37 @@ function fileBridgeTick() {
 
 function startFileBridge() {
     if (_fileBridgeTimer) return;
-    // Arranca el loop; se auto-reprograma segun haya o no actividad.
+    // Starts the loop; it reschedules itself depending on whether there is activity.
     fileBridgeTick();
 }
 
-/* Los helpers que el canal de archivo necesita (lwAddDevice/lwAddLink y las
- * versiones mejoradas de configurePcIp/addModule/etc.) los instala
- * installMcpHelpers() al arrancar — ver mas abajo. Ambos canales, HTTP y
- * archivo, ejecutan las mismas versiones, con o sin ventana. */
+/* The helpers the file channel needs (lwAddDevice/lwAddLink and the improved
+ * versions of configurePcIp/addModule/etc.) are installed by installMcpHelpers()
+ * at startup — see below. Both channels, HTTP and file, run the same versions,
+ * with or without a window. */
 
 /* ==================================================================
  * MCP HELPERS
  *
- * Versiones mejoradas de los helpers que el servidor MCP necesita. Antes las
- * inyectaba por HTTP (runtime patches), asi que solo existian cuando la ventana
- * estaba abierta. Aca viven en la extension: disponibles para AMBOS canales
- * (HTTP y archivo), con o sin ventana.
+ * Improved versions of the helpers the MCP server needs. They used to be
+ * injected over HTTP (runtime patches), so they only existed while the window
+ * was open. They now live in the extension: available to BOTH channels
+ * (HTTP and file), with or without a window.
  *
- * lwAddDevice / lwAddLink no existen en userfunctions.js — son necesarias para
- * desplegar una topologia nueva. Las demas sobreescriben a las nativas con
- * versiones mas robustas (p.ej. configurePcIp que no hardcodea FastEthernet0).
+ * lwAddDevice / lwAddLink do not exist in userfunctions.js — they are required
+ * to deploy a new topology. The others override the native ones with more
+ * robust versions (e.g. configurePcIp, which does not hardcode FastEthernet0).
  *
- * GLOBAL se captura a nivel de archivo, donde `this` es el objeto global del
- * Script Engine. installMcpHelpers() se llama desde main(), cuando el resto de
- * archivos ya cargo, de modo que estas versiones ganan sin importar el orden.
+ * GLOBAL is captured at file level, where `this` is the global object of the
+ * Script Engine. installMcpHelpers() is called from main(), once the rest of the
+ * files have loaded, so these versions win regardless of load order.
  * ================================================================== */
 
 var GLOBAL = this;
 
 function installMcpHelpers() {
-    // addModule — power-cycle alrededor de addModule nativo (algunos modulos
-    // fallan si el device esta encendido).
+    // addModule — power-cycle around the native addModule (some modules
+    // fail if the device is powered on).
     GLOBAL.addModule = function (deviceName, slot, model) {
         var device = ipc.network().getDevice(deviceName);
         if (!device) { return false; }
@@ -243,9 +243,9 @@ function installMcpHelpers() {
         return true;
     };
 
-    // lwAddDevice — crea el device en la vista Logica (visible sin save+reload).
-    // El addDevice global escribe al modelo pero PT genera un auto-nombre
-    // (Router0, Switch1) que renombramos al solicitado.
+    // lwAddDevice — creates the device in the Logical view (visible without save+reload).
+    // The global addDevice writes to the model but PT generates an auto-name
+    // (Router0, Switch1) that we rename to the requested one.
     GLOBAL.lwAddDevice = function (name, deviceType, model, x, y) {
         var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();
         var autoName = lw.addDevice(deviceType, model, x, y);
@@ -253,16 +253,16 @@ function installMcpHelpers() {
             var d = ipc.network().getDevice(autoName);
             if (d && typeof d.setName === "function") { d.setName(name); }
         }
-        // Fallback: lw.addDevice falla en silencio para algunos modelos
-        // (Laptop-PT devuelve "" y no crea nada). Si no quedo findable, usamos
-        // el addDevice global, que resuelve por NOMBRE de modelo.
+        // Fallback: lw.addDevice fails silently for some models
+        // (Laptop-PT returns "" and creates nothing). If it is still not findable, we use
+        // the global addDevice, which resolves by MODEL NAME.
         if (!ipc.network().getDevice(name)) {
             try { addDevice(name, model, x, y); } catch (e) {}
         }
         return name;
     };
 
-    // lwAddLink — crea el link en la vista Logica. Cable como string o enum int.
+    // lwAddLink — creates the link in the Logical view. Cable as a string or an int enum.
     GLOBAL.lwAddLink = function (d1, p1, d2, p2, cable) {
         var CT = {
             straight: 8100, cross: 8101, crossover: 8101, roll: 8102, fiber: 8103,
@@ -275,8 +275,8 @@ function installMcpHelpers() {
         return lw.createLink(d1, p1, d2, p2, t);
     };
 
-    // configurePcIp — no hardcodea FastEthernet0: busca el primer puerto ethernet
-    // (o Wireless0) iterando getPorts(). Funciona con PC/Server/Laptop.
+    // configurePcIp — does not hardcode FastEthernet0: it looks for the first ethernet port
+    // (or Wireless0) by iterating getPorts(). Works with PC/Server/Laptop.
     GLOBAL.configurePcIp = function (deviceName, dhcpEnabled, ipaddress, subnetMask, defaultGateway, dnsServer) {
         var device = ipc.network().getDevice(deviceName);
         if (!device) { return false; }
@@ -306,8 +306,8 @@ function installMcpHelpers() {
         return true;
     };
 
-    // configurePcIpv6 — IPv6 + SLAAC (auto-config por RA) en el primer puerto
-    // ethernet/Wireless0 del host. addIpv6Address falla en HostPort.
+    // configurePcIpv6 — IPv6 + SLAAC (auto-config via RA) on the host's first
+    // ethernet/Wireless0 port. addIpv6Address fails on HostPort.
     GLOBAL.configurePcIpv6 = function (deviceName) {
         var device = ipc.network().getDevice(deviceName);
         if (!device) { return false; }
@@ -328,9 +328,9 @@ function installMcpHelpers() {
         return false;
     };
 
-    // swapLaptopToWireless — cambia el NIC ethernet de una laptop por uno
-    // inalambrico (slot "0" -> PT-LAPTOP-NM-1W) para que tenga Wireless0 y
-    // auto-asocie a un AP por SSID default.
+    // swapLaptopToWireless — replaces a laptop's ethernet NIC with a wireless one
+    // (slot "0" -> PT-LAPTOP-NM-1W) so it has Wireless0 and
+    // auto-associates with an AP by its default SSID.
     GLOBAL.swapLaptopToWireless = function (deviceName) {
         var device = ipc.network().getDevice(deviceName);
         if (!device) { return false; }
@@ -350,11 +350,11 @@ function main() {
     builder = new builder();
     builder.init();
     window = new htmlWindow();
-    // Instala los helpers mejorados antes de arrancar cualquier canal, para que
-    // HTTP y archivo ejecuten exactamente las mismas versiones.
+    // Installs the improved helpers before starting any channel, so that
+    // HTTP and file run exactly the same versions.
     installMcpHelpers();
     startBridge();
-    // El bridge por archivo corre independiente de la ventana.
+    // The file bridge runs independently of the window.
     startFileBridge();
 }
 

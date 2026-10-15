@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests._registry_src import registry_source
 import json
 import shutil
 from pathlib import Path
@@ -109,7 +110,7 @@ def test_generate_pc_config_marks_static_hosts_as_static():
     )
 
     cfg = generate_pc_config(host, use_dhcp=False)
-    assert "Configurar IP estática" in cfg
+    assert "Set a static IP" in cfg
     assert "DHCP" not in cfg.splitlines()[-1]
 
 
@@ -123,7 +124,7 @@ def test_generate_pc_config_marks_dhcp_hosts_as_dhcp():
     )
 
     cfg = generate_pc_config(host, use_dhcp=True)
-    assert "Configurar como DHCP" in cfg
+    assert "Set to DHCP" in cfg
 
 
 def test_query_pt_devices_no_longer_calls_undefined_querytopology():
@@ -134,12 +135,11 @@ def test_query_pt_devices_no_longer_calls_undefined_querytopology():
     con JS inline real (JSON.stringify). Este guard evita reintroducir el bug.
     """
     src = (
-        Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py")
-        .read_text(encoding="utf-8")
+        registry_source()
     )
     assert '"queryTopology()"' not in src, "la llamada muerta a queryTopology() volvió"
-    assert "_LIVE_DEVICES_JS" in src
-    assert "def _live_devices(" in src
+    assert "LIVE_DEVICES_JS" in src
+    assert "def live_devices(" in src
 
 
 def test_script_engine_defines_all_helpers():
@@ -163,9 +163,7 @@ class TestSetPortSecurityKnobs:
     """
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_each_setter_is_feature_detected(self):
         """Solo existen en puertos de router: en un switch o host lanzarían."""

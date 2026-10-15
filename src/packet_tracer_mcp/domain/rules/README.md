@@ -1,62 +1,62 @@
 # domain/rules/
 
-Reglas de validación independientes organizadas por dominio. Cada archivo contiene funciones puras que reciben un `TopologyPlan` y retornan listas de `PlanError`.
+Independent validation rules organized by domain. Each file contains pure functions that receive a `TopologyPlan` and return lists of `PlanError`.
 
-Son invocadas por el servicio `validator.py` — nunca directamente desde fuera del dominio.
+They are invoked by the `validator.py` service — never directly from outside the domain.
 
-## Archivos
+## Files
 
-### `device_rules.py` — Validación de dispositivos
+### `device_rules.py` — Device validation
 
 ```python
 validate_devices(plan: TopologyPlan) → list[PlanError]
 ```
 
-**Verificaciones:**
-| Check | ErrorCode | Descripción |
+**Checks:**
+| Check | ErrorCode | Description |
 |-------|-----------|-------------|
-| Nombres duplicados | `DUPLICATE_DEVICE_NAME` | Dos dispositivos con el mismo nombre |
-| Modelo inválido | `UNKNOWN_DEVICE_MODEL` | Modelo no existe en el catálogo de `devices.py` |
+| Duplicate names | `DUPLICATE_DEVICE_NAME` | Two devices with the same name |
+| Invalid model | `UNKNOWN_DEVICE_MODEL` | Model does not exist in the `devices.py` catalog |
 
 ---
 
-### `cable_rules.py` — Validación de enlaces y cables
+### `cable_rules.py` — Link and cable validation
 
 ```python
 validate_links(plan: TopologyPlan) → tuple[list[PlanError], list[PlanError]]
 ```
 
-Retorna `(errores, warnings)` — los warnings son para cables incorrectos pero no fatales.
+Returns `(errors, warnings)` — warnings are for incorrect but non-fatal cables.
 
-**Verificaciones:**
-| Check | ErrorCode | Descripción |
+**Checks:**
+| Check | ErrorCode | Description |
 |-------|-----------|-------------|
-| Dispositivo no existe | `DEVICE_NOT_FOUND` | Link referencia un dispositivo inexistente |
-| Puerto no existe | `INVALID_PORT` | Puerto no existe en el modelo del dispositivo |
-| Puerto reutilizado | `PORT_ALREADY_USED` | Mismo puerto usado en dos links diferentes |
-| Cable desconocido | `INVALID_CABLE_TYPE` | Tipo de cable no reconocido |
-| Cable incorrecto | (warning) | Cable no es el recomendado para esa combinación |
+| Device does not exist | `DEVICE_NOT_FOUND` | Link references a nonexistent device |
+| Port does not exist | `INVALID_PORT` | Port does not exist on the device's model |
+| Port reused | `PORT_ALREADY_USED` | Same port used in two different links |
+| Unknown cable | `INVALID_CABLE_TYPE` | Unrecognized cable type |
+| Wrong cable | (warning) | Cable is not the recommended one for that combination |
 
-**Helper interno:**
-- `_check_port(port, model_name)` — Valida que un puerto existe en el modelo del catálogo
+**Internal helper:**
+- `_check_port(port, model_name)` — Validates that a port exists on the catalog model
 
 ---
 
-### `ip_rules.py` — Validación de IPs y DHCP
+### `ip_rules.py` — IP and DHCP validation
 
 ```python
 validate_ips(plan: TopologyPlan) → list[PlanError]
 validate_dhcp(plan: TopologyPlan) → list[PlanError]
 ```
 
-**Verificaciones de IP:**
-| Check | ErrorCode | Descripción |
+**IP checks:**
+| Check | ErrorCode | Description |
 |-------|-----------|-------------|
-| IP inválida | `INVALID_IP_ADDRESS` | Formato de IP incorrecto |
-| IP duplicada | `IP_CONFLICT` | Misma IP asignada a dos interfaces |
+| Invalid IP | `INVALID_IP_ADDRESS` | Incorrect IP format |
+| Duplicate IP | `IP_CONFLICT` | Same IP assigned to two interfaces |
 
-**Verificaciones de DHCP:**
-| Check | ErrorCode | Descripción |
+**DHCP checks:**
+| Check | ErrorCode | Description |
 |-------|-----------|-------------|
-| Router no existe | `DHCP_ROUTER_NOT_FOUND` | Pool asignado a router inexistente |
-| Gateway no coincide | `DHCP_GATEWAY_MISMATCH` | Gateway del pool no es IP de ninguna interface del router |
+| Router does not exist | `DHCP_ROUTER_NOT_FOUND` | Pool assigned to a nonexistent router |
+| Gateway mismatch | `DHCP_GATEWAY_MISMATCH` | Pool gateway is not an IP of any interface on the router |

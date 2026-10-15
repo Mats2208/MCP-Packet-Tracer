@@ -1,18 +1,17 @@
-"""Chequeo compartido para campos de texto que terminan dentro de CLI IOS.
+"""Shared check for text fields that end up inside IOS CLI.
 
-Nombres, remarks y pools viajan interpolados en un payload de una sola string
-que `configureIosDevice()` parte por saltos de línea y manda al dispositivo
-línea a línea. Un salto dentro de un campo "de datos" se convierte en un
-comando IOS que nadie pidió, así que se rechaza en la validación en vez de
-escaparse.
+Names, remarks and pools travel interpolated in a single-string payload
+that `configureIosDevice()` splits on line breaks and sends to the device
+line by line. A line break inside a "data" field becomes an IOS command
+nobody asked for, so it is rejected during validation instead of being escaped.
 """
 
 from __future__ import annotations
 
-# \n y \r los parte PT; U+2028/U+2029 terminan una línea en JS igual que \n.
+# PT splits on \n and \r; U+2028/U+2029 end a line in JS just like \n.
 LINE_TERMINATORS = ("\n", "\r", " ", " ")
 
 
 def has_control_chars(value: str | None) -> bool:
-    """True si `value` contiene algo que partiría el payload en otra línea."""
+    """True if `value` contains anything that would split the payload onto another line."""
     return bool(value) and any(ch in value for ch in LINE_TERMINATORS)

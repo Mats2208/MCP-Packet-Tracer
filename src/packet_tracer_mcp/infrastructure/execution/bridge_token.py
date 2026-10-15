@@ -1,15 +1,15 @@
-"""Secreto compartido entre el servidor MCP y el cliente dentro de Packet Tracer.
+"""Shared secret between the MCP server and the client inside Packet Tracer.
 
-El bridge HTTP escucha en loopback, pero eso NO lo protege: una petición
-`POST /queue` con `Content-Type: text/plain` es una petición CORS "simple", así
-que cualquier página web abierta en el navegador podía encolar JavaScript que PT
-ejecuta con `new Function()`. Bindear a 127.0.0.1 no impide que la petición se
-envíe — solo impide leer la respuesta, y la inyección nunca necesitó leer nada.
+The HTTP bridge listens on loopback, but that does NOT protect it: a
+`POST /queue` with `Content-Type: text/plain` is a "simple" CORS request, so
+any web page open in the browser could queue JavaScript that PT runs with
+`new Function()`. Binding to 127.0.0.1 does not stop the request from being
+sent — it only prevents reading the response, and the injection never needed to read anything.
 
-Lo que sí lo cierra es un secreto que la web atacante no puede adivinar ni
-derivar. Por eso el token es aleatorio y persistido, no derivado de la hora ni
-de ningún dato público: este repo es público y el atacante corre en la misma
-máquina, así que cualquier algoritmo derivable por nosotros lo es por él.
+What does close it is a secret that the attacker's web page cannot guess or
+derive. That is why the token is random and persisted, not derived from the time or
+from any public data: this repo is public and the attacker runs on the same
+machine, so any algorithm we can derive, they can derive too.
 """
 
 from __future__ import annotations
@@ -26,23 +26,23 @@ _ENV_VAR = "PT_MCP_BRIDGE_TOKEN"
 _MIN_LEN = 32
 _VALID = re.compile(r"^[A-Za-z0-9_-]+$")
 
-# Estado observable para el diagnóstico de pt_bridge_status: si el token se tuvo
-# que rotar, cualquier cliente ya emparejado quedó obsoleto y hay que decirlo.
+# Observable state for pt_bridge_status diagnostics: if the token had to be
+# rotated, any already-paired client became stale and this must be reported.
 _rotated = False
 _ephemeral = False
 _cached: str | None = None
 
 
 class BridgeTokenError(RuntimeError):
-    """No se pudo obtener un token utilizable."""
+    """Could not obtain a usable token."""
 
 
 def token_dir() -> Path:
-    """Directorio del token, por usuario y local a la máquina.
+    """Token directory, per user and local to the machine.
 
-    En Windows va a %LOCALAPPDATA% y no a %APPDATA%: el segundo se sincroniza en
-    perfiles roaming, y un secreto de loopback no tiene por qué viajar a un file
-    server. En POSIX se respeta XDG_STATE_HOME.
+    On Windows it goes to %LOCALAPPDATA% and not %APPDATA%: the latter syncs in
+    roaming profiles, and a loopback secret has no reason to travel to a file
+    server. On POSIX, XDG_STATE_HOME is respected.
     """
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
@@ -58,7 +58,7 @@ def token_path() -> Path:
 
 
 def token_fingerprint(token: str) -> str:
-    """Huella no invertible del token, para identificar el bridge sin filtrarlo."""
+    """Non-invertible fingerprint of the token, to identify the bridge without leaking it."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
 
 
@@ -67,10 +67,10 @@ def _is_valid(token: str) -> bool:
 
 
 def _read_existing(path: Path) -> str | None:
-    """Lee y valida el token en disco. None si no sirve.
+    """Reads and validates the token on disk. None if it is not usable.
 
-    Se tolera BOM y espacios: el archivo es texto plano y alguien lo va a abrir
-    con el Notepad tarde o temprano.
+    BOM and whitespace are tolerated: the file is plain text and someone will
+    open it with Notepad sooner or later.
     """
     try:
         raw = path.read_text(encoding="utf-8-sig").strip()
@@ -80,11 +80,11 @@ def _read_existing(path: Path) -> str | None:
 
 
 def _write_new(path: Path) -> str | None:
-    """Crea el token con O_EXCL. None si otro proceso ganó la carrera.
+    """Creates the token with O_EXCL. None if another process won the race.
 
-    O_EXCL y no "escribir temporal + os.replace": replace es atómico pero gana el
-    último, así que dos servidores arrancando a la vez se quedarían con tokens
-    DISTINTOS. Con O_EXCL el que pierde lee el del que ganó.
+    O_EXCL and not "write temp + os.replace": replace is atomic but the last
+    writer wins, so two servers starting at the same time would end up with
+    DIFFERENT tokens. With O_EXCL the loser reads the winner's token.
     """
     candidate = secrets.token_urlsafe(32)
     try:
@@ -99,35 +99,34 @@ def _write_new(path: Path) -> str | None:
 
 
 def get_bridge_token(refresh: bool = False) -> str:
-    """Devuelve el token del bridge, creándolo la primera vez.
+    """Returns the bridge token, creating it the first time.
 
-    Nunca falla de forma dura: si el archivo está corrupto se rota, y si el
-    directorio no se puede escribir se cae a un token efímero de proceso. Un
-    servidor que no arranca es peor que uno que avisa que hay que re-emparejar.
+    It never fails hard: if the file is corrupt it is rotated, and if the
+    directory cannot be written it falls back to a process-ephemeral token. A
+    server that does not start is worse than one that warns that re-pairing is needed.
     """
     global _cached, _rotated, _ephemeral
 
     env = os.environ.get(_ENV_VAR, "").strip()
     if env:
-        # Override explícito: tests, CI y escenarios multi-cliente.
+        # Explicit override: tests, CI and multi-client scenarios.
         #
-        # Pasa por el MISMO gate que el archivo. Antes no lo hacía, así que
-        # `PT_MCP_BRIDGE_TOKEN=x` dejaba un token de un carácter — adivinable, y
-        # con el token adivinado toda la defensa contra la página web atacante
-        # se cae; es decir, la variable pensada para los tests podía desactivar
-        # justo lo que este módulo existe para sostener.
+        # It goes through the SAME gate as the file. It did not before, so
+        # `PT_MCP_BRIDGE_TOKEN=x` left a one-character token — guessable, and with
+        # the token guessed the whole defense against the attacker's web page
+        # falls; that is, the variable meant for tests could disable exactly
+        # what this module exists to uphold.
         #
-        # Acá se falla fuerte, al revés que con el archivo. No es incoherente:
-        # un archivo corrupto es un accidente y rotarlo no pierde nada, pero una
-        # variable mal puesta es una decisión explícita de quien arranca el
-        # servidor. Arrancar igual sería servir con la puerta abierta y sin
-        # decírselo a nadie.
+        # Here we fail hard, the opposite of the file case. This is not inconsistent:
+        # a corrupt file is an accident and rotating it loses nothing, but a badly
+        # set variable is an explicit decision by whoever starts the server. Starting
+        # anyway would mean serving with the door open and telling no one.
         if not _is_valid(env):
             raise BridgeTokenError(
-                f"{_ENV_VAR} no sirve como token: hacen falta al menos "
-                f"{_MIN_LEN} caracteres de [A-Za-z0-9_-], y llegaron {len(env)}. "
-                "Corregilo, o quitá la variable para que el servidor use el "
-                "token de disco."
+                f"{_ENV_VAR} is not usable as a token: it needs at least "
+                f"{_MIN_LEN} characters from [A-Za-z0-9_-], and {len(env)} arrived. "
+                "Fix it, or remove the variable so the server uses the "
+                "token on disk."
             )
         return env
 
@@ -149,8 +148,8 @@ def get_bridge_token(refresh: bool = False) -> str:
             return _cached
 
         if path.exists():
-            # Existe pero no es válido (vacío, truncado, editado a mano).
-            # Rotar y avisar: cualquier cliente emparejado quedó obsoleto.
+            # Exists but is not valid (empty, truncated, hand-edited).
+            # Rotate and warn: any paired client has become stale.
             try:
                 path.unlink()
                 _rotated = True
@@ -161,7 +160,7 @@ def get_bridge_token(refresh: bool = False) -> str:
         if created:
             _cached = created
             return _cached
-        # Perdimos la carrera: el ganador ya escribió, volvemos a leer.
+        # We lost the race: the winner already wrote, so we read again.
         time.sleep(0.05)
 
     _ephemeral = True
@@ -170,17 +169,17 @@ def get_bridge_token(refresh: bool = False) -> str:
 
 
 def token_was_rotated() -> bool:
-    """True si el token en disco era inválido y se regeneró en este arranque."""
+    """True if the token on disk was invalid and was regenerated at this startup."""
     return _rotated
 
 
 def token_is_ephemeral() -> bool:
-    """True si no se pudo persistir y el token muere con el proceso."""
+    """True if it could not be persisted and the token dies with the process."""
     return _ephemeral
 
 
 def reset_cache() -> None:
-    """Limpia el estado cacheado. Solo para tests."""
+    """Clears the cached state. For tests only."""
     global _cached, _rotated, _ephemeral
     _cached = None
     _rotated = False

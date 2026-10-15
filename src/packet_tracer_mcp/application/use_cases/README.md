@@ -1,23 +1,23 @@
 # application/use_cases/
 
-8 casos de uso que orquestan la interacción entre la capa MCP y el dominio. Son wrappers delgados — convierten DTOs en llamadas a servicios del dominio y formatean la respuesta.
+8 use cases that orchestrate the interaction between the MCP layer and the domain. They are thin wrappers — they convert DTOs into calls to domain services and format the response.
 
-## Principio de diseño
+## Design principle
 
-Cada use case:
-1. Recibe un DTO o modelo de dominio
-2. Llama a uno o más servicios del dominio
-3. Retorna un DTO de respuesta
+Each use case:
+1. Receives a DTO or domain model
+2. Calls one or more domain services
+3. Returns a response DTO
 
-No contienen lógica de negocio — esa vive en `domain/services/`.
+They contain no business logic — that lives in `domain/services/`.
 
-## Archivos
+## Files
 
 ### `plan_topology.py`
 ```python
 plan_topology(dto: PlanTopologyDTO) → tuple[TopologyPlan, ValidationResult]
 ```
-Convierte `PlanTopologyDTO` → `TopologyRequest` → `orchestrator.plan_from_request()`.
+Converts `PlanTopologyDTO` → `TopologyRequest` → `orchestrator.plan_from_request()`.
 
 ---
 
@@ -25,8 +25,8 @@ Convierte `PlanTopologyDTO` → `TopologyRequest` → `orchestrator.plan_from_re
 ```python
 full_build(dto: PlanTopologyDTO) → BuildResponse
 ```
-Pipeline completo: plan → validate → generate script + configs → explain → estimate.
-Es el use case más usado por `pt_full_build`.
+Full pipeline: plan → validate → generate script + configs → explain → estimate.
+It is the use case most used by `pt_full_build`.
 
 ---
 
@@ -34,7 +34,7 @@ Es el use case más usado por `pt_full_build`.
 ```python
 validate_plan_uc(plan: TopologyPlan) → ValidationResponse
 ```
-Wrapper sobre `validator.validate_plan()`.
+Wrapper over `validator.validate_plan()`.
 
 ---
 
@@ -42,7 +42,7 @@ Wrapper sobre `validator.validate_plan()`.
 ```python
 fix_plan_uc(plan: TopologyPlan) → FixResponse
 ```
-Llama `auto_fixer.fix_plan()`, re-valida, retorna fixes aplicados y estado.
+Calls `auto_fixer.fix_plan()`, re-validates, and returns the applied fixes and status.
 
 ---
 
@@ -50,7 +50,7 @@ Llama `auto_fixer.fix_plan()`, re-valida, retorna fixes aplicados y estado.
 ```python
 explain_plan_uc(plan: TopologyPlan) → list[str]
 ```
-Wrapper sobre `explainer.explain_plan()`.
+Wrapper over `explainer.explain_plan()`.
 
 ---
 
@@ -58,7 +58,7 @@ Wrapper sobre `explainer.explain_plan()`.
 ```python
 generate_script_uc(plan: TopologyPlan, include_configs: bool = True) → str
 ```
-Genera script PTBuilder JS. Con `include_configs=True` incluye configuraciones CLI embebidas.
+Generates a PTBuilder JS script. With `include_configs=True` it includes embedded CLI configurations.
 
 ---
 
@@ -66,7 +66,7 @@ Genera script PTBuilder JS. Con `include_configs=True` incluye configuraciones C
 ```python
 generate_configs_uc(plan: TopologyPlan) → dict[str, str]
 ```
-Wrapper sobre `cli_config_generator.generate_all_configs()`. Retorna `{device_name: config_text}`.
+Wrapper over `cli_config_generator.generate_all_configs()`. Returns `{device_name: config_text}`.
 
 ---
 
@@ -74,4 +74,4 @@ Wrapper sobre `cli_config_generator.generate_all_configs()`. Retorna `{device_na
 ```python
 export_artifacts_uc(plan: TopologyPlan, output_dir: str) → ExportResponse
 ```
-Wrapper sobre `ManualExecutor.execute()`. Exporta todos los artefactos a disco.
+Wrapper over `ManualExecutor.execute()`. Exports all artifacts to disk.

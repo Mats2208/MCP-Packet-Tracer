@@ -1,4 +1,4 @@
-"""Enumeraciones compartidas."""
+"""Shared enumerations."""
 
 from enum import Enum
 
@@ -61,7 +61,7 @@ class DeviceCategory(str, Enum):
 
 
 class DeviceRole(str, Enum):
-    """Rol semántico del dispositivo en la topología."""
+    """Semantic role of the device in the topology."""
     CORE_ROUTER = "core_router"
     BRANCH_ROUTER = "branch_router"
     EDGE_ROUTER = "edge_router"

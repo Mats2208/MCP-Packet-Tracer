@@ -1,10 +1,10 @@
-"""Constantes del sistema."""
+"""System constants."""
 
-# Router/switch por defecto
+# Default router/switch
 DEFAULT_ROUTER = "2911"
 DEFAULT_SWITCH = "2960-24TT"
 
-# Layout (posición en pixels para el canvas de Packet Tracer)
+# Layout (pixel position on the Packet Tracer canvas)
 LAYOUT_X_START = 100
 LAYOUT_Y_ROUTER = 100
 LAYOUT_Y_SWITCH = 250
@@ -20,13 +20,13 @@ DEFAULT_LAN_PREFIX = 24
 DEFAULT_LINK_PREFIX = 30
 DEFAULT_DNS = "8.8.8.8"
 
-# Capacidades del sistema (para que el LLM sepa qué soportamos).
+# System capabilities (so the LLM knows what we support).
 #
-# NOTA: la fuente de verdad de qué *tools* existen es el registro MCP en vivo —
-# `pt://capabilities` introspecciona los tools reales y deriva `nat`/`acl`/`modules`/…
-# de ahí (ver resource_registry.py), así que esta lista NO puede volver a mentir como
-# antes (decía nat="unsupported" mientras pt_apply_nat existía). Lo de abajo son los
-# valores base que el recurso enriquece dinámicamente.
+# NOTE: the source of truth for which *tools* exist is the live MCP registry —
+# `pt://capabilities` introspects the real tools and derives `nat`/`acl`/`modules`/…
+# from them (see resource_registry.py), so this list CANNOT lie again like it did
+# before (it said nat="unsupported" while pt_apply_nat existed). What follows are the
+# base values that the resource enriches dynamically.
 CAPABILITIES = {
     "version": "0.8.0",
     "routing": ["static", "static_floating", "ospf", "eigrp", "rip", "none"],
@@ -35,29 +35,29 @@ CAPABILITIES = {
                  "acl_standard", "acl_extended", "acl_apply_via_bridge",
                  "nat_static", "nat_dynamic", "nat_pat",
                  "modules", "module_compat_check", "live_deploy", "raw_js",
-                 # Lectura del estado vivo: no consultan el plan, consultan el
-                 # dispositivo. Verificadas contra PT 9.0.0.0810.
+                 # Live state reads: they do not query the plan, they query the
+                 # device. Verified against PT 9.0.0.0810.
                  "security_audit", "port_inspect", "vlan_read", "device_power",
                  "simulation_mode", "simulation_step", "packet_trace",
                  "netflow", "qos_read", "dhcp_server_pools",
                  "config_backup", "project_metadata", "workspace_options",
                  "screenshot", "canvas_annotations"],
-    # Soportado HOY vía IOS CLI cruda (configureIosDevice / pt_send_raw) pero sin tool
-    # dedicada de alto nivel todavía — candidatos a futura expansión, NO "imposibles".
-    # vlan/trunk/stp/port_security/ipv6 salieron de acá: ya tienen tool propia.
-    # QoS se queda: se puede LEER con pt_read_qos pero no crear por API.
+    # Supported TODAY via raw IOS CLI (configureIosDevice / pt_send_raw) but without a
+    # dedicated high-level tool yet — candidates for future expansion, NOT "impossible".
+    # vlan/trunk/stp/port_security/ipv6 were removed from here: they have their own tool.
+    # QoS stays: it can be READ with pt_read_qos but not created via the API.
     "supported_via_cli": ["qos", "bgp", "hsrp", "voip"],
-    # Genuinamente no implementado en ninguna forma. Originar un PDU no está:
-    # PT no lo expone a las extensiones (el "Add Simple PDU" es solo GUI).
+    # Genuinely not implemented in any form. Originating a PDU is not available:
+    # PT does not expose it to extensions (the "Add Simple PDU" is GUI-only).
     "unsupported": ["originate_pdu"],
     "max_routers": 20,
     "max_pcs_per_lan": 24,
     "max_switches_per_router": 4,
 }
 
-# PT IpcAPI DeviceType enum values (de class_logical_workspace.html addDevice doc).
-# Usado por lwAddDevice helper para crear devices visibles en la Logical view
-# (el addDevice global solo escribe al modelo + canvas físico, no al lógico).
+# PT IpcAPI DeviceType enum values (from the class_logical_workspace.html addDevice doc).
+# Used by the lwAddDevice helper to create devices visible in the Logical view
+# (the global addDevice only writes to the model + physical canvas, not the logical one).
 PT_DEVICE_TYPE = {
     "router": 0,
     "switch": 1,
@@ -95,11 +95,11 @@ PT_DEVICE_TYPE = {
     "embedded_server": 38,
 }
 
-# Default PT DeviceType cuando la categoría no está en el map. eWiredEndDevice (21)
-# es el más permisivo — funciona para cualquier dispositivo genérico con interfaz cableada.
+# Default PT DeviceType when the category is not in the map. eWiredEndDevice (21)
+# is the most permissive — it works for any generic device with a wired interface.
 PT_DEVICE_TYPE_DEFAULT = 21
 
-# PT IpcAPI CONNECT_TYPES enum values (de class_logical_workspace.html createLink doc).
+# PT IpcAPI CONNECT_TYPES enum values (from the class_logical_workspace.html createLink doc).
 PT_CONNECT_TYPE = {
     "straight": 8100,
     "cross": 8101,
@@ -119,7 +119,7 @@ PT_CONNECT_TYPE = {
     "custom_io": 8114,
 }
 
-PT_CONNECT_TYPE_DEFAULT = 8107  # AUTO — deja a PT detectar el tipo correcto
+PT_CONNECT_TYPE_DEFAULT = 8107  # AUTO — lets PT detect the correct type
 
 
 # Masks lookup

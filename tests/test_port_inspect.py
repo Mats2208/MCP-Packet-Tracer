@@ -4,6 +4,7 @@ Los valores numéricos están verificados contra PT 9.0.0.0810: getNatMode()
 devuelve 0 en un puerto limpio y 1 tras `ip nat inside`.
 """
 
+from tests._registry_src import registry_source
 from pathlib import Path
 
 import pytest
@@ -101,9 +102,7 @@ class TestPhase1Readers:
     verifican por texto, igual que TestReconcileWiring en test_live_reconcile.py."""
 
     def _src(self) -> str:
-        return Path("src/packet_tracer_mcp/adapters/mcp/tool_registry.py").read_text(
-            encoding="utf-8"
-        )
+        return registry_source()
 
     def test_port_getters_are_feature_detected(self):
         """La superficie de Port cambia por modelo; un método ausente lanza y abre

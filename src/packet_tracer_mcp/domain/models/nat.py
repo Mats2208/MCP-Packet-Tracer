@@ -1,25 +1,25 @@
-"""Modelos de NAT/PAT — configuración y modos.
+"""NAT/PAT models — configuration and modes.
 
-El NAT se aplica post-deploy a un router existente vía configureIosDevice
-a través del bridge, igual que las ACLs.
+NAT is applied post-deploy to an existing router via configureIosDevice
+through the bridge, just like ACLs.
 
-Tres modos:
-  static  — 1:1 fijo. Cada IP privada se mapea a una IP pública permanente.
-             Usar cuando: un servidor interno debe ser alcanzable desde internet
-             siempre con la misma IP pública (ej: servidor web, FTP, correo).
+Three modes:
+  static  — fixed 1:1. Each private IP is mapped to a permanent public IP.
+             Use it when: an internal server must be reachable from the internet
+             always with the same public IP (e.g. a web, FTP or mail server).
 
-  dynamic — Pool de IPs públicas asignadas bajo demanda. El router elige qué
-             IP pública asignar a cada host interno según disponibilidad.
-             Usar cuando: tienes más IPs públicas que el overload justifica pero
-             menos que hosts internos; o cuando el tracking por IP pública importa.
-             Raro en redes actuales.
+  dynamic — Pool of public IPs assigned on demand. The router picks which
+             public IP to give each internal host based on availability.
+             Use it when: you have more public IPs than overload justifies but
+             fewer than internal hosts; or when per-public-IP tracking matters.
+             Rare in today's networks.
 
-  pat     — PAT (Port Address Translation) / NAT Overload. Muchos hosts internos
-             comparten UNA sola IP pública usando números de puerto como
-             diferenciador. Es lo que hacen casi todos los routers domésticos
-             y empresariales cuando tienen una sola IP del ISP.
-             Usar cuando: tienes 1 (o pocas) IPs públicas y N hosts internos.
-             Sub-modos:
+  pat     — PAT (Port Address Translation) / NAT Overload. Many internal hosts
+             share ONE single public IP using port numbers to tell
+             them apart. It is what almost every home and business router
+             does when it has a single IP from the ISP.
+             Use it when: you have 1 (or a few) public IPs and N internal hosts.
+             Sub-modes:
                use_interface_overload=True  → ip nat inside source list X interface <outside> overload
                use_interface_overload=False → ip nat inside source list X pool POOL overload
 """
@@ -32,46 +32,46 @@ NATMode = Literal["static", "dynamic", "pat"]
 
 
 class NATStaticMapping(BaseModel):
-    """Par inside-local ↔ inside-global para NAT estático."""
-    inside_local: str   # IP privada, ej: "192.168.1.10"
-    inside_global: str  # IP pública fija, ej: "200.1.1.5"
+    """inside-local ↔ inside-global pair for static NAT."""
+    inside_local: str   # private IP, e.g. "192.168.1.10"
+    inside_global: str  # fixed public IP, e.g. "200.1.1.5"
 
 
 class NATPool(BaseModel):
-    """Pool de IPs públicas para NAT dinámico o PAT con pool."""
+    """Pool of public IPs for dynamic NAT or PAT with a pool."""
     name: str = "NAT-POOL"
-    start_ip: str         # primera IP del pool, ej: "200.1.1.1"
-    end_ip: str           # última IP del pool,  ej: "200.1.1.10"
-    netmask: str          # máscara de red, ej: "255.255.255.0"
+    start_ip: str         # first IP of the pool, e.g. "200.1.1.1"
+    end_ip: str           # last IP of the pool,  e.g. "200.1.1.10"
+    netmask: str          # network mask, e.g. "255.255.255.0"
 
 
 class NATConfig(BaseModel):
-    """Configuración completa de NAT/PAT para un router."""
+    """Full NAT/PAT configuration for a router."""
     router: str
     mode: NATMode
 
-    # Interfaz conectada a la red privada (LAN)
+    # Interface connected to the private network (LAN)
     inside_interface: str   # ej: "GigabitEthernet0/0"
-    # Interfaz conectada a la red pública (WAN/Internet)
+    # Interface connected to the public network (WAN/Internet)
     outside_interface: str  # ej: "GigabitEthernet0/1"
 
-    # --- Modo static ---
-    # Lista de pares inside-local ↔ inside-global.
-    # Requerido cuando mode="static".
+    # --- static mode ---
+    # List of inside-local ↔ inside-global pairs.
+    # Required when mode="static".
     static_mappings: list[NATStaticMapping] = Field(default_factory=list)
 
-    # --- Modos dynamic / pat ---
-    # Número o nombre de ACL que identifica los hosts internos a traducir.
+    # --- dynamic / pat modes ---
+    # ACL number or name identifying the internal hosts to translate.
     acl_number: str = "1"
-    # Redes internas en formato "network wildcard", ej: "192.168.1.0 0.0.0.255".
-    # Se usan para generar el access-list inline. Si la ACL ya existe en PT
-    # puedes dejar esta lista vacía y el generador omite el access-list.
+    # Internal networks in "network wildcard" format, e.g. "192.168.1.0 0.0.0.255".
+    # Used to generate the inline access-list. If the ACL already exists in PT
+    # you can leave this list empty and the generator skips the access-list.
     inside_networks: list[str] = Field(default_factory=list)
 
-    # Pool de IPs públicas. Requerido para dynamic; opcional en pat cuando
+    # Pool of public IPs. Required for dynamic; optional in pat when
     # use_interface_overload=True.
     pool: NATPool | None = None
 
-    # Solo PAT: si True genera "ip nat inside source list X interface <outside> overload"
-    # en lugar de usar un pool. Típico cuando el ISP asigna una única IP a la interfaz WAN.
+    # PAT only: if True it generates "ip nat inside source list X interface <outside> overload"
+    # instead of using a pool. Typical when the ISP assigns a single IP to the WAN interface.
     use_interface_overload: bool = False

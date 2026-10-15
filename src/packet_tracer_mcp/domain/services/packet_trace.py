@@ -1,29 +1,29 @@
 """
-Lectura del event list de simulación de PT: qué hizo cada paquete y por qué.
+Reading PT's simulation event list: what each packet did and why.
 
-Lógica pura, sin bridge — testeable con dicts sintéticos, igual que topology_diff.
+Pure logic, no bridge — testable with synthetic dicts, like topology_diff.
 
-Lo que hace útil a esto no es la lista de paquetes sino el log de decisiones: PT
-expone, por frame y por capa OSI, la misma explicación en prosa que muestra en el
-panel "PDU Details" de su GUI. Verificado contra PT 9.0.0.0810 con un ping de
-PC1 a su gateway:
+What makes this useful is not the packet list but the decision log: PT
+exposes, per frame and per OSI layer, the same prose explanation it shows in the
+"PDU Details" panel of its GUI. Verified against PT 9.0.0.0810 with a ping from
+PC1 to its gateway:
 
     L3 :: The source IP address is not specified. The device sets it to the port's IP address.
     L3 :: The destination IP address is in the same subnet. The device sets the next-hop to destination.
     L2 :: The next-hop IP address is not in the ARP table. The ARP process ... buffers this packet.
 
-Eso convierte "el ping no anda" en una causa concreta.
+That turns "the ping does not work" into a concrete cause.
 """
 
 from __future__ import annotations
 
-# getUserTrafficType() devuelve un entero. 0 e ICMP y 5 y ARP están MEDIDOS (ping
-# de PC1 a su gateway: el ICMP queda en buffer y sale primero el ARP broadcast).
-# El resto no se observó, así que se devuelve el crudo en vez de inventar nombres.
+# getUserTrafficType() returns an integer. 0 is ICMP and 5 is ARP, MEASURED (ping
+# from PC1 to its gateway: the ICMP stays buffered and the ARP broadcast goes out first).
+# Anything else has not been observed, so the raw value is returned instead of inventing names.
 TRAFFIC_TYPES = {0: "ICMP", 5: "ARP"}
 
-# Orden de precedencia al derivar UN estado por frame. Lo que bloquea va primero:
-# un frame descartado importa más que uno "enviado" en el mismo tick.
+# Precedence order when deriving ONE state per frame. Whatever blocks goes first:
+# a dropped frame matters more than a "sent" one in the same tick.
 _STATUS_ORDER = (
     ("dropped", "dropped"),
     ("collided_on_link", "collided_on_link"),
@@ -36,7 +36,7 @@ _STATUS_ORDER = (
     ("sent", "sent"),
 )
 
-# Estados que significan "este paquete no llegó a destino".
+# States meaning "this packet did not reach its destination".
 FAILURE_STATUSES = frozenset({
     "dropped", "collided_on_link", "collided_at_device",
     "not_forwarded", "unexpected",
@@ -44,12 +44,12 @@ FAILURE_STATUSES = frozenset({
 
 
 def traffic_type_label(raw) -> str:
-    """Etiqueta del tipo de tráfico; deja pasar el crudo si no fue observado."""
+    """Label for the traffic type; passes the raw value through if it was not observed."""
     return TRAFFIC_TYPES.get(raw, f"type{raw}")
 
 
 def frame_status(frame: dict) -> str:
-    """Un solo estado por frame, a partir de las banderas booleanas de PT."""
+    """A single state per frame, derived from PT's boolean flags."""
     for flag, status in _STATUS_ORDER:
         if frame.get(flag):
             return status
@@ -57,7 +57,7 @@ def frame_status(frame: dict) -> str:
 
 
 def summarize_trace(frames: list[dict]) -> dict:
-    """Agrupa el event list y separa lo que falló de lo que no."""
+    """Groups the event list and separates what failed from what did not."""
     by_status: dict[str, int] = {}
     by_device: dict[str, int] = {}
     failures: list[dict] = []
@@ -76,7 +76,7 @@ def summarize_trace(frames: list[dict]) -> dict:
                 "status": status,
                 "destination": frame.get("destination", ""),
                 "traffic": frame.get("traffic_type", ""),
-                # La última decisión es la que explica el desenlace.
+                # The last decision is the one that explains the outcome.
                 "reason": (frame.get("decisions") or [{}])[-1].get("description", ""),
             })
 

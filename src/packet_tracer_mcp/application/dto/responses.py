@@ -1,4 +1,4 @@
-"""DTOs de respuesta para la capa de aplicación."""
+"""Response DTOs for the application layer."""
 
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class BuildResponse:
-    """Respuesta del full build."""
+    """Response of the full build."""
     plan_json: str
     script: str
     configs: dict[str, str]
@@ -20,7 +20,7 @@ class BuildResponse:
 
 @dataclass
 class ValidationResponse:
-    """Respuesta de validación."""
+    """Validation response."""
     is_valid: bool
     errors: list[dict]
     warnings: list[dict]
@@ -28,7 +28,7 @@ class ValidationResponse:
 
 @dataclass
 class FixResponse:
-    """Respuesta de fix."""
+    """Fix response."""
     plan_json: str
     fixes_applied: list[str]
     is_valid: bool
@@ -37,7 +37,7 @@ class FixResponse:
 
 @dataclass
 class ExportResponse:
-    """Respuesta de exportación."""
+    """Export response."""
     status: str
     project_dir: str
     files: dict[str, str]

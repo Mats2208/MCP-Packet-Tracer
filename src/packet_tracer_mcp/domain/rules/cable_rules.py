@@ -1,4 +1,4 @@
-"""Reglas de validación de cables y enlaces."""
+"""Validation rules for cables and links."""
 
 from __future__ import annotations
 from ..models.plans import TopologyPlan
@@ -8,7 +8,7 @@ from ...infrastructure.catalog.cables import CABLE_TYPES, infer_cable
 
 
 def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]]:
-    """Valida enlaces. Retorna (errors, warnings)."""
+    """Validates links. Returns (errors, warnings)."""
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
     port_usage: dict[str, str] = {}
@@ -23,22 +23,22 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
             errors.append(PlanError(
                 code=ErrorCode.DEVICE_NOT_FOUND,
                 device=link.device_a,
-                message=f"Link referencia dispositivo inexistente '{link.device_a}'.",
+                message=f"Link references a nonexistent device '{link.device_a}'.",
             ))
             continue
         if dev_b is None:
             errors.append(PlanError(
                 code=ErrorCode.DEVICE_NOT_FOUND,
                 device=link.device_b,
-                message=f"Link referencia dispositivo inexistente '{link.device_b}'.",
+                message=f"Link references a nonexistent device '{link.device_b}'.",
             ))
             continue
 
-        # Puertos válidos
+        # Valid ports
         _check_port(errors, dev_a.name, dev_a.model, link.port_a)
         _check_port(errors, dev_b.name, dev_b.model, link.port_b)
 
-        # Puertos duplicados
+        # Duplicate ports
         for key, label in [
             (f"{link.device_a}:{link.port_a}", desc),
             (f"{link.device_b}:{link.port_b}", desc),
@@ -47,26 +47,26 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
                 errors.append(PlanError(
                     code=ErrorCode.PORT_ALREADY_USED,
                     device=key.split(":")[0],
-                    message=f"Puerto {key} ya en uso por {port_usage[key]}.",
-                    suggestion="Usar otro puerto disponible o agregar un switch.",
+                    message=f"Port {key} already in use by {port_usage[key]}.",
+                    suggestion="Use another free port or add a switch.",
                 ))
             else:
                 port_usage[key] = label
 
-        # Cable válido
+        # Valid cable
         if link.cable not in CABLE_TYPES:
             errors.append(PlanError(
                 code=ErrorCode.INVALID_CABLE_TYPE,
-                message=f"Tipo de cable '{link.cable}' desconocido en {desc}.",
-                suggestion=f"Cables válidos: {list(CABLE_TYPES.keys())}",
+                message=f"Unknown cable type '{link.cable}' in {desc}.",
+                suggestion=f"Valid cables: {list(CABLE_TYPES.keys())}",
             ))
 
-        # Sugerir cable correcto
+        # Suggest the correct cable
         expected = infer_cable(dev_a.category, dev_b.category)
         if link.cable != expected:
             warnings.append(PlanError(
                 code=ErrorCode.INVALID_CABLE_TYPE,
-                message=f"Cable '{link.cable}' en {desc} podría no ser correcto.",
+                message=f"Cable '{link.cable}' in {desc} may not be correct.",
                 suggestion=f"Cable sugerido: '{expected}'",
             ))
 
@@ -74,12 +74,12 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
 
 
 def _check_port(errors: list[PlanError], dev_name: str, model_name: str, port: str):
-    """Verifica que un puerto exista en el modelo."""
+    """Checks that a port exists on the model."""
     valid = get_valid_ports(model_name)
     if valid and port not in valid:
         errors.append(PlanError(
             code=ErrorCode.INVALID_PORT,
             device=dev_name,
-            message=f"Puerto '{port}' no existe en modelo {model_name}.",
-            suggestion=f"Puertos válidos: {sorted(valid)}",
+            message=f"Port '{port}' does not exist on model {model_name}.",
+            suggestion=f"Valid ports: {sorted(valid)}",
         ))

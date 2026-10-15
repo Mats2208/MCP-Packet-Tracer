@@ -1,4 +1,4 @@
-"""Generador CLI para ajuste fino por interfaz."""
+"""CLI generator for per-interface fine-tuning."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def generate_interface_tuning_cli(cfg: InterfaceTuning) -> list[str]:
         lines.append(f" ip ospf hello-interval {cfg.ospf_hello_interval}")
     if cfg.ospf_dead_interval is not None:
         lines.append(f" ip ospf dead-interval {cfg.ospf_dead_interval}")
-    # La clave va ANTES de habilitar la autenticación: al revés, la interfaz
-    # queda exigiendo auth sin tener con qué responder y el vecino se cae.
+    # The key goes BEFORE enabling authentication: in reverse, the interface would
+    # require auth without anything to answer with, and the neighbor would drop.
     if cfg.ospf_md5_key is not None:
         lines.append(
             f" ip ospf message-digest-key {cfg.ospf_md5_key_id} md5 {cfg.ospf_md5_key}"

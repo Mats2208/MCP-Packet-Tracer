@@ -1,17 +1,17 @@
-"""Reglas sobre la FORMA del grafo y la coherencia del routing.
+"""Rules about the SHAPE of the graph and the consistency of the routing.
 
-Las demás reglas miran dispositivos, puertos e IPs de a uno. Estas dos miran el
-plan entero, que es donde se escondía el peor fallo silencioso del pipeline:
+The other rules check devices, ports and IPs one at a time. These two check the
+whole plan, which is where the worst silent failure of the pipeline was hiding:
 
-`hub_spoke` pide que el hub se enlace con cada spoke, pero un 2911 tiene tres
-puertos Gigabit. Con seis routers el hub se queda sin puertos en el cuarto y
-`_link_routers` simplemente no creaba el enlace — sin avisar. El resultado era un
-plan con dos routers sueltos, sin interfaces, sin enlaces y con un OSPF de
-`router-id 0.0.0.0` y cero redes... que el validador aprobaba con `valid=true`.
+`hub_spoke` asks for the hub to be linked to each spoke, but a 2911 has three
+Gigabit ports. With six routers the hub runs out of ports by the fourth link, and
+`_link_routers` simply did not create the link — without any warning. The result
+was a plan with two loose routers, no interfaces, no links and an OSPF with
+`router-id 0.0.0.0` and zero networks... which the validator approved with `valid=true`.
 
-Una topología partida en islas se ve idéntica a una sana en todos los chequeos
-por-dispositivo: cada dispositivo existe, cada puerto es válido, ninguna IP
-choca. Lo único que la delata es recorrer el grafo.
+A topology split into islands looks identical to a healthy one in every per-device
+check: each device exists, each port is valid, no IP clashes. The only thing that
+gives it away is walking the graph.
 """
 
 from __future__ import annotations
@@ -21,15 +21,15 @@ from ..models.errors import PlanError, ErrorCode
 
 
 def validate_connectivity(plan: TopologyPlan) -> list[PlanError]:
-    """Verifica que todos los dispositivos cableados formen UN solo componente.
+    """Checks that all wired devices form ONE single connected component.
 
-    Las laptops WiFi quedan fuera del grafo a propósito: no llevan cable porque
-    se asocian por RF, así que contarlas como islas marcaría cada topología
-    inalámbrica como rota.
+    WiFi laptops are left out of the graph on purpose: they have no cable because
+    they associate over RF, so counting them as islands would flag every wireless
+    topology as broken.
     """
     wired = [d for d in plan.devices if not d.wireless]
     if len(wired) <= 1:
-        # Cero o un dispositivo es, trivialmente, un solo componente.
+        # Zero or one device is, trivially, a single component.
         return []
 
     names = {d.name for d in wired}
@@ -39,7 +39,7 @@ def validate_connectivity(plan: TopologyPlan) -> list[PlanError]:
             adjacency[link.device_a].add(link.device_b)
             adjacency[link.device_b].add(link.device_a)
 
-    # BFS desde el primer dispositivo: lo que no se alcance es otra isla.
+    # BFS from the first device: anything not reached is another island.
     start = wired[0].name
     seen = {start}
     queue = [start]
@@ -56,38 +56,38 @@ def validate_connectivity(plan: TopologyPlan) -> list[PlanError]:
 
     orphan_names = ", ".join(d.name for d in unreachable)
 
-    # Un router sin NINGUNA interfaz asignada es la firma del hub que se quedó
-    # sin puertos: el IP planner solo direcciona lo que está enlazado.
+    # A router with NO interfaces assigned is the signature of a hub that ran out
+    # of ports: the IP planner only addresses what is linked.
     starved = [d for d in unreachable if d.category == "router" and not d.interfaces]
     if starved:
         suggestion = (
-            "El router que hace de hub se quedó sin puertos libres para tantos "
-            "enlaces. Usá un modelo con más puertos, agregá un módulo de "
-            "expansión, o reducí la cantidad de routers."
+            "The hub router ran out of free ports for that many "
+            "links. Use a model with more ports, add an expansion "
+            "module, or reduce the number of routers."
         )
     else:
         suggestion = (
-            f"Agregá un enlace que conecte {unreachable[0].name} con el resto "
-            "de la topología."
+            f"Add a link connecting {unreachable[0].name} to the rest "
+            "of the topology."
         )
 
     return [PlanError(
         code=ErrorCode.TOPOLOGY_DISCONNECTED,
         device=unreachable[0].name,
         message=(
-            f"La topología está partida: {orphan_names} no tiene(n) camino hacia "
-            f"{start}. Los dispositivos aislados no pueden enrutar ni recibir tráfico."
+            f"The topology is split: {orphan_names} has/have no path to "
+            f"{start}. Isolated devices can neither route nor receive traffic."
         ),
         suggestion=suggestion,
     )]
 
 
 def validate_routing(plan: TopologyPlan) -> list[PlanError]:
-    """Coherencia básica de los procesos OSPF declarados.
+    """Basic consistency of the declared OSPF processes.
 
-    Un router al que el planner no le pudo asignar interfaces termina con un
-    `router ospf` sin redes y con `router-id 0.0.0.0`. Las dos cosas son config
-    inválida en IOS y las dos salían del pipeline sin una sola queja.
+    A router the planner could not assign interfaces to ends up with a `router ospf`
+    without networks and with `router-id 0.0.0.0`. Both are invalid config in IOS,
+    and both left the pipeline without a single complaint.
     """
     errors: list[PlanError] = []
 
@@ -97,29 +97,29 @@ def validate_routing(plan: TopologyPlan) -> list[PlanError]:
                 code=ErrorCode.OSPF_NO_NETWORKS,
                 device=cfg.router,
                 message=(
-                    f"OSPF proceso {cfg.process_id} en {cfg.router} no anuncia "
-                    "ninguna red."
+                    f"OSPF process {cfg.process_id} on {cfg.router} advertises "
+                    "no network."
                 ),
                 suggestion=(
-                    "Un proceso OSPF sin sentencias `network` no forma "
-                    "adyacencias. Verificá que el router tenga interfaces "
-                    "direccionadas y enlazadas."
+                    "An OSPF process without `network` statements forms no "
+                    "adjacencies. Check that the router has addressed and "
+                    "linked interfaces."
                 ),
             ))
 
-        # `router_id` vacío es legítimo: IOS elige la IP más alta. El que no lo
-        # es es 0.0.0.0, que es lo que queda cuando no hay ninguna interfaz.
+        # An empty `router_id` is legitimate: IOS picks the highest IP. What is not
+        # legitimate is 0.0.0.0, which is what remains when there is no interface.
         if cfg.router_id.strip() == "0.0.0.0":
             errors.append(PlanError(
                 code=ErrorCode.OSPF_INVALID_ROUTER_ID,
                 device=cfg.router,
                 message=(
-                    f"OSPF en {cfg.router} tiene router-id 0.0.0.0, que IOS "
-                    "rechaza."
+                    f"OSPF on {cfg.router} has router-id 0.0.0.0, which IOS "
+                    "rejects."
                 ),
                 suggestion=(
-                    "El router-id se deriva de las interfaces del router; "
-                    "0.0.0.0 significa que no tiene ninguna direccionada."
+                    "The router-id is derived from the router's interfaces; "
+                    "0.0.0.0 means none of them is addressed."
                 ),
             ))
 
@@ -127,19 +127,19 @@ def validate_routing(plan: TopologyPlan) -> list[PlanError]:
 
 
 def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
-    """Avisa cuando la asociacion WiFi no se puede predecir. Devuelve WARNINGS.
+    """Warns when the WiFi association cannot be predicted. Returns WARNINGS.
 
-    Un AP por LAN hace POSIBLE que cada laptop tome direccion de su propia
-    subred, pero no lo garantiza. Medido contra PT 9.0.1 sobre 6 LANs: con el AP
-    de la LAN 1 encendido, una laptop que tenia el AP de SU LAN al lado siguio
-    con 192.168.0.5 — del pool de la LAN 1. Apagando el otro AP y reiniciandola,
-    tomo 192.168.4.25, la que le correspondia.
+    One AP per LAN MAKES IT POSSIBLE for each laptop to take an address from its own
+    subnet, but does not guarantee it. Measured against PT 9.0.1 over 6 LANs: with the
+    AP of LAN 1 powered on, a laptop that had the AP of ITS LAN next to it still kept
+    192.168.0.5 — from the LAN 1 pool. After powering off the other AP and restarting
+    it, it got 192.168.4.25, the one that corresponded to it.
 
-    O sea que PT no elige el AP mas cercano: la asociacion es pegajosa y, entre
-    APs que comparten el SSID por defecto, arbitraria. Y no hay como
-    desambiguarla, porque PT no expone API de SSID (verificado: ni el AP ni su
-    puerto tienen setSsid). Lo unico honesto es que el plan lo diga en vez de
-    prometer un direccionamiento que no controla.
+    In other words, PT does not pick the nearest AP: the association is sticky and,
+    among APs that share the default SSID, arbitrary. There is no way to disambiguate
+    it, because PT exposes no SSID API (verified: neither the AP nor its port has
+    setSsid). The only honest thing is for the plan to say so instead of promising
+    an addressing scheme it does not control.
     """
     aps = plan.devices_by_category("accesspoint")
     wireless_hosts = [d for d in plan.devices if d.wireless]
@@ -150,15 +150,15 @@ def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
         code=ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION,
         device=wireless_hosts[0].name,
         message=(
-            f"Hay {len(aps)} access points compartiendo el SSID por defecto y "
-            f"{len(wireless_hosts)} host(s) inalambrico(s). En la vista logica de "
-            "PT el alcance RF es global, asi que cada host puede asociarse a "
-            "CUALQUIERA de ellos y recibir direccion del pool DHCP de otra LAN."
+            f"There are {len(aps)} access points sharing the default SSID and "
+            f"{len(wireless_hosts)} wireless host(s). In PT's logical view the "
+            "RF range is global, so each host can associate with "
+            "ANY of them and get an address from another LAN's DHCP pool."
         ),
         suggestion=(
-            "PT no expone API de SSID, asi que esto no se puede fijar desde el "
-            "plan. Comproba con pt_inspect_ports en que subred quedo cada host "
-            "inalambrico; si necesitas direccionamiento determinista, usa "
-            "wireless_laptops=False y cablea las laptops a su switch."
+            "PT exposes no SSID API, so this cannot be fixed from the "
+            "plan. Check with pt_inspect_ports which subnet each wireless "
+            "host ended up in; for deterministic addressing use "
+            "wireless_laptops=False and cable the laptops to their switch."
         ),
     )]

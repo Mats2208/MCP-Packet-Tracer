@@ -1,4 +1,4 @@
-"""Validación de exportadores NetFlow."""
+"""NetFlow exporter validation."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from ..models.errors import ErrorCode, PlanError, ValidationResult
 from ..models.netflow import NetflowExporter
 from .text_rules import has_control_chars
 
-# PT implementa v5 (formato fijo) y v9 (basado en templates). Cualquier otro
-# número lo acepta el setter pero no produce un exportador funcional.
+# PT implements v5 (fixed format) and v9 (template-based). Any other
+# number is accepted by the setter but does not produce a working exporter.
 VALID_VERSIONS = (5, 9)
 
 
@@ -28,59 +28,59 @@ def validate_netflow(cfg: NetflowExporter) -> ValidationResult:
     if not cfg.name.strip():
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
-            message="El exportador necesita un nombre.",
-            suggestion="Pasá un nombre corto, por ejemplo 'COLLECTOR-1'.",
+            message="The exporter needs a name.",
+            suggestion="Pass a short name, for example 'COLLECTOR-1'.",
         ))
     elif has_control_chars(cfg.name):
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
-            message="El nombre del exportador tiene saltos de línea.",
-            suggestion="Usá un nombre de una sola línea.",
+            message="The exporter name contains line breaks.",
+            suggestion="Use a single-line name.",
         ))
 
     if cfg.destination_ip and not _is_ipv4(cfg.destination_ip):
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_DESTINATION, device=cfg.device,
-            message=f"'{cfg.destination_ip}' no es una IPv4 válida.",
-            suggestion="Indicá la IP del colector, por ejemplo 192.168.0.50.",
+            message=f"'{cfg.destination_ip}' is not a valid IPv4 address.",
+            suggestion="Give the collector's IP, for example 192.168.0.50.",
         ))
 
     if not 1 <= cfg.udp_port <= 65535:
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_PORT, device=cfg.device,
-            message=f"Puerto UDP {cfg.udp_port} fuera de rango (1-65535).",
-            suggestion="El puerto habitual de un colector NetFlow es 2055.",
+            message=f"UDP port {cfg.udp_port} out of range (1-65535).",
+            suggestion="The usual NetFlow collector port is 2055.",
         ))
 
     if cfg.version not in VALID_VERSIONS:
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_VERSION, device=cfg.device,
-            message=f"Versión NetFlow {cfg.version} no soportada por PT.",
-            suggestion="Usá 9 (templates, recomendada) o 5 (formato fijo).",
+            message=f"NetFlow version {cfg.version} is not supported by PT.",
+            suggestion="Use 9 (templates, recommended) or 5 (fixed format).",
         ))
 
     if has_control_chars(cfg.source_port):
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
-            message="La interfaz de origen tiene saltos de línea.",
-            suggestion="Usá el nombre exacto del puerto, por ejemplo GigabitEthernet0/0.",
+            message="The source interface contains line breaks.",
+            suggestion="Use the exact port name, for example GigabitEthernet0/0.",
         ))
 
     for monitor in cfg.monitors:
         if has_control_chars(monitor) or not monitor.strip():
             errors.append(PlanError(
                 code=ErrorCode.NETFLOW_INVALID_NAME, device=cfg.device,
-                message=f"Nombre de monitor inválido: '{monitor}'.",
-                suggestion="Cada monitor es un nombre de una sola línea, sin vacíos.",
+                message=f"Invalid monitor name: '{monitor}'.",
+                suggestion="Each monitor is a single-line, non-empty name.",
             ))
 
-    # Sin destino el exportador queda creado pero inerte: PT lo reporta como no
-    # configurado del todo. Es válido (se puede completar después) pero conviene avisar.
+    # Without a destination the exporter is created but inert: PT reports it as not
+    # fully configured. It is valid (it can be completed later), but a warning is advisable.
     if not cfg.destination_ip:
         warnings.append(PlanError(
             code=ErrorCode.NETFLOW_INCOMPLETE, device=cfg.device,
-            message="Sin IP de destino el exportador no manda flujos.",
-            suggestion="Agregá destination_ip apuntando al colector.",
+            message="Without a destination IP the exporter sends no flows.",
+            suggestion="Add destination_ip pointing to the collector.",
         ))
 
     return ValidationResult(errors=errors, warnings=warnings)
@@ -95,20 +95,20 @@ def validate_netflow_against_topology(
     if match is None:
         errors.append(PlanError(
             code=ErrorCode.NETFLOW_DEVICE_NOT_FOUND, device=cfg.device,
-            message=f"Dispositivo '{cfg.device}' no existe en la topología activa.",
-            suggestion="Llamá a pt_query_topology para ver los nombres reales.",
+            message=f"Device '{cfg.device}' does not exist in the active topology.",
+            suggestion="Call pt_query_topology to see the real names.",
         ))
         return ValidationResult(errors=errors)
 
     if cfg.source_port:
         ports = {p.get("name") for p in match.get("ports", [])}
-        # Si no pudimos leer los puertos no bloqueamos: fallar abierto es mejor
-        # que rechazar una config correcta por una lectura incompleta.
+        # If we could not read the ports we do not block: failing open is better
+        # than rejecting a correct config because of an incomplete read.
         if ports and cfg.source_port not in ports:
             errors.append(PlanError(
                 code=ErrorCode.NETFLOW_PORT_NOT_FOUND, device=cfg.device,
-                message=f"'{cfg.device}' no tiene el puerto '{cfg.source_port}'.",
-                suggestion="Usá pt_inspect_ports para ver los nombres exactos.",
+                message=f"'{cfg.device}' has no port '{cfg.source_port}'.",
+                suggestion="Use pt_inspect_ports to see the exact names.",
             ))
 
     return ValidationResult(errors=errors)

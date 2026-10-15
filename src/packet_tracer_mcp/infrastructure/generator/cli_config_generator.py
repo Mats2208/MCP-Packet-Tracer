@@ -1,8 +1,8 @@
 """
-Generador de configuraciones CLI (IOS) para dispositivos Packet Tracer.
+IOS CLI configuration generator for Packet Tracer devices.
 
-A partir del TopologyPlan, genera bloques de comandos listos para
-pegar en la terminal de cada router/switch.
+From the TopologyPlan, generates command blocks ready to
+paste into the terminal of each router/switch.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from .vlan_cli_generator import (
 
 def generate_all_configs(plan: TopologyPlan) -> dict[str, str]:
     """
-    Genera configs CLI para todos los dispositivos que las necesiten.
-    Retorna {nombre_dispositivo: bloque_cli}.
+    Generates CLI configs for every device that needs one.
+    Returns {device_name: cli_block}.
     """
     configs: dict[str, str] = {}
 
@@ -31,7 +31,7 @@ def generate_all_configs(plan: TopologyPlan) -> dict[str, str]:
 
 
 def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
-    """Genera la config completa de un router."""
+    """Generates the full config of a router."""
     lines: list[str] = []
 
     lines.append("enable")
@@ -42,8 +42,8 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
         lines.append("ipv6 unicast-routing")
     lines.append("")
 
-    # --- Interfaces físicas (las subinterfaces "Gig0/0.10" se emiten aparte con
-    #     su `encapsulation dot1Q`, así que las saltamos aquí) ---
+    # --- Physical interfaces (the "Gig0/0.10" subinterfaces are emitted separately with
+    #     their `encapsulation dot1Q`, so we skip them here) ---
     for iface, ip_cidr in router.interfaces.items():
         if "." in iface:
             continue
@@ -51,7 +51,7 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
         mask = prefix_to_mask(int(prefix))
         lines.append(f"interface {iface}")
         lines.append(f" ip address {ip} {mask}")
-        # IPv6 en la misma interfaz física (dual-stack), si aplica
+        # IPv6 on the same physical interface (dual-stack), if applicable
         v6 = router.interfaces_v6.get(iface)
         if v6:
             lines.append(f" ipv6 address {v6}")
@@ -78,7 +78,7 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
         lines.append(" exit")
         lines.append("")
 
-    # --- Rutas estáticas ---
+    # --- Static routes ---
     static_routes = [r for r in plan.static_routes if r.router == router.name]
     for route in static_routes:
         line = f"ip route {route.destination} {route.mask} {route.next_hop}"
@@ -131,17 +131,17 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
 
 
 def _switch_config(switch: DevicePlan, plan: TopologyPlan) -> str:
-    """Genera config de un switch: hostname + (si hay) VLANs/access/trunks."""
+    """Generates the config of a switch: hostname + (if any) VLANs/access/trunks."""
     lines: list[str] = []
     lines.append("enable")
     lines.append("configure terminal")
     lines.append(f"hostname {switch.name}")
 
-    # VLAN / access / trunk para este switch
+    # VLAN / access / trunk for this switch
     access = [a for a in plan.access_ports if a.switch == switch.name]
     trunks = [t for t in plan.trunks if t.switch == switch.name]
-    # Las VLANs declaradas que tienen al menos un puerto en este switch (o todas,
-    # si el plan las define globalmente). Mantenemos todas las del plan para simplicidad.
+    # The declared VLANs that have at least one port on this switch (or all of them,
+    # if the plan defines them globally). We keep all of the plan's VLANs for simplicity.
     if access or trunks or plan.vlans:
         vlan_lines = generate_switch_vlan_cli(
             plan.vlans, access, trunks, supports_encap=switch_supports_encap(switch.model)
@@ -154,7 +154,7 @@ def _switch_config(switch: DevicePlan, plan: TopologyPlan) -> str:
 
 
 def generate_pc_config(device: DevicePlan, use_dhcp: bool | None = None) -> str:
-    """Genera instrucciones de configuración para un PC."""
+    """Generates configuration instructions for a PC."""
     lines: list[str] = []
     lines.append(f"--- {device.name} ---")
 
@@ -168,7 +168,7 @@ def generate_pc_config(device: DevicePlan, use_dhcp: bool | None = None) -> str:
         lines.append(f"Default Gateway: {device.gateway}")
     lines.append("DNS Server: 8.8.8.8")
     if use_dhcp:
-        lines.append("Configurar como DHCP para obtener IP automáticamente.")
+        lines.append("Set to DHCP to get an IP automatically.")
     else:
-        lines.append("Configurar IP estática con los valores anteriores.")
+        lines.append("Set a static IP with the values above.")
     return "\n".join(lines)
