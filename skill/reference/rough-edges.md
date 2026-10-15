@@ -117,6 +117,16 @@ with the default outline.
   replaces an existing page only, a new one throws `File not exist: <page>` on PT 9.0.0);
   `TftpServer`/`FtpServer` (`setEnabled`; FTP users via `getFtpUserAccountManager().addFtpUser`);
   `SyslogServer`; `EmailServer` (`addUser/changePassword`, no domain or on/off API).
+- ☠️ **HTTP and HTTPS both off is a trap on PT 9.0.0.810** (reproduced twice, same crash, fault offset
+  `0x227c9da`). From that state, one call doing `setPageContents` + `HttpServer.setEnable(true)` +
+  `HttpsServer.setEnable(true)` hung the script engine ("No answer from PT (timeout)") and PT then
+  crashed. Which of those calls does it is not isolated, so `pt_server_http` refuses, without touching
+  PT, any call that would turn HTTP or HTTPS on or write a page while both read back as off (ok=false,
+  `not_applied`, `warning`). Its `enable` defaults to True, so a pages-only call from that state is
+  refused too. Workaround: turn HTTP or HTTPS on once by hand in the server's Services > HTTP tab, or
+  never switch both off. Verified safe live: toggling HTTP off/on while HTTPS stays on; toggling HTTPS
+  off/on while HTTP stays on; pages + HTTP + HTTPS on when both were already on; turning both off from
+  any state; "HTTP off, HTTPS on" then HTTP on; a browser request timing out in between.
 - ⚠️ `DnsServer.getIpAddOfDomain` / `isDomainNameExisted` read a different table and return
   `0.0.0.0`/`false` for records `nslookup` resolves. Confirm a record with
   `getARecordWithAddress(name, ip)` / `getCNameRecordWithHostname(name, target)` (object or null).

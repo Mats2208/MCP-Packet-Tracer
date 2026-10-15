@@ -89,6 +89,19 @@ def http_page_problems(device: str, failed: list[dict]) -> list[str]:
     return problems
 
 
+def http_both_off_warning(device: str) -> str:
+    """Why server_http_js refused a call (its `blocked`): HTTP and HTTPS were both off.
+
+    Live on PT 9.0.0.810, a call that turned them back on and wrote a page
+    from that state hung the script engine and PT crashed.
+    """
+    return (f"Nothing was changed on {device}: HTTP and HTTPS are both off, and Packet "
+            "Tracer 9.0.0 hangs and then crashes when a single call turns either back on "
+            "or writes pages from that state. Turn HTTP or HTTPS on once by hand in "
+            f"{device}'s Services > HTTP tab (or leave one of them on), then retry. Calls "
+            "that only turn things off are still allowed.")
+
+
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
     # Last URL each host's browser loaded through pt_web_browser (this server
     # process only): tells "same URL again" apart from a failed navigation.
@@ -325,7 +338,12 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
           New pages cannot be created: PT 9.0.0 answers "File not exist"
           (9.0.1 unverified). Such a page comes back in not_applied with
           ok=false; the other pages and switches are still applied.
-        - enable / https_enable: True/False/None (None = leave alone).
+        - enable / https_enable: True/False/None (None = leave alone);
+          enable defaults to True.
+        - PT 9.0.0 hangs and crashes if one call turns HTTP/HTTPS on or writes
+          pages while both are off, so such a call changes nothing and returns
+          ok=false: turn one on in the server's Services > HTTP tab first.
+          Turning things off is always allowed.
         Check it with pt_web_browser(host, "http://<server ip>").
         """
         pg = {str(k): str(v) for k, v in (pages or {}).items()}
@@ -339,6 +357,16 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
                                              https_enable=https_enable), device)
         if error:
             return error
+        blocked = data.pop("blocked", None) or []
+        if blocked:
+            # The JS found HTTP and HTTPS both off and sent nothing to PT.
+            data.pop("failed", None)
+            data["ok"] = False
+            data["not_applied"] = [str(b) for b in blocked]
+            data["warning"] = http_both_off_warning(device)
+            notes = ps.show_after(device, show, capture, output_dir, "http",
+                                  tab="Services", section="HTTP")
+            return with_notes(data, notes)
         failed = data.pop("failed", None) or []
         problems = http_page_problems(device, failed)
         data["ok"] = not problems

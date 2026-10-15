@@ -10,6 +10,8 @@ against PT 9.0.1:
 - HttpServer.setPageContents(url, html) / getPage(url). setPageContents only
   replaces a page that already exists: for a new one PT 9.0.0 throws
   "File not exist: <page>" (not checked on 9.0.1). No API in use here creates one.
+  On PT 9.0.0.810, turning HTTP/HTTPS on or writing pages while both are off
+  hangs the script engine and crashes PT: server_http_js refuses that call.
 
 Same rules as host_js: an IIFE and a single `json.dumps` object with the data.
 """
@@ -194,16 +196,34 @@ def server_http_js(
     Only pages that already exist can be replaced: for a new one PT 9.0.0's
     setPageContents throws "File not exist: <page>". Each page is tried on its
     own; a refused page goes to `failed` and the rest still applies.
+
+    From "HTTP off AND HTTPS off", PT 9.0.0.810 hung and then crashed when one
+    call turned HTTP/HTTPS on and wrote a page (which statement does it is not
+    isolated). So when both read back as off and the call would turn anything
+    on or write a page, nothing is sent to PT: the reply lists the requested
+    changes in `blocked`. Calls that only turn things off still run. If the
+    HTTPS state cannot be read, the call runs as before.
     """
     cfg = {"device": device, "pages": pages or {}, "enable": enable, "https": https_enable}
     return (
         _head(cfg) + _proc("HttpServer") +
         "var done=[];var sizes={};var failed=[];"
+        "var hs=null;try{hs=d.getProcess('HttpsServer');}catch(e){}"
+        # Read both states before any mutating call. null/undefined = unknown,
+        # and an unknown state never blocks.
+        "var h0=null;try{h0=s.isEnabled();}catch(e){}"
+        "var hs0=null;if(hs&&typeof hs.isEnabled==='function'){try{hs0=hs.isEnabled();}catch(e){}}"
+        "function __off(v){return v!==null&&v!==undefined&&!v;}"
+        "var asked=[];var turnsOn=c.enable===true||c.https===true;"
+        "for(var p in c.pages){if(Object.prototype.hasOwnProperty.call(c.pages,p)){asked.push('page '+p);turnsOn=true;}}"
+        "if(c.enable!==null){asked.push(c.enable?'HTTP On':'HTTP Off');}"
+        "if(c.https!==null){asked.push(c.https?'HTTPS On':'HTTPS Off');}"
+        "if(__off(h0)&&__off(hs0)&&turnsOn){reportResult(JSON.stringify({ok:true,blocked:asked,"
+        "done:[],http:false,https:false,port:s.getPortNumber(),page_sizes:{},failed:[]}));return;}"
         "for(var k in c.pages){if(Object.prototype.hasOwnProperty.call(c.pages,k)){"
         "try{s.setPageContents(k,c.pages[k]);}catch(e){failed.push({page:k,error:String(e)});continue;}"
         "sizes[k]=String(s.getPage(k)).length;done.push('page '+k);}}"
         "if(c.enable!==null){s.setEnable(!!c.enable);done.push(c.enable?'HTTP On':'HTTP Off');}"
-        "var hs=null;try{hs=d.getProcess('HttpsServer');}catch(e){}"
         "if(c.https!==null&&hs&&typeof hs.setEnable==='function'){hs.setEnable(!!c.https);"
         "done.push(c.https?'HTTPS On':'HTTPS Off');}"
         "reportResult(JSON.stringify({ok:true,done:done,http:!!s.isEnabled(),"

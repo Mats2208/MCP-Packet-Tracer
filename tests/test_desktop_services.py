@@ -754,6 +754,131 @@ class TestHttpPagesJs:
         assert out["failed"] == [] and out["done"] == ["page index.html"]
 
 
+# ---------------------------------------------------------------------------
+# pt_server_http from "HTTP off AND HTTPS off". Live on PT 9.0.0.810, twice:
+# from that state, pt_server_http(pages=..., enable=True, https_enable=True)
+# got "No answer from PT (timeout)" and PT then crashed (fault offset
+# 0x227c9da). Which statement does it is not isolated, so from that state a
+# call that turns anything on or writes a page must not touch PT at all.
+# ---------------------------------------------------------------------------
+
+def _http_state_fake(http_on: bool, https_on: bool | None) -> str:
+    """HttpServer + HttpsServer (None = no HttpsServer process) that log every mutating call."""
+    return (
+        "var __calls = [];"
+        "var __pages = {'index.html': '<h1>factory</h1>'};"
+        f"var __http = {json.dumps(http_on)}; var __https = {json.dumps(bool(https_on))};"
+        "var s = {"
+        "  setPageContents: function (k, v) { __calls.push('HttpServer.setPageContents ' + k);"
+        "    if (!Object.prototype.hasOwnProperty.call(__pages, k)) { throw 'File not exist: ' + k; }"
+        "    __pages[k] = v; },"
+        "  getPage: function (k) { return __pages[k]; },"
+        "  setEnable: function (x) { __calls.push('HttpServer.setEnable ' + x); __http = x; },"
+        "  isEnabled: function () { return __http; },"
+        "  getPortNumber: function () { return 80; }"
+        "};"
+        "var hs = {"
+        "  setEnable: function (x) { __calls.push('HttpsServer.setEnable ' + x); __https = x; },"
+        "  isEnabled: function () { return __https; }"
+        "};"
+        f"var __has_https = {json.dumps(https_on is not None)};"
+        "var d = {getProcess: function (n) {"
+        "  return n === 'HttpServer' ? s : (n === 'HttpsServer' && __has_https ? hs : null); }};"
+        "var ipc = {network: function () { return {getDevice: function () { return d; }}; }};"
+    )
+
+
+def _http_live(tmp_path, http_on, https_on, **tool_args):
+    """Run pt_server_http end to end: its JS executes in Node against the fake.
+
+    Returns (tool reply as dict, mutating calls the fake PT received).
+    """
+    calls: list[list[str]] = []
+
+    def reply(js):
+        # Wrapped the way the bridge wraps every command (bridge_context.py).
+        wrapped = ("try{" + js + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
+                   "reportResult(JSON.stringify(__calls));")
+        reports = run_pt_js(wrapped, _http_state_fake(http_on, https_on), tmp_path)
+        assert len(reports) == 2, reports
+        calls.append(json.loads(reports[1]))
+        return reports[0]
+
+    call, _ = _tools(tmp_path, reply=reply)
+    out = json.loads(call("pt_server_http", device="Server0", **tool_args))
+    assert len(calls) == 1
+    return out, calls[0]
+
+
+@requires_node
+class TestHttpBothOffGuard:
+    @pytest.mark.parametrize("args", [
+        pytest.param({"pages": {"index.html": "<p>x</p>"}, "enable": True, "https_enable": True},
+                     id="pages+http+https (the live crash)"),
+        pytest.param({"pages": {"index.html": "<p>x</p>"}}, id="pages only, enable defaults to True"),
+        pytest.param({"pages": {"index.html": "<p>x</p>"}, "enable": None}, id="pages only, enable=None"),
+        pytest.param({"enable": True}, id="http on only"),
+        pytest.param({"enable": None, "https_enable": True}, id="https on only"),
+        pytest.param({"enable": False, "https_enable": True}, id="http off + https on"),
+    ])
+    def test_both_off_blocks_anything_that_turns_on_or_writes(self, tmp_path, args):
+        out, calls = _http_live(tmp_path, False, False, **args)
+        assert calls == []  # PT is not touched at all
+        assert out["ok"] is False
+        assert out["done"] == []
+        assert out["not_applied"]
+        assert out["http"] is False and out["https"] is False
+        warning = out["warning"]
+        assert "both off" in warning and "crash" in warning
+        assert "Services > HTTP" in warning  # the GUI workaround
+        assert "only turn things off" in warning
+
+    def test_blocked_reply_lists_every_requested_change(self, tmp_path):
+        out, _ = _http_live(tmp_path, False, False, pages={"index.html": "<p>x</p>"},
+                            enable=True, https_enable=True)
+        assert out["not_applied"] == ["page index.html", "HTTP On", "HTTPS On"]
+
+    def test_both_off_turning_off_is_allowed(self, tmp_path):
+        out, calls = _http_live(tmp_path, False, False, enable=False, https_enable=False)
+        assert calls == ["HttpServer.setEnable false", "HttpsServer.setEnable false"]
+        assert out["ok"] is True and "warning" not in out and "not_applied" not in out
+        assert out["http"] is False and out["https"] is False
+
+    def test_http_off_https_on_then_enable_is_applied(self, tmp_path):
+        out, calls = _http_live(tmp_path, False, True, enable=True)
+        assert calls == ["HttpServer.setEnable true"]
+        assert out["ok"] is True and out["http"] is True and out["https"] is True
+
+    def test_http_off_https_on_pages_only_goes_through(self, tmp_path):
+        out, calls = _http_live(tmp_path, False, True, pages={"index.html": "<p>x</p>"})
+        assert calls == ["HttpServer.setPageContents index.html", "HttpServer.setEnable true"]
+        assert out["ok"] is True and out["done"] == ["page index.html", "HTTP On"]
+
+    def test_http_on_https_off_then_https_is_applied(self, tmp_path):
+        out, calls = _http_live(tmp_path, True, False, enable=None, https_enable=True)
+        assert calls == ["HttpsServer.setEnable true"]
+        assert out["ok"] is True and out["http"] is True and out["https"] is True
+
+    def test_both_on_full_call_is_applied(self, tmp_path):
+        out, calls = _http_live(tmp_path, True, True, pages={"index.html": "<p>x</p>"},
+                                enable=True, https_enable=True)
+        assert calls == ["HttpServer.setPageContents index.html", "HttpServer.setEnable true",
+                         "HttpsServer.setEnable true"]
+        assert out["ok"] is True and out["page_sizes"] == {"index.html": len("<p>x</p>")}
+
+    def test_no_https_process_is_not_blocked(self, tmp_path):
+        # HTTPS state unknown: keep the old behaviour rather than guess.
+        out, calls = _http_live(tmp_path, False, None, pages={"index.html": "<p>x</p>"},
+                                enable=True)
+        assert calls == ["HttpServer.setPageContents index.html", "HttpServer.setEnable true"]
+        assert out["ok"] is True and out["https"] is None
+
+    def test_description_warns_about_the_crash(self):
+        from tests._registry_src import tool_api
+        desc = tool_api()["pt_server_http"]["description"]
+        assert "both are off" in desc and "crash" in desc and "Services > HTTP" in desc
+
+
 def _http_tool_reply(failed):
     def reply(js):
         return json.dumps({"ok": True, "done": ["page index.html", "HTTP On"], "http": True,
