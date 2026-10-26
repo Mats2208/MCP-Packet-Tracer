@@ -123,3 +123,69 @@ def test_registration_survives_a_changed_sdk_internal(monkeypatch, tmp_path, bro
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert {"pt_cli", "pt_server_dhcp", "pt_live_deploy"} <= names
 
+
+
+def test_freshly_started_bridge_waits_for_pt_to_reconnect(monkeypatch):
+    """The bridge starts on the first tool call, and the extension notices it on its
+    next /status poll (every 2 s). Without a grace period the very first
+    pt_bridge_status always said "NOT connected" (seen live 2026-10-25)."""
+
+    class FakeBridge:
+        def start(self):
+            pass
+
+    ctx = _ctx()
+    started = {"up": False}
+    polls = {"n": 0}
+    monkeypatch.setattr(bridge_context, "PTCommandBridge", FakeBridge)
+    monkeypatch.setattr(bridge_context, "BRIDGE_GRACE_POLL_S", 0.0)
+
+    def is_up():
+        return started["up"]
+
+    def pt_connected():
+        polls["n"] += 1
+        return polls["n"] >= 3  # PT shows up on the third look
+
+    orig_start = FakeBridge.start
+    def start(self):
+        started["up"] = True
+        return orig_start(self)
+    monkeypatch.setattr(FakeBridge, "start", start)
+    monkeypatch.setattr(ctx, "bridge_is_up", is_up)
+    monkeypatch.setattr(ctx, "bridge_pt_connected", pt_connected)
+
+    assert ctx.ensure_bridge() is True
+    assert polls["n"] >= 3
+
+
+def test_check_bridge_rechecks_after_starting_the_bridge(monkeypatch):
+    """check_bridge started the bridge and returned "not connected" without looking
+    again, so the first tool call of a session failed even when PT connected during
+    the grace period (seen live 2026-10-25)."""
+    ctx = _ctx()
+    state = {"started": False}
+    monkeypatch.setattr(ctx, "pick_channel", lambda: "http" if state["started"] else "")
+    monkeypatch.setattr(ctx, "ensure_bridge", lambda: state.update(started=True) or True)
+    assert ctx.check_bridge() is None
+
+
+def test_full_build_starts_the_bridge_before_choosing_a_channel():
+    from tests._registry_src import registry_source
+    src = registry_source()
+    body = src[src.index("def pt_full_build("):]
+    deploy = body[body.index("# --- Deploy ---"):]
+    assert deploy.index("_ensure_bridge()") < deploy.index("_pick_channel()")
+
+
+def test_ensure_bridge_without_grace_does_not_wait(monkeypatch):
+    class FakeBridge:
+        def start(self):
+            pass
+    ctx = _ctx()
+    monkeypatch.setattr(bridge_context, "PTCommandBridge", FakeBridge)
+    monkeypatch.setattr(ctx, "bridge_is_up", lambda: ctx.instance is not None)
+    looked = []
+    monkeypatch.setattr(ctx, "bridge_pt_connected", lambda: looked.append(1) or False)
+    assert ctx.ensure_bridge(grace=False) is True
+    assert looked == []

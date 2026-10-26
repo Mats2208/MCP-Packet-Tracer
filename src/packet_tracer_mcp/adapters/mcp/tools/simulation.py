@@ -263,8 +263,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "(for example pt_verify_connectivity) and read again."
             )
         elif result["clean"]:
+            normal = len(result["expected_drops"])
             result["summary"] = (
-                f"{result['frames']} frame(s) read, none dropped."
+                f"{result['frames']} frame(s) read, none failed."
+                + (f" {normal} dropped as normal operation (flooded frames, STP BPDUs, multicast at hosts)." if normal else "")
             )
         else:
             reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])

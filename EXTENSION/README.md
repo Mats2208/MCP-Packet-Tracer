@@ -7,11 +7,12 @@ folder is its source.
 
 ```
 EXTENSION/
-  webview/         Chromium webview UI (index.html + interface.js).
-                   HTTP polling + the dashboard the user sees.
-  script-engine/   Runs inside PT's script engine (main.js). The file-bridge,
-                   token read, and installMcpHelpers live here — runs with or
-                   without the window open.
+  webview/         The MCP Control Center window (index.html + interface.js, no
+                   dependencies): connection state, what the agent did, and an
+                   advanced JS console. HTTP polling lives here.
+  script-engine/   Runs inside PT's script engine: core.js (the runtime the server
+                   calls) + main.js (file-bridge, token read, installMcpHelpers).
+                   Runs with or without the window open.
 ```
 
 ## Two channels, one extension
@@ -25,10 +26,16 @@ EXTENSION/
 
 The MCP server picks one channel per command automatically.
 
-## Tracking & license
+## Installing
 
-`webview/*` and `script-engine/main.js` are this project's code and are tracked.
-The other `script-engine/*.js` files are reference copies of
-[PTBuilder](https://github.com/kimmknight/PTBuilder) (Kim Knight, unlicensed) and
-are **git-ignored** — see [`script-engine/README.md`](script-engine/README.md) for
-how to obtain them to build the `.pts`.
+Drop the built `.pts` in Packet Tracer's own `extensions` folder, in a subfolder
+(`extensions/MCPControlCenter/MCPControlCenter.pts`). At the next start PT says it
+*"has detected a new script module"* and the user clicks **Yes** — no menus. On macOS
+that folder is inside the app bundle (`…app/Contents/extensions/`); on Windows it is
+under `Program Files` and needs admin rights.
+
+## License
+
+Everything in this folder is this project's code, MIT. Up to V5 the build also
+needed [PTBuilder](https://github.com/kimmknight/PTBuilder)'s script-engine files;
+since V6 it does not (see [`script-engine/README.md`](script-engine/README.md)).

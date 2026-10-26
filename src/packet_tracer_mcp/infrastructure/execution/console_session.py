@@ -546,7 +546,9 @@ def format_run(run: ConsoleRun, label: str) -> str:
     for r in run.results:
         mark = _STATUS_MARK.get(r.status, r.status)
         lines.append("")
-        lines.append(f"{prev_prompt}{r.command}    [{mark}]" if prev_prompt else f"> {r.command}    [{mark}]")
+        # What answers a Password: prompt is a secret: never echo it back.
+        shown = "********" if prev_prompt.rstrip().lower().endswith("password:") else r.command
+        lines.append(f"{prev_prompt}{shown}    [{mark}]" if prev_prompt else f"> {shown}    [{mark}]")
         if r.output:
             lines.append(r.output)
         if r.note:

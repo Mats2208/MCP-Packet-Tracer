@@ -2966,7 +2966,7 @@
   }
  },
  "pt_verify_connectivity": {
-  "description": "Runs a REAL ping from a device in PT and returns the result.\n\nUnlike validations that are only printed as \"check it by\nhand\", this runs `ping` on the device's console and parses the real\noutput: how many packets arrived. Use it to confirm that a freshly\ndeployed topology really has connectivity.\n\nWorks with hosts (PC/Server/Laptop, format \"Packets: Sent=..\") and with\nIOS devices (router/switch, format \"Success rate is N percent\").\n\nParameters:\n- from_device: name of the device the ping starts from\n- to_ip: destination IP\n- count: reserved; PT uses its default per type (PC 4, IOS 5). A \"-n\"\n  flag would break on IOS, so it is not forced for now.\n- timeout_s: maximum wait (default 20s). A FAILED ping takes longer\n  than a successful one: each packet waits for its own timeout before\n  being declared lost (~13s measured for 4 lost packets).",
+  "description": "Runs a REAL ping from a device in PT and returns the result.\n\nUnlike validations that are only printed as \"check it by\nhand\", this runs `ping` on the device's console and parses the real\noutput: how many packets arrived. Use it to confirm that a freshly\ndeployed topology really has connectivity.\n\nWorks with hosts (PC/Server/Laptop, format \"Packets: Sent=..\") and with\nIOS devices (router/switch, format \"Success rate is N percent\").\n\nParameters:\n- from_device: name of the device the ping starts from\n- to_ip: destination IP\n- count: reserved; PT uses its default per type (PC 4, IOS 5). A \"-n\"\n  flag would break on IOS, so it is not forced for now.\n- timeout_s: maximum wait (default 45s: on a topology deployed moments\n  ago, switch ports spend ~30s in STP before forwarding). A FAILED ping takes longer\n  than a successful one: each packet waits for its own timeout before\n  being declared lost (~13s measured for 4 lost packets).",
   "inputSchema": {
    "properties": {
     "count": {
@@ -2979,7 +2979,7 @@
      "type": "string"
     },
     "timeout_s": {
-     "default": 20.0,
+     "default": 45.0,
      "title": "Timeout S",
      "type": "number"
     },

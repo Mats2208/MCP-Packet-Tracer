@@ -41,6 +41,16 @@ class TestDiff:
         result = diff(_plan(), live)
         assert "ROGUE" in result["extra_devices"]
 
+    def test_power_distribution_device_is_not_extra(self):
+        """PT keeps a "Power Distribution Device0" far off the canvas (seen at 3898,3885
+        after opening a .pkt, 2026-10-25). Nobody placed it, so it is not drift."""
+        live = [
+            {"name": "R1", "model": "2911", "ports": []},
+            {"name": "PC1", "model": "PC-PT", "ports": []},
+            {"name": "Power Distribution Device0", "model": "Power Distribution Device", "ports": []},
+        ]
+        assert diff(_plan(), live)["extra_devices"] == []
+
     def test_ip_mismatch(self):
         live = [
             {"name": "R1", "model": "2911",

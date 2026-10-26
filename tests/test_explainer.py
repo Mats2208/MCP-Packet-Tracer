@@ -24,3 +24,10 @@ class TestExplainer:
         plan, _ = plan_from_request(req)
         explanations = explain_plan(plan)
         assert any("WAN" in e for e in explanations)
+
+    def test_suggested_checks_line_is_english(self):
+        req = TopologyRequest(routers=1, pcs_per_lan=2)
+        plan, _ = plan_from_request(req)
+        line = [e for e in explain_plan(plan) if "ping" in e]
+        assert line and line[0].startswith("Suggested checks: ")
+        assert "e.g." in line[0]

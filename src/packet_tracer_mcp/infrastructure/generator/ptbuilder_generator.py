@@ -9,8 +9,7 @@ from __future__ import annotations
 import json
 from ...domain.models.plans import TopologyPlan
 from ...shared.constants import (
-    PT_DEVICE_TYPE,
-    PT_DEVICE_TYPE_DEFAULT,
+    pt_device_type,
     PT_CONNECT_TYPE,
     PT_CONNECT_TYPE_DEFAULT,
 )
@@ -29,7 +28,7 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     # JS literal and the rest was executed as code in the Script Engine.
     # It is the same pattern that generate_executable_script() below already uses.
     for dev in plan.devices:
-        device_type = PT_DEVICE_TYPE.get(dev.category, PT_DEVICE_TYPE_DEFAULT)
+        device_type = pt_device_type(dev.model, dev.category)
         lines.append(
             f'lwAddDevice({json.dumps(dev.name)}, {device_type}, '
             f'{json.dumps(dev.model)}, {int(dev.x)}, {int(dev.y)});'

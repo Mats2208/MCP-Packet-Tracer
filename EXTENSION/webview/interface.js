@@ -1,336 +1,129 @@
 // ============================================================================
-// PT-MCP Builder Interface v5
-// Premium Control Center — Editor, Terminal, Status Dashboard, Quick Build
+// MCP Control Center V6 — the window Packet Tracer shows for the MCP extension.
+// Connection state, what the agent did, debug tools and a JS console. The bridge
+// logic (token, long-poll, file channel) is unchanged from V5.
 // ============================================================================
 
-// ------------------------------------------------------------------ State ---
-
 var S = {
-    // Connection
-    bridgeUp:      false,
-    ptConnected:   false,
-    lastPollAgo:   null,
-    commandCount:  0,
-    lastActivity:  null,
-    sessionStart:  Date.now(),
-
-    // UI
-    activeTab:     "editor",
-    errCount:      0,
-
-    // Logs
-    logs:          [],       // { ts, type, msg } objects
-    logFilter:     "all",
-    maxLogs:       500,
-
-    // History
-    history:       [],       // string[] — ring buffer of 20 scripts
-    historyPos:    -1,       // navigator position
-
-    // Sparkline
-    pollTimes:     [],       // timestamps of successful polls (last 20)
-
-    // Editor auto-save debounce
-    _saveTimer:    null,
+    bridgeUp:     false,
+    ptConnected:  false,
+    tokenOk:      null,     // null = not read yet
+    fileBridge:   null,
+    commandCount: 0,
+    sessionStart: Date.now(),
+    entries:      [],       // { ts, type, text, detail, count }
+    filter:       "all",
+    errCount:     0,
+    maxEntries:   400
 };
 
 var BRIDGE_BASE = "http://127.0.0.1:54321";
 
 // Token shared with the MCP server. This webview runs under the this-sm:
-// scheme and has no file system access, so it cannot read the token from
-// disk: it asks the Script Engine for it with $se("getMcpToken"), which can read
-// files. No pairing or user action is needed. It is deliberately not cached
-// (if the server rotates the token, the copy would silently go stale).
+// scheme and has no file system access, so it asks the Script Engine for it
+// with $se("getMcpToken"), which can read files. It is deliberately not cached:
+// if the server rotates the token, a cached copy would silently go stale.
 var S_TOKEN = "";
 
 function bridgeUrl(path) {
     return BRIDGE_BASE + path + (S_TOKEN ? "?t=" + encodeURIComponent(S_TOKEN) : "");
 }
 
-function bootstrapSnippet() {
-    var q = encodeURIComponent(S_TOKEN);
-    return '/* PT-MCP Bridge */ window.webview.evaluateJavaScriptAsync(' +
-        '"setInterval(function(){var x=new XMLHttpRequest();' +
-        "x.open('GET','http://127.0.0.1:54321/next?t=" + q + "',true);" +
-        'x.onload=function(){if(x.status===200&&x.responseText)' +
-        // try/catch: without it, an error inside runCode opens a PT modal that
-        // freezes the webview and kills the polling. The other copies of the bootstrap
-        // already had it; this one had fallen behind.
-        "{try{$se('runCode',x.responseText)}catch(e){}}};x.onerror=function(){};" +
-        'x.send()},500)");';
-}
+// ------------------------------------------------------------------ Token ---
 
-function refreshBootstrapSnippet() {
-    var el = document.getElementById("bootstrapSnippet");
-    if (el) el.textContent = bootstrapSnippet();
-}
-
-/* Loads the token from the Script Engine, which reads it from disk.
-   The webview cannot touch files; the Script Engine can. $se() returns a
-   Promise. No pairing or user action is needed: the extension starts and
-   works. */
 function loadToken(onDone) {
     try {
         $se("getMcpToken").then(function(tok) {
             if (tok) {
                 S_TOKEN = String(tok);
-                refreshBootstrapSnippet();
-                log("MCP token loaded — bridge authenticated", "ok");
+                S.tokenOk = true;
+                updateUI();
                 if (onDone) onDone(true);
             } else {
+                S.tokenOk = false;
                 reportMissingToken();
+                updateUI();
                 if (onDone) onDone(false);
             }
         }).catch(function(e) {
-            log("Could not read the MCP token: " + e, "err");
+            S.tokenOk = false;
+            addEntry("err", "Could not read the security token", String(e));
+            updateUI();
             if (onDone) onDone(false);
         });
     } catch(e) {
-        log("Script Engine unavailable — cannot read the MCP token", "err");
+        S.tokenOk = false;
+        addEntry("err", "Script Engine unavailable — cannot read the security token");
+        updateUI();
         if (onDone) onDone(false);
     }
 }
 
-/* Without a token the bridge returns 401 for everything. Say WHERE it was
-   searched, because the cause is almost always that the MCP server never ran
-   on this machine. */
+/* Without a token the bridge answers 401 to everything. The cause is almost
+   always that the MCP server never ran on this machine, so say so. */
 function reportMissingToken() {
-    log("No MCP token found on this machine.", "err");
-    log("Start the MCP server once (it creates the token on first run), " +
-        "then reopen this window.", "warn");
+    addEntry("err", "No security token on this machine",
+        "Start your AI agent with the MCP server once (it creates the token), then reopen this window.");
     try {
         $se("getMcpTokenInfo").then(function(info) {
             var d = JSON.parse(info);
-            (d.searched || []).forEach(function(p) { log("  looked in: " + p, "info"); });
+            if (d.searched && d.searched.length) addEntry("info", "Looked for it in", d.searched.join("\n"));
         }).catch(function() {});
     } catch(e) {}
+}
+
+/* A 401 means the bridge is up but our token is not valid — typically because
+   the server rotated it. Re-read it from disk, capped so it cannot loop. */
+var _tokenReloads = 0;
+function handleUnauthorized() {
+    if (_tokenReloads >= 3) return;
+    _tokenReloads++;
+    addEntry("warn", "The MCP server rejected the token — reading it again");
+    loadToken(function(ok) { if (ok) _tokenReloads = 0; });
 }
 
 // ------------------------------------------------------------------ Init ---
 
-function init() {
-    // The token is read from disk through the Script Engine on every startup.
-    // It is deliberately not cached with $putData: if the MCP server rotates it, the
-    // cached copy would go stale and the failure would be invisible.
-    loadToken();
-    refreshBootstrapSnippet();
+/* PT injects a stylesheet that forces html/body to var(--pt-bg-color) / var(--pt-text-color)
+   with !important, following PT's theme. prefers-color-scheme follows the OS instead, so on
+   Windows in dark mode (PT light) a palette taken from it put near-white text on PT's white
+   body. Follow PT; the OS is only the fallback for a PT that does not inject those variables. */
+function applyTheme() {
+    var pt = getComputedStyle(document.documentElement).getPropertyValue("--pt-bg-color");
+    var rgb = (pt || "").match(/\d+(\.\d+)?/g);
+    var light;
+    if (rgb && rgb.length >= 3) {
+        light = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 128;
+    } else {
+        light = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+    }
+    document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+}
 
-    // Load persisted code
+function init() {
+    applyTheme();
+    // PT's sheet may land after this inline call: check again when it does, and on load.
+    window.addEventListener("load", applyTheme);
+    try { new MutationObserver(applyTheme).observe(document.head, { childList: true }); } catch(e) {}
+    loadToken();
     try {
         $getData("code").then(function(code) {
-            if (code) document.getElementById("codeeditor").value = code;
+            if (code) document.getElementById("code").value = code;
         }).catch(function() {});
     } catch(e) {}
 
-    // Load history
-    try {
-        $getData("history").then(function(h) {
-            if (h) {
-                S.history = JSON.parse(h);
-                refreshHistoryDropdown();
-            }
-        }).catch(function() {});
-    } catch(e) {}
+    document.getElementById("code").addEventListener("keydown", function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runConsole(); }
+    });
+    document.getElementById("code").addEventListener("input", function() {
+        try { $putData("code", document.getElementById("code").value); } catch(e) {}
+    });
 
-    log("PT-MCP Control Center started", "info");
-    log("Polling bridge at http://127.0.0.1:54321 …", "info");
-
-    // Update uptime every second
     setInterval(updateUptime, 1000);
-
-    // Poll bridge every 2s
     setInterval(pollBridgeStatus, 2000);
     pollBridgeStatus();
-
-    // Poll for commands every 500ms
-    // Re-chains itself (long-poll); it has no setInterval.
-    pollCommands();
-
-    updateQBPreview();
-}
-
-// ------------------------------------------------------------------ Tabs ---
-
-function switchTab(name) {
-    S.activeTab = name;
-
-    document.querySelectorAll(".tab-btn").forEach(function(b) {
-        b.classList.toggle("active", b.id === "tab-" + name);
-    });
-    document.querySelectorAll(".pane").forEach(function(p) {
-        p.classList.toggle("active", p.id === "pane-" + name);
-    });
-
-    // Show/hide editor toolbar
-    var tb = document.getElementById("editor-toolbar");
-    if (tb) tb.style.display = (name === "editor") ? "flex" : "none";
-
-    // When switching to terminal, ensure log is rendered
-    if (name === "terminal") renderLog();
-}
-
-// ---------------------------------------------------------------- Logging --
-
-var TYPE_LABELS = {
-    info: "INFO",
-    ok:   " OK ",
-    warn: "WARN",
-    err:  " ERR",
-    cmd:  " CMD",
-    recv: "RECV",
-};
-
-function log(message, type) {
-    type = type || "info";
-    var now = new Date();
-    var ts = now.toLocaleTimeString("en-GB", { hour12: false });
-
-    S.logs.push({ ts: ts, type: type, msg: message });
-
-    // Trim
-    if (S.logs.length > S.maxLogs) S.logs.splice(0, S.logs.length - S.maxLogs);
-
-    S.lastActivity = ts;
-    setElText("st-last", ts);
-
-    if (type === "err") {
-        S.errCount++;
-        var badge = document.getElementById("errBadge");
-        if (badge) {
-            badge.textContent = S.errCount > 99 ? "99+" : S.errCount;
-            badge.classList.add("active");
-            // Show notif if not on terminal tab
-            if (S.activeTab !== "terminal") showNotif(message);
-        }
-    }
-
-    // Only re-render if terminal is active (avoid heavy DOM work when hidden)
-    if (S.activeTab === "terminal") {
-        appendLogLine({ ts: ts, type: type, msg: message });
-    }
-}
-
-function appendLogLine(entry) {
-    // Filter check
-    if (!logVisible(entry)) return;
-
-    var search = document.getElementById("logSearch");
-    var query = search ? search.value.trim().toLowerCase() : "";
-
-    var panel = document.getElementById("logPanel");
-    if (!panel) return;
-
-    // Remove empty state
-    var empty = panel.querySelector(".log-empty");
-    if (empty) empty.remove();
-
-    var line = document.createElement("div");
-    line.className = "log-line " + entry.type;
-
-    var msg = escapeHtml(entry.msg);
-    if (query && msg.toLowerCase().indexOf(query) >= 0) {
-        msg = msg.replace(new RegExp("(" + escapeRe(query) + ")", "gi"),
-            '<span class="log-highlight">$1</span>');
-    }
-
-    line.innerHTML =
-        '<span class="log-ts">' + entry.ts + '</span>' +
-        '<span class="log-tag">' + (TYPE_LABELS[entry.type] || entry.type.toUpperCase()) + '</span>' +
-        '<span class="log-msg">' + msg + '</span>';
-
-    panel.appendChild(line);
-    panel.scrollTop = panel.scrollHeight;
-
-    updateLogCount();
-}
-
-function renderLog() {
-    var panel = document.getElementById("logPanel");
-    if (!panel) return;
-    panel.innerHTML = "";
-
-    var search = document.getElementById("logSearch");
-    var query = search ? search.value.trim().toLowerCase() : "";
-
-    var visible = S.logs.filter(logVisible);
-
-    if (visible.length === 0) {
-        panel.innerHTML =
-            '<div class="log-empty">' +
-            '<div class="log-empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg></div>' +
-            '<div class="log-empty-text">No log entries match this filter</div>' +
-            '</div>';
-        updateLogCount(0);
-        return;
-    }
-
-    visible.forEach(function(entry) {
-        var line = document.createElement("div");
-        line.className = "log-line " + entry.type;
-
-        var msg = escapeHtml(entry.msg);
-        if (query && msg.toLowerCase().indexOf(query) >= 0) {
-            msg = msg.replace(new RegExp("(" + escapeRe(query) + ")", "gi"),
-                '<span class="log-highlight">$1</span>');
-        }
-
-        line.innerHTML =
-            '<span class="log-ts">' + entry.ts + '</span>' +
-            '<span class="log-tag">' + (TYPE_LABELS[entry.type] || entry.type.toUpperCase()) + '</span>' +
-            '<span class="log-msg">' + msg + '</span>';
-
-        panel.appendChild(line);
-    });
-
-    panel.scrollTop = panel.scrollHeight;
-    updateLogCount(visible.length);
-}
-
-function logVisible(entry) {
-    var f = S.logFilter;
-    if (f !== "all" && entry.type !== f) return false;
-    var search = document.getElementById("logSearch");
-    if (search && search.value.trim()) {
-        return entry.msg.toLowerCase().indexOf(search.value.trim().toLowerCase()) >= 0;
-    }
-    return true;
-}
-
-function updateLogCount(n) {
-    var el = document.getElementById("logCount");
-    if (!el) return;
-    var count = (n !== undefined) ? n : S.logs.filter(logVisible).length;
-    el.textContent = count + " entr" + (count === 1 ? "y" : "ies");
-}
-
-function setFilter(f) {
-    S.logFilter = f;
-    document.querySelectorAll(".filter-btn").forEach(function(b) {
-        b.classList.remove("active");
-    });
-    var btn = document.getElementById("f-" + f);
-    if (btn) btn.classList.add("active");
-    renderLog();
-}
-
-function clearLog() {
-    S.logs = [];
-    S.errCount = 0;
-    var badge = document.getElementById("errBadge");
-    if (badge) { badge.textContent = "0"; badge.classList.remove("active"); }
-    renderLog();
-    log("Log cleared", "info");
-}
-
-function exportLogs() {
-    var lines = S.logs.map(function(e) {
-        return "[" + e.ts + "] [" + (TYPE_LABELS[e.type] || e.type).trim() + "] " + e.msg;
-    });
-    navigator.clipboard.writeText(lines.join("\n")).then(function() {
-        log("Exported " + lines.length + " log entries to clipboard", "ok");
-    }).catch(function(e) {
-        log("Export failed: " + e, "err");
-    });
+    pollCommands();   // re-chains itself (long-poll)
+    updateUI();
 }
 
 // ---------------------------------------------------------------- Bridge ---
@@ -341,51 +134,29 @@ function pollBridgeStatus() {
         x.open("GET", bridgeUrl("/status"), true);
         x.timeout = 2000;
         x.onload = function() {
-            if (x.status === 401) {
-                // The bridge is alive but does not recognize us: token missing,
-                // expired or rotated. Retry the pairing once.
-                handleUnauthorized();
-                setBridgeDown();
-                return;
-            }
-            if (x.status === 200) {
+            if (x.status === 401) { handleUnauthorized(); setBridgeDown(); return; }
+            if (x.status !== 200) { setBridgeDown(); return; }
+            try {
+                var data = JSON.parse(x.responseText);
+                var wasPT = S.ptConnected;
+                S.bridgeUp = true;
+                S.ptConnected = data.connected;
+                if (!wasPT && S.ptConnected) addEntry("ok", "Connected to the MCP server");
+                if (wasPT && !S.ptConnected) addEntry("warn", "The MCP server stopped polling");
+                // The file channel runs in the Script Engine, with or without this window.
                 try {
-                    var data = JSON.parse(x.responseText);
-                    var wasBridge = S.bridgeUp;
-                    var wasPT = S.ptConnected;
-                    S.bridgeUp = true;
-                    S.ptConnected = data.connected;
-                    S.lastPollAgo = data.last_poll_ago;
-
-                    if (S.ptConnected) {
-                        S.pollTimes.push(Date.now());
-                        if (S.pollTimes.length > 20) S.pollTimes.shift();
-                        renderSparkline();
-                    }
-
-                    if (!wasBridge)            log("Bridge HTTP online at :54321", "ok");
-                    if (!wasPT && S.ptConnected) log("Packet Tracer connected — polling active", "ok");
-                    if (wasPT && !S.ptConnected) log("PT disconnected — polling stopped", "warn");
-
-                    updateConnectionUI();
-                    // File channel status (runs in the Script Engine, with
-                    // or without the window). It tells the user they can close the
-                    // window and PT will keep executing commands.
-                    try {
-                        $se("fileBridgeStatus").then(function(s) {
-                            try { S.fileBridge = JSON.parse(s); } catch(e) {}
-                            updateFileBridgeBadge();
-                        }).catch(function() {});
-                    } catch(e) {}
-                } catch(e) {
-                    setBridgeDown();
-                }
-            } else {
+                    $se("fileBridgeStatus").then(function(s) {
+                        try { S.fileBridge = JSON.parse(s); } catch(e) {}
+                        updateUI();
+                    }).catch(function() {});
+                } catch(e) {}
+                updateUI();
+            } catch(e) {
                 setBridgeDown();
             }
         };
         x.onerror = x.ontimeout = function() {
-            if (S.bridgeUp) log("Bridge unreachable at :54321", "err");
+            if (S.bridgeUp) addEntry("warn", "Lost the MCP server", "Nothing listens on 127.0.0.1:54321 — is your agent still running?");
             setBridgeDown();
         };
         x.send();
@@ -397,72 +168,34 @@ function pollBridgeStatus() {
 function setBridgeDown() {
     S.bridgeUp = false;
     S.ptConnected = false;
-    updateConnectionUI();
+    updateUI();
 }
 
-/* Lights up the file-bridge badge when the Script Engine loop is alive.
-   Green = PT keeps executing even when you close this window. */
-function updateFileBridgeBadge() {
-    var el = document.getElementById("fbBadge");
-    if (!el) return;
-    var fb = S.fileBridge;
-    var label = "file-bridge";
-    if (fb && fb.active) {
-        el.className = "chip fb-badge ready";
-        if (fb.count > 0) label += " · " + fb.count;
-        el.title = "File-bridge active — PT keeps executing with this window closed"
-                 + (fb.count > 0 ? " (" + fb.count + " commands run via file)" : "");
-    } else {
-        el.className = "chip fb-badge";
-        el.title = "File-bridge inactive";
-    }
-    // preserve the leading dot span, replace only the label text
-    el.innerHTML = '<span class="conn-dot"></span>' + label;
-}
-
-/* A 401 means the bridge is up but our token is not valid — typically
-   because the server rotated it. It is re-read from disk, capped so it does
-   not loop if the file is really missing. */
-var _tokenReloads = 0;
-function handleUnauthorized() {
-    if (_tokenReloads >= 3) return;
-    _tokenReloads++;
-    log("Bridge rejected our token — re-reading it from disk…", "warn");
-    loadToken(function(ok) {
-        if (ok) _tokenReloads = 0;
-    });
-}
-
-/* Chained long-poll: the bridge holds /next until there is something (or ~2s) and
-   returns ALL queued commands at once. This used to be a setInterval of 500 ms
-   that fetched one command per round trip, so a 40-command topology took tens
-   of seconds. It always re-chains — there is never a branch that leaves the
-   loop dead. */
+/* Chained long-poll: the bridge holds /next until there is something (or ~2 s)
+   and returns ALL queued commands at once. It always re-chains — no branch
+   leaves the loop dead. */
 function pollCommands() {
     if (!S.bridgeUp) { setTimeout(pollCommands, 500); return; }
     var again = function() { setTimeout(pollCommands, 0); };
     try {
         var x = new XMLHttpRequest();
         x.open("GET", bridgeUrl("/next"), true);
-        // Looser than the bridge's long-poll, so we do not cut it off ourselves.
-        x.timeout = 8000;
+        x.timeout = 8000;   // looser than the bridge's long-poll
         x.onload = function() {
             if (x.status === 401) { handleUnauthorized(); setTimeout(pollCommands, 1000); return; }
             if (x.status === 200 && x.responseText) {
                 var batch = x.responseText;
-                var n = batch.split("\n").length;
-                var preview = batch.length > 120 ? batch.substring(0, 120) + "…" : batch;
-                log("MCP → PT (" + n + " cmd" + (n > 1 ? "s" : "") + "): " + preview, "recv");
                 try {
-                    // The whole batch goes in a single runCode: each command already
-                    // carries its own try/catch, so one bad one does not take down the others.
+                    // One runCode for the whole batch: each command carries its own
+                    // try/catch, so one bad command does not take down the others.
                     $se("runCode", batch);
-                    S.commandCount += n;
-                    log("Batch executed", "ok");
-                    updateCommandCount();
+                    var lines = batch.split("\n").filter(function(l) { return l.trim(); });
+                    S.commandCount += lines.length;
+                    describeBatch(lines);
                 } catch(e) {
-                    log("Execution failed: " + e.message, "err");
+                    addEntry("err", "Packet Tracer could not run a command", e.message);
                 }
+                updateUI();
             }
             again();
         };
@@ -473,886 +206,289 @@ function pollCommands() {
     }
 }
 
-function updateConnectionUI() {
-    // Header dot + label
-    var dot   = document.getElementById("connDot");
-    var label = document.getElementById("connLabel");
-    var sbDot = document.getElementById("sb-bridge-dot");
-    var sbLbl = document.getElementById("sb-bridge-label");
-    var httpChip  = document.getElementById("httpChip");
-    var tokenChip = document.getElementById("tokenChip");
+// ------------------------------------------------------- What the agent did -
 
-    var timelineFill = document.getElementById("timelineFill");
+/* Turns the JavaScript the server sends into sentences. Anything not recognised
+   is a read (query, console poll) and is folded into one counting row. */
+var PATTERNS = [
+    [/lwAddDevice\("((?:[^"\\]|\\.)*)",\s*\d+,\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }, "device"],
+    [/addDevice\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }, "device"],
+    [/(?:lwAddLink|addLink)\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/,
+        function(m) { return "Cabled " + m[1] + " " + shortPort(m[2]) + " ↔ " + m[3] + " " + shortPort(m[4]); }, "link"],
+    [/configureIosDevice\("((?:[^"\\]|\\.)*)"/, function(m) { return "Configured " + m[1]; }, "config"],
+    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*true/, function(m) { return m[1] + " gets its IP by DHCP"; }, "ip"],
+    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*false,\s*"([^"]*)"/, function(m) { return "Set " + m[1] + " to " + m[2]; }, "ip"],
+    [/addModule\("((?:[^"\\]|\\.)*)",\s*"([^"]*)",\s*"([^"]*)"/, function(m) { return "Installed " + m[3] + " on " + m[1] + " (slot " + m[2] + ")"; }, "device"],
+    [/swapLaptopToWireless\("((?:[^"\\]|\\.)*)"/, function(m) { return m[1] + " switched to Wi-Fi"; }, "ip"],
+    [/removeDevice\(/, function() { return "Removed a device"; }, "device"]
+];
 
-    // Token chip: if we ever polled successfully, the token is working.
-    if (tokenChip) tokenChip.className = S.bridgeUp ? "chip on" : "chip";
-
-    if (S.ptConnected) {
-        if (httpChip) httpChip.className = "chip on";
-        if (dot)   { dot.className = "conn-dot connected"; }
-        if (label) { label.textContent = "HTTP"; }
-        if (sbDot) sbDot.className = "status-bar-dot ok";
-        if (sbLbl) sbLbl.textContent = "Bridge: connected";
-        if (timelineFill) timelineFill.style.width = "100%";
-
-        setElText("st-bridge", "UP :54321");
-        setElClass("st-bridge", "stat-value ok");
-        setCardClass("card-bridge", "stat-card ok");
-
-        setElText("st-pt", "Connected");
-        setElClass("st-pt", "stat-value ok");
-        setCardClass("card-pt", "stat-card ok");
-        setElText("st-poll-sub", "polling every 500ms");
-
-    } else if (S.bridgeUp) {
-        if (httpChip) httpChip.className = "chip warn";
-        if (dot)   { dot.className = "conn-dot bridge-only"; }
-        if (label) { label.textContent = "waiting"; }
-        if (sbDot) sbDot.className = "status-bar-dot warn";
-        if (sbLbl) sbLbl.textContent = "Bridge: up, PT offline";
-        if (timelineFill) timelineFill.style.width = "50%";
-
-        setElText("st-bridge", "UP :54321");
-        setElClass("st-bridge", "stat-value ok");
-        setCardClass("card-bridge", "stat-card ok");
-
-        setElText("st-pt", "Waiting…");
-        setElClass("st-pt", "stat-value warn");
-        setCardClass("card-pt", "stat-card warn");
-        setElText("st-poll-sub", "PT not polling");
-
-    } else {
-        if (httpChip) httpChip.className = "chip";
-        if (dot)   { dot.className = "conn-dot"; }
-        if (label) { label.textContent = "offline"; }
-        if (sbDot) sbDot.className = "status-bar-dot err";
-        if (sbLbl) sbLbl.textContent = "Bridge: offline";
-        if (timelineFill) timelineFill.style.width = "0%";
-
-        setElText("st-bridge", "DOWN");
-        setElClass("st-bridge", "stat-value err");
-        setCardClass("card-bridge", "stat-card err");
-
-        setElText("st-pt", "Offline");
-        setElClass("st-pt", "stat-value err");
-        setCardClass("card-pt", "stat-card err");
-        setElText("st-poll-sub", "not polling");
-    }
-
-    updateCommandCount();
+function shortPort(p) {
+    return p.replace("GigabitEthernet", "Gi").replace("FastEthernet", "Fa").replace("Ethernet", "Eth");
 }
 
-function updateCommandCount() {
-    setElText("st-cmds", S.commandCount);
-    setElText("sb-cmds", S.commandCount + " cmd" + (S.commandCount !== 1 ? "s" : ""));
-}
-
-// ---------------------------------------------------------------- Sparkline --
-
-function renderSparkline() {
-    var svg = document.getElementById("sparkline");
-    if (!svg) return;
-
-    var W = 200, H = 36;
-    var times = S.pollTimes;
-    if (times.length < 2) { svg.innerHTML = ""; return; }
-
-    var min = times[0], max = times[times.length - 1];
-    var range = max - min || 1;
-
-    var bars = times.map(function(t, i) {
-        var x = Math.round(((t - min) / range) * (W - 8));
-        var h = 8 + (i / times.length) * 20;
-        var y = H - h;
-        return '<rect x="' + x + '" y="' + y + '" width="6" height="' + h +
-            '" rx="2" fill="#4f8ef7" opacity="' + (0.3 + 0.7 * i / times.length) + '"/>';
+function describeBatch(lines) {
+    var reads = 0;
+    lines.forEach(function(line) {
+        for (var i = 0; i < PATTERNS.length; i++) {
+            var m = line.match(PATTERNS[i][0]);
+            if (m) { addEntry("ok", PATTERNS[i][1](m), "", PATTERNS[i][2]); return; }
+        }
+        reads++;
     });
-
-    svg.innerHTML = bars.join("");
+    if (reads) addRead(reads);
 }
 
-// ------------------------------------------------------------------ Uptime --
+function addRead(n) {
+    var last = S.entries[S.entries.length - 1];
+    if (last && last.type === "read") {
+        last.count += n;
+        last.ts = clock();
+        last.text = "Read from Packet Tracer ×" + last.count;
+        renderList();
+        return;
+    }
+    addEntry("read", "Read from Packet Tracer" + (n > 1 ? " ×" + n : ""));
+    S.entries[S.entries.length - 1].count = n;
+}
+
+// ------------------------------------------------------------- Activity ----
+
+function clock() {
+    return new Date().toLocaleTimeString("en-GB", { hour12: false });
+}
+
+function addEntry(type, text, detail, kind) {
+    S.entries.push({ ts: clock(), type: type, text: text, detail: detail || "", count: 1, kind: kind || type, fresh: true });
+    if (S.entries.length > S.maxEntries) S.entries.splice(0, S.entries.length - S.maxEntries);
+    if (type === "err") S.errCount++;
+    renderList();
+}
+
+var ICONS = {
+    device: '<rect x="2.5" y="3.5" width="11" height="9" rx="2"/><path d="M5.5 12.5v1.5M10.5 12.5v1.5"/>',
+    link:   '<circle cx="4" cy="8" r="2"/><circle cx="12" cy="8" r="2"/><path d="M6 8h4"/>',
+    config: '<path d="M3.5 5.5 6 8l-2.5 2.5M8 11h4.5"/>',
+    ip:     '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5"/>',
+    read:   '<path d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>',
+    ok:     '<path d="m3.5 8.5 3 3 6-7"/>',
+    warn:   '<path d="M8 2.8 14 13H2z"/><path d="M8 7v2.6M8 11.4v.1"/>',
+    err:    '<circle cx="8" cy="8" r="5.5"/><path d="m6 6 4 4M10 6l-4 4"/>',
+    info:   '<circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v3.6M8 5.2v.1"/>',
+    tool:   '<path d="M10.5 2.5a3 3 0 0 0-3.2 4L2.8 11a1.3 1.3 0 0 0 1.9 1.9l4.5-4.5a3 3 0 0 0 4-3.2l-1.8 1.8-1.7-.4-.4-1.7z"/>'
+};
+
+function icon(kind) {
+    return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+        (ICONS[kind] || ICONS.info) + "</svg>";
+}
+
+function renderList() {
+    var list = document.getElementById("list");
+    var shown = S.entries.filter(function(e) {
+        return S.filter === "all" || e.type === "err" || e.type === "warn";
+    });
+    if (!shown.length) {
+        list.innerHTML = S.filter === "all"
+            ? '<div class="empty"><div><b>Nothing yet</b>Ask your AI agent to build a network — every action shows up here.</div></div>'
+            : '<div class="empty"><div><b>No problems</b>Errors and warnings would show up here.</div></div>';
+    } else {
+        list.innerHTML = shown.map(function(e) {
+            // Only a row added since the last render animates in; re-renders stay still.
+            var cls = "row " + e.type + (e.fresh ? " new" : "");
+            e.fresh = false;
+            return '<div class="' + cls + '">' +
+                '<span class="ico">' + icon(e.kind) + "</span>" +
+                '<span class="msg">' + escapeHtml(e.text) +
+                (e.detail ? '<span class="detail">' + escapeHtml(e.detail) + "</span>" : "") +
+                "</span>" +
+                '<span class="time">' + e.ts + "</span></div>";
+        }).join("");
+        list.scrollTop = list.scrollHeight;
+    }
+    setText("errCount", S.errCount ? String(S.errCount) : "");
+}
+
+function setFilter(f) {
+    S.filter = f;
+    document.getElementById("f-all").className = "filter" + (f === "all" ? " on" : "");
+    document.getElementById("f-err").className = "filter" + (f === "err" ? " on" : "");
+    renderList();
+}
+
+function copyLogs() {
+    var text = S.entries.map(function(e) {
+        return e.ts + "  " + e.type.toUpperCase() + "  " + e.text + (e.detail ? "\n          " + e.detail : "");
+    }).join("\n");
+    navigator.clipboard.writeText(text).then(function() {
+        addEntry("info", "Activity copied to the clipboard");
+    }).catch(function(e) { addEntry("err", "Could not copy", String(e)); });
+}
+
+// --------------------------------------------------------------- Status ----
+
+function updateUI() {
+    var fb = S.fileBridge && S.fileBridge.active;
+    var state, sub, cls;
+    if (S.tokenOk === false) {
+        state = "Security token missing"; cls = "err";
+        sub = "Start your AI agent with the MCP server once, then reopen this window";
+    } else if (S.ptConnected) {
+        state = "Connected to your agent"; cls = "ok";
+        sub = "Your AI is driving Packet Tracer" + (fb ? " · keeps working if you close this window" : "");
+    } else if (S.bridgeUp) {
+        state = "Connecting…"; cls = "pend";
+        sub = "The MCP server is up; waiting for the first poll";
+    } else {
+        state = "Waiting for your agent"; cls = "pend";
+        sub = "Start Claude Code, OpenCode or Codex with the packet-tracer MCP";
+    }
+    document.getElementById("hero").className = "status hero " + cls;
+    setText("stateText", state);
+    setText("stateSub", sub);
+
+    setLed("httpDot", S.ptConnected ? "ok" : (S.bridgeUp ? "pend" : ""));
+    setText("httpSub", S.ptConnected ? ":54321 · live" : (S.bridgeUp ? ":54321 · starting" : ":54321 · offline"));
+
+    setLed("fileDot", fb ? "ok" : "");
+    setText("fileSub", fb ? "Active" + (S.fileBridge.count ? " · " + S.fileBridge.count + " cmds" : "") : "Inactive");
+
+    setLed("tokenDot", S.tokenOk === true ? "ok" : (S.tokenOk === false ? "err" : ""));
+    setText("tokenSub", S.tokenOk === true ? "Loaded" : (S.tokenOk === false ? "Not found" : "Reading…"));
+
+    setText("cmdCount", String(S.commandCount));
+}
 
 function updateUptime() {
-    var elapsed = Math.floor((Date.now() - S.sessionStart) / 1000);
-    var m = Math.floor(elapsed / 60);
-    var s = elapsed % 60;
-    var str = pad2(m) + ":" + pad2(s);
-    setElText("st-uptime", str);
-    setElText("sb-uptime", str);
+    var s = Math.floor((Date.now() - S.sessionStart) / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    setText("uptime", h ? h + ":" + pad2(m) : pad2(m) + ":" + pad2(s % 60));
 }
 
-// --------------------------------------------------------------- Editor ----
+// -------------------------------------------------------------- Console ----
 
-function onEditorInput() {
-    var indicator = document.getElementById("saveIndicator");
-    if (indicator) { indicator.textContent = "● saving…"; indicator.className = "save-indicator"; }
-    if (S._saveTimer) clearTimeout(S._saveTimer);
-    S._saveTimer = setTimeout(function() {
-        saveCode();
-        if (indicator) { indicator.textContent = "● saved"; indicator.className = "save-indicator saved"; }
-    }, 800);
-    S.historyPos = -1; // reset navigator on manual edit
+function toggleConsole() {
+    var adv = document.getElementById("adv");
+    adv.classList.toggle("adv-open");
+    var open = adv.classList.contains("adv-open");
+    setText("advToggle", open ? "Hide console" : "Console");
+    if (open) document.getElementById("code").focus();
 }
 
-function saveCode() {
-    var code = document.getElementById("codeeditor").value;
-    try { $putData("code", code); } catch(e) {}
+function showTab(name) {
+    document.getElementById("panel").className = "panel" + (name === "tools" ? " tools-on" : "");
+    document.getElementById("tab-activity").className = name === "activity" ? "on" : "";
+    document.getElementById("tab-tools").className = name === "tools" ? "on" : "";
 }
 
-function loadCode() {
+// ---------------------------------------------------------------- Tools ----
+
+function toolCheckBridge() {
+    var t0 = Date.now();
+    var x = new XMLHttpRequest();
+    x.open("GET", bridgeUrl("/status"), true);
+    x.timeout = 3000;
+    x.onload = function() {
+        var ms = Date.now() - t0;
+        if (x.status === 401) { addEntry("err", "Bridge answered, but rejected the token", "Use Reload token, or restart your agent", "tool"); return; }
+        try {
+            var d = JSON.parse(x.responseText);
+            addEntry(d.connected ? "info" : "warn", "Bridge answered in " + ms + " ms",
+                (d.connected ? "Polling normally" : "Not polling right now") +
+                (d.last_poll_ago != null ? " · last poll " + d.last_poll_ago + " s ago" : ""), "tool");
+        } catch(e) { addEntry("err", "Bridge sent something unexpected (" + x.status + ")", "", "tool"); }
+        showTab("activity");
+    };
+    x.onerror = x.ontimeout = function() {
+        addEntry("err", "No bridge on 127.0.0.1:54321", "Start your AI agent with the packet-tracer MCP", "tool");
+        showTab("activity");
+    };
+    x.send();
+}
+
+function toolCanvas() {
     try {
-        $getData("code").then(function(code) {
-            document.getElementById("codeeditor").value = code || "";
-        }).catch(function() {});
-    } catch(e) {}
+        $se("mcpCanvasSummary").then(function(raw) {
+            var d = JSON.parse(raw);
+            var parts = Object.keys(d.byType).sort().map(function(k) { return d.byType[k] + " " + k; });
+            addEntry("info", d.devices + " devices · " + d.links + " links on the canvas", parts.join(" · ") || "Empty canvas", "tool");
+            showTab("activity");
+        }).catch(function(e) { addEntry("err", "Could not read the canvas", String(e), "tool"); showTab("activity"); });
+    } catch(e) { addEntry("err", "Script Engine unavailable", String(e), "tool"); }
 }
 
-function executeCode() {
-    var code = document.getElementById("codeeditor").value;
-    if (!code.trim()) {
-        log("Editor is empty — nothing to execute", "warn");
-        return;
-    }
+function toolReloadToken() {
+    _tokenReloads = 0;
+    loadToken(function(ok) {
+        addEntry(ok ? "info" : "err", ok ? "Token reloaded from disk" : "Token still not found", "", "tool");
+        showTab("activity");
+    });
+}
 
+function toolDiagnostics() {
+    var lines = [
+        "MCP Control Center V6",
+        "HTTP bridge: " + (S.ptConnected ? "connected" : (S.bridgeUp ? "up, not polling" : "offline")),
+        "File bridge: " + (S.fileBridge ? JSON.stringify(S.fileBridge) : "unknown"),
+        "Token: " + (S.tokenOk === true ? "loaded" : (S.tokenOk === false ? "missing" : "unknown")),
+        "Commands this session: " + S.commandCount,
+        "User agent: " + navigator.userAgent
+    ];
+    var finish = function(extra) {
+        var text = lines.concat(extra || []).join("\n");
+        navigator.clipboard.writeText(text).then(function() {
+            addEntry("info", "Diagnostics copied to the clipboard", "", "tool");
+        }).catch(function(e) { addEntry("err", "Could not copy", String(e), "tool"); });
+        showTab("activity");
+    };
+    try {
+        $se("mcpCanvasSummary").then(function(raw) { finish(["Canvas: " + raw]); }).catch(function() { finish(); });
+    } catch(e) { finish(); }
+}
+
+function toolClear() {
+    S.entries = [];
+    S.errCount = 0;
+    renderList();
+    showTab("activity");
+}
+
+/* Sends the code through the bridge, the same path the agent's commands take. */
+function runConsole() {
+    var code = document.getElementById("code").value.trim();
+    if (!code) return;
     if (!S.bridgeUp) {
-        log("Bridge is offline — cannot execute. Start the bridge first.", "warn");
-        showNotif("Bridge is offline. Start the MCP server and paste the bootstrap snippet.");
-        switchTab("status");
+        addEntry("warn", "Nothing to run it with", "The MCP server is not running. Start your AI agent first.");
         return;
     }
-
-    // Push to history
-    if (!S.history.length || S.history[S.history.length - 1] !== code) {
-        S.history.push(code);
-        if (S.history.length > 20) S.history.shift();
-        persistHistory();
-        refreshHistoryDropdown();
-    }
-    S.historyPos = -1;
-
-    var preview = code.trim().substring(0, 100);
-    log("Executing: " + preview + (code.length > 100 ? " …" : ""), "cmd");
-
-    // Split into individual commands and send through bridge (same pipeline as Quick Build)
-    var lines = code.split("\n").filter(function(l) {
-        var t = l.trim();
-        return t && !t.startsWith("//");
-    });
-
-    var cmds = lines.map(function(line) {
-        var cmd = line.trim();
-        // Add semicolon if missing (PT Script Engine requires it)
-        return cmd.endsWith(";") ? cmd : cmd + ";";
-    });
-
-    queueCommands(cmds, function(sent) {
-        if (sent > 0) {
-            S.commandCount += sent;
-            updateCommandCount();
-            log(sent + " command" + (sent > 1 ? "s" : "") + " queued via bridge", "ok");
-        } else {
-            log("Failed to queue commands — check bridge connection", "err");
-        }
-        switchTab("terminal");
-    });
-}
-
-/* Queues a batch in a single ASYNCHRONOUS request.
-   It used to be a synchronous XHR per command inside a forEach: it blocked the
-   webview UI thread and made one HTTP round trip per line. */
-function queueCommands(cmds, onDone) {
-    if (!cmds || !cmds.length) { if (onDone) onDone(0); return; }
     try {
         var x = new XMLHttpRequest();
         x.open("POST", bridgeUrl("/queue"), true);
         x.setRequestHeader("Content-Type", "text/plain");
         x.timeout = 5000;
         x.onload = function() {
-            if (x.status === 401) { handleUnauthorized(); if (onDone) onDone(0); return; }
-            if (onDone) onDone(x.status === 200 ? cmds.length : 0);
+            if (x.status === 401) { handleUnauthorized(); return; }
+            addEntry(x.status === 200 ? "info" : "err",
+                x.status === 200 ? "Console script queued" : "The bridge refused the script (" + x.status + ")",
+                code.length > 160 ? code.substring(0, 160) + "…" : code);
         };
-        x.onerror = x.ontimeout = function() { if (onDone) onDone(0); };
-        x.send(cmds.join("\n"));
+        x.onerror = x.ontimeout = function() { addEntry("err", "Could not reach the bridge"); };
+        x.send(code);
     } catch(e) {
-        if (onDone) onDone(0);
+        addEntry("err", "Could not send the script", String(e));
     }
 }
 
-function clearEditor() {
-    var editor = document.getElementById("codeeditor");
-    if (!editor.value.trim()) return;
-    editor.value = "";
-    log("Editor cleared", "info");
-    S.historyPos = -1;
+function clearCode() {
+    document.getElementById("code").value = "";
     try { $putData("code", ""); } catch(e) {}
 }
 
-function copyToClipboard() {
-    var code = document.getElementById("codeeditor").value;
-    navigator.clipboard.writeText(code).then(function() {
-        log("Copied to clipboard (" + code.length + " chars)", "ok");
-    }).catch(function(e) {
-        log("Clipboard write failed: " + e, "err");
-    });
-}
-
-function pasteFromClipboard() {
-    navigator.clipboard.readText().then(function(text) {
-        document.getElementById("codeeditor").value = text;
-        log("Pasted from clipboard (" + text.length + " chars)", "ok");
-        onEditorInput();
-    }).catch(function(e) {
-        log("Clipboard read failed: " + e, "err");
-    });
-}
-
-// ----------------------------------------------------------- History -------
-
-function persistHistory() {
-    try { $putData("history", JSON.stringify(S.history)); } catch(e) {}
-}
-
-function refreshHistoryDropdown() {
-    var sel = document.getElementById("historySelect");
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— History (' + S.history.length + ') —</option>';
-    for (var i = S.history.length - 1; i >= 0; i--) {
-        var preview = S.history[i].trim().replace(/\n/g, " ").substring(0, 60);
-        var opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = (S.history.length - i) + ". " + preview;
-        sel.appendChild(opt);
-    }
-}
-
-function loadFromHistory(idx) {
-    if (idx === "" || idx === null) return;
-    var code = S.history[parseInt(idx, 10)];
-    if (code !== undefined) {
-        document.getElementById("codeeditor").value = code;
-        log("Loaded from history #" + (parseInt(idx, 10) + 1), "info");
-    }
-    document.getElementById("historySelect").value = "";
-}
-
-// -------------------------------------------------- Keyboard shortcuts -----
-
-function editorKeyDown(e) {
-    var editor = document.getElementById("codeeditor");
-
-    // Ctrl+Enter → Run
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        executeCode();
-        return;
-    }
-
-    // Ctrl+K → Clear editor
-    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        clearEditor();
-        return;
-    }
-
-    // Arrow Up at start of textarea → history back
-    if (e.key === "ArrowUp" && editor.selectionStart === 0 && S.history.length > 0) {
-        if (S.historyPos < S.history.length - 1) {
-            S.historyPos++;
-            editor.value = S.history[S.history.length - 1 - S.historyPos];
-        }
-        e.preventDefault();
-        return;
-    }
-
-    // Arrow Down → history forward
-    if (e.key === "ArrowDown" && editor.selectionEnd === editor.value.length && S.historyPos >= 0) {
-        S.historyPos--;
-        if (S.historyPos < 0) {
-            editor.value = "";
-        } else {
-            editor.value = S.history[S.history.length - 1 - S.historyPos];
-        }
-        e.preventDefault();
-        return;
-    }
-}
-
-// Global keyboard shortcut — Ctrl+L to clear log from any tab
-document.addEventListener("keydown", function(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === "l") {
-        e.preventDefault();
-        clearLog();
-    }
-});
-
-// -------------------------------------------------------- Bootstrap snippet -
-
-function copyBootstrap() {
-    navigator.clipboard.writeText(bootstrapSnippet()).then(function() {
-        log("Bootstrap snippet copied to clipboard", "ok");
-    }).catch(function(e) {
-        log("Failed to copy: " + e, "err");
-    });
-}
-
-// ---------------------------------------------------------- Quick Build ----
-
-function getQBValues() {
-    return {
-        template:      val("qb-template"),
-        routing:       val("qb-routing"),
-        routerModel:   val("qb-router-model"),
-        switchModel:   val("qb-switch-model"),
-        routers:       intVal("qb-routers"),
-        pcs:           intVal("qb-pcs"),
-        switches:      intVal("qb-switches"),
-        servers:       intVal("qb-servers"),
-        dhcp:          checked("qb-dhcp"),
-        wan:           checked("qb-wan"),
-        floating:      checked("qb-floating"),
-    };
-}
-
-function updateQBPreview() {
-    var v = getQBValues();
-    var parts = [
-        v.template, v.routing,
-        v.routers + "R", v.pcs + "PC", v.switches + "SW",
-        v.servers > 0 ? v.servers + "SRV" : null,
-        v.dhcp ? "DHCP" : null,
-        v.wan ? "WAN" : null,
-    ].filter(Boolean);
-    setElText("qbPreview", parts.join(" · "));
-}
-
-function buildQBScript(v) {
-    // Generates addDevice + addLink commands matching the PT Builder API:
-    //   addDevice(name, model, x, y);
-    //   addLink(devA, portA, devB, portB, cableType);
-    // Cable types: "cross" for router↔router, "straight" for everything else.
-
-    var lines = [];
-    var spacing = 250;
-    var routerY = 200;
-
-    // Helper: router port name (ISR4321/4331 uses triple index)
-    function rPort(idx) {
-        if (v.routerModel === "ISR4321" || v.routerModel === "ISR4331") {
-            return "GigabitEthernet0/0/" + idx;
-        }
-        return "GigabitEthernet0/" + idx;
-    }
-
-    // Determine effective router count based on template
-    var numRouters = v.routers;
-    if (v.template === "single_lan") numRouters = 1;
-    if (v.template === "three_router_triangle") numRouters = 3;
-
-    lines.push("// Quick Build: " + v.template + " | " + numRouters + "x " + v.routerModel +
-        " | " + v.pcs + " PC/LAN | " + v.routing);
-
-    // ── ROUTER POSITIONS (depend on template) ────────────────────────
-    var rPos = []; // { name, x, y }
-
-    if (v.template === "star" || v.template === "hub_spoke") {
-        // Central hub + spokes in a circle
-        var cx = 400, cy = 250;
-        rPos.push({ name: "R1", x: cx, y: cy });
-        var rad = 220;
-        for (var i = 1; i < numRouters; i++) {
-            var angle = (2 * Math.PI * (i - 1)) / Math.max(numRouters - 1, 1) - Math.PI / 2;
-            rPos.push({
-                name: "R" + (i + 1),
-                x: Math.round(cx + rad * Math.cos(angle)),
-                y: Math.round(cy + rad * Math.sin(angle))
-            });
-        }
-    } else if (v.template === "three_router_triangle") {
-        rPos = [
-            { name: "R1", x: 300, y: 100 },
-            { name: "R2", x: 100, y: 350 },
-            { name: "R3", x: 500, y: 350 }
-        ];
-    } else {
-        // Linear chain: single_lan, multi_lan, multi_lan_wan, branch_office, router_on_a_stick
-        for (var r = 0; r < numRouters; r++) {
-            rPos.push({ name: "R" + (r + 1), x: 100 + r * spacing, y: routerY });
-        }
-    }
-
-    // ── ADD DEVICES ──────────────────────────────────────────────────
-    lines.push("// Devices");
-
-    rPos.forEach(function(rp) {
-        lines.push('addDevice("' + rp.name + '", "' + v.routerModel + '", ' + rp.x + ', ' + rp.y + ');');
-    });
-
-    rPos.forEach(function(rp, idx) {
-        var swYPos = rp.y + 150;
-        for (var sw = 0; sw < v.switches; sw++) {
-            var swName = "SW" + (idx + 1) + (v.switches > 1 ? String.fromCharCode(65 + sw) : "");
-            lines.push('addDevice("' + swName + '", "' + v.switchModel + '", ' + (rp.x + sw * 80) + ', ' + swYPos + ');');
-        }
-        for (var p = 0; p < v.pcs; p++) {
-            var pcName = "PC" + (idx + 1) + "-" + (p + 1);
-            var pcX = rp.x - Math.floor(v.pcs / 2) * 60 + p * 60;
-            lines.push('addDevice("' + pcName + '", "PC-PT", ' + pcX + ', ' + (rp.y + 300) + ');');
-        }
-    });
-
-    if (v.servers > 0) {
-        for (var s = 0; s < v.servers; s++) {
-            lines.push('addDevice("SRV' + (s + 1) + '", "Server-PT", ' + (100 + s * 80) + ', ' + (routerY + 430) + ');');
-        }
-    }
-
-    if (v.wan && v.template === "multi_lan_wan") {
-        var cloudX = 100 + Math.floor(numRouters / 2) * spacing;
-        lines.push('addDevice("Cloud1", "Cloud-PT", ' + cloudX + ', ' + (routerY - 150) + ');');
-    }
-
-    // ── ADD LINKS ─────────────────────────────────────────────────────
-    lines.push("// Links");
-
-    // --- Router ↔ Router links ---
-    if (v.template === "star" || v.template === "hub_spoke") {
-        // Hub (R1) connects to each spoke via consecutive GE ports
-        for (var si = 1; si < numRouters; si++) {
-            lines.push('addLink("R1", "' + rPort(si - 1) + '", "R' + (si + 1) + '", "' + rPort(0) + '", "cross");');
-        }
-    } else if (v.template === "three_router_triangle") {
-        // Triangle: R1↔R2, R2↔R3, R3↔R1  (each router uses GE0/0 and GE0/1 for WAN)
-        lines.push('addLink("R1", "' + rPort(0) + '", "R2", "' + rPort(0) + '", "cross");');
-        lines.push('addLink("R2", "' + rPort(1) + '", "R3", "' + rPort(0) + '", "cross");');
-        lines.push('addLink("R3", "' + rPort(1) + '", "R1", "' + rPort(1) + '", "cross");');
-    } else {
-        // Linear chain: R[i] → R[i+1]
-        // Port scheme matching real topology output:
-        //   R1 (edge):   GE0/0 = WAN right,      GE0/1 = LAN
-        //   Middle:      GE0/0 = WAN left,        GE0/1 = WAN right,  GE0/2 = LAN
-        //   R_last (edge): GE0/0 = WAN left,      GE0/1 = LAN
-        for (var ri = 0; ri < numRouters - 1; ri++) {
-            var fromR = "R" + (ri + 1);
-            var toR   = "R" + (ri + 2);
-            var fromPort = (ri === 0) ? rPort(0) : rPort(1); // edge uses 0, middle uses 1 (right exit)
-            var toPort   = rPort(0);                          // always arrives on 0
-            lines.push('addLink("' + fromR + '", "' + fromPort + '", "' + toR + '", "' + toPort + '", "cross");');
-        }
-    }
-
-    // --- Router → Switch LAN links ---
-    if (v.switches > 0) {
-        rPos.forEach(function(rp, idx) {
-            var rName  = rp.name;
-            var swName = "SW" + (idx + 1) + (v.switches > 1 ? "A" : "");
-            var lanIdx;
-
-            if (v.template === "star" || v.template === "hub_spoke") {
-                if (idx === 0) {
-                    lanIdx = numRouters - 1; // Hub: LAN port after all WAN ports
-                } else {
-                    lanIdx = 1;              // Spoke: GE0/0=WAN, GE0/1=LAN
-                }
-            } else if (v.template === "three_router_triangle") {
-                lanIdx = 2; // GE0/0 & GE0/1 are WAN, GE0/2 = LAN
-            } else {
-                // Linear chain
-                if (numRouters === 1) {
-                    lanIdx = 0; // Single router: GE0/0 = LAN
-                } else if (idx === 0 || idx === numRouters - 1) {
-                    lanIdx = 1; // Edge: GE0/0=WAN, GE0/1=LAN
-                } else {
-                    lanIdx = 2; // Middle: GE0/0=WAN left, GE0/1=WAN right, GE0/2=LAN
-                }
-            }
-
-            lines.push('addLink("' + rName + '", "' + rPort(lanIdx) + '", "' + swName + '", "GigabitEthernet0/1", "straight");');
-        });
-    }
-
-    // --- Switch → PCs ---
-    if (v.switches > 0 && v.pcs > 0) {
-        rPos.forEach(function(rp, idx) {
-            var swName = "SW" + (idx + 1) + (v.switches > 1 ? "A" : "");
-            for (var p = 0; p < v.pcs; p++) {
-                var pcName = "PC" + (idx + 1) + "-" + (p + 1);
-                var swPort = "FastEthernet0/" + (p + 1);
-                lines.push('addLink("' + swName + '", "' + swPort + '", "' + pcName + '", "FastEthernet0", "straight");');
-            }
-        });
-    }
-
-    // --- Switch → Servers ---
-    if (v.servers > 0 && v.switches > 0) {
-        var srvSw = "SW1" + (v.switches > 1 ? "A" : "");
-        for (var s2 = 0; s2 < v.servers; s2++) {
-            var srvSwPort = "FastEthernet0/" + (v.pcs + 1 + s2);
-            lines.push('addLink("' + srvSw + '", "' + srvSwPort + '", "SRV' + (s2 + 1) + '", "FastEthernet0", "straight");');
-        }
-    }
-
-    // --- WAN Cloud link ---
-    if (v.wan && v.template === "multi_lan_wan") {
-        // Connect Cloud to R1 on next available GE port
-        var cloudPort = (numRouters === 1) ? 1 : 2;
-        lines.push('addLink("R1", "' + rPort(cloudPort) + '", "Cloud1", "Ethernet0", "straight");');
-    }
-
-    // ── IOS CONFIGURATIONS ────────────────────────────────────────────
-    lines.push("// IOS Configurations");
-
-    // Build WAN link map: for each router, which port connects to which router, and what IPs
-    // Inter-router links use 10.0.{linkIdx}.0/30 — .1 for left/hub side, .2 for right/spoke side
-    // LAN subnets use 192.168.{routerIdx}.0/24 — gateway .1, PCs from .2
-    var wanLinks = []; // { fromR, toR, fromPort, toPort, subnet: linkIdx }
-
-    if (v.template === "star" || v.template === "hub_spoke") {
-        for (var wi = 1; wi < numRouters; wi++) {
-            wanLinks.push({
-                fromR: "R1", toR: "R" + (wi + 1),
-                fromPort: rPort(wi - 1), toPort: rPort(0),
-                linkIdx: wi - 1
-            });
-        }
-    } else if (v.template === "three_router_triangle") {
-        wanLinks.push({ fromR: "R1", toR: "R2", fromPort: rPort(0), toPort: rPort(0), linkIdx: 0 });
-        wanLinks.push({ fromR: "R2", toR: "R3", fromPort: rPort(1), toPort: rPort(0), linkIdx: 1 });
-        wanLinks.push({ fromR: "R3", toR: "R1", fromPort: rPort(1), toPort: rPort(1), linkIdx: 2 });
-    } else {
-        for (var wri = 0; wri < numRouters - 1; wri++) {
-            wanLinks.push({
-                fromR: "R" + (wri + 1), toR: "R" + (wri + 2),
-                fromPort: (wri === 0) ? rPort(0) : rPort(1),
-                toPort: rPort(0),
-                linkIdx: wri
-            });
-        }
-    }
-
-    // Compute LAN port index for each router (same logic as links section)
-    function getLanIdx(idx) {
-        if (v.template === "star" || v.template === "hub_spoke") {
-            return (idx === 0) ? numRouters - 1 : 1;
-        } else if (v.template === "three_router_triangle") {
-            return 2;
-        } else {
-            if (numRouters === 1) return 0;
-            if (idx === 0 || idx === numRouters - 1) return 1;
-            return 2;
-        }
-    }
-
-    // Generate configureIosDevice for each router
-    rPos.forEach(function(rp, idx) {
-        var cfg = [];
-        cfg.push("enable");
-        cfg.push("configure terminal");
-        cfg.push("hostname " + rp.name);
-        cfg.push("no ip domain-lookup");
-        cfg.push("");
-
-        // WAN interfaces
-        wanLinks.forEach(function(wl) {
-            if (wl.fromR === rp.name) {
-                var ip = "10.0." + wl.linkIdx + ".1";
-                cfg.push("interface " + wl.fromPort);
-                cfg.push(" ip address " + ip + " 255.255.255.252");
-                cfg.push(" no shutdown");
-                cfg.push(" exit");
-                cfg.push("");
-            }
-            if (wl.toR === rp.name) {
-                var ip2 = "10.0." + wl.linkIdx + ".2";
-                cfg.push("interface " + wl.toPort);
-                cfg.push(" ip address " + ip2 + " 255.255.255.252");
-                cfg.push(" no shutdown");
-                cfg.push(" exit");
-                cfg.push("");
-            }
-        });
-
-        // LAN interface
-        if (v.switches > 0 || v.pcs > 0) {
-            var lanPort = rPort(getLanIdx(idx));
-            var lanNet = "192.168." + idx + ".1";
-            cfg.push("interface " + lanPort);
-            cfg.push(" ip address " + lanNet + " 255.255.255.0");
-            cfg.push(" no shutdown");
-            cfg.push(" exit");
-            cfg.push("");
-        }
-
-        // DHCP pool
-        if (v.dhcp && (v.switches > 0 || v.pcs > 0)) {
-            cfg.push("ip dhcp excluded-address 192.168." + idx + ".1 192.168." + idx + ".1");
-            cfg.push("ip dhcp pool LAN_" + rp.name);
-            cfg.push(" network 192.168." + idx + ".0 255.255.255.0");
-            cfg.push(" default-router 192.168." + idx + ".1");
-            cfg.push(" dns-server 8.8.8.8");
-            cfg.push(" exit");
-            cfg.push("");
-        }
-
-        // Routing
-        if (v.routing === "static") {
-            // Static routes to all other LAN subnets
-            rPos.forEach(function(otherRp, otherIdx) {
-                if (otherIdx === idx) return;
-                // Find next-hop: the WAN peer IP toward destination
-                var nextHop = findNextHop(rp.name, otherIdx, wanLinks, rPos, numRouters, v.template);
-                if (nextHop) {
-                    cfg.push("ip route 192.168." + otherIdx + ".0 255.255.255.0 " + nextHop);
-                }
-            });
-            cfg.push("");
-        } else if (v.routing === "ospf") {
-            cfg.push("router ospf 1");
-            cfg.push(" router-id " + (idx + 1) + "." + (idx + 1) + "." + (idx + 1) + "." + (idx + 1));
-            // Advertise LAN
-            if (v.switches > 0 || v.pcs > 0) {
-                cfg.push(" network 192.168." + idx + ".0 0.0.0.255 area 0");
-            }
-            // Advertise WAN links
-            wanLinks.forEach(function(wl) {
-                if (wl.fromR === rp.name || wl.toR === rp.name) {
-                    cfg.push(" network 10.0." + wl.linkIdx + ".0 0.0.0.3 area 0");
-                }
-            });
-            cfg.push(" exit");
-            cfg.push("");
-        } else if (v.routing === "eigrp") {
-            cfg.push("router eigrp 100");
-            if (v.switches > 0 || v.pcs > 0) {
-                cfg.push(" network 192.168." + idx + ".0 0.0.0.255");
-            }
-            wanLinks.forEach(function(wl) {
-                if (wl.fromR === rp.name || wl.toR === rp.name) {
-                    cfg.push(" network 10.0." + wl.linkIdx + ".0 0.0.0.3");
-                }
-            });
-            cfg.push(" no auto-summary");
-            cfg.push(" exit");
-            cfg.push("");
-        } else if (v.routing === "rip") {
-            cfg.push("router rip");
-            cfg.push(" version 2");
-            if (v.switches > 0 || v.pcs > 0) {
-                cfg.push(" network 192.168." + idx + ".0");
-            }
-            wanLinks.forEach(function(wl) {
-                if (wl.fromR === rp.name || wl.toR === rp.name) {
-                    cfg.push(" network 10.0." + wl.linkIdx + ".0");
-                }
-            });
-            cfg.push(" no auto-summary");
-            cfg.push(" exit");
-            cfg.push("");
-        }
-
-        cfg.push("end");
-        cfg.push("write memory");
-
-        // Escape for JS string: replace \ with \\ then " with \"  then newlines with \n
-        var cfgStr = cfg.join("\\n");
-        lines.push('configureIosDevice("' + rp.name + '", "' + cfgStr + '");');
-    });
-
-    // Generate switch hostname config
-    rPos.forEach(function(rp, idx) {
-        for (var sw = 0; sw < v.switches; sw++) {
-            var swName = "SW" + (idx + 1) + (v.switches > 1 ? String.fromCharCode(65 + sw) : "");
-            var swCfg = "enable\\nhostname " + swName + "\\nend\\nwrite memory";
-            lines.push('configureIosDevice("' + swName + '", "' + swCfg + '");');
-        }
-    });
-
-    // Configure PCs
-    lines.push("// PC IP Configuration");
-    rPos.forEach(function(rp, idx) {
-        for (var p = 0; p < v.pcs; p++) {
-            var pcName = "PC" + (idx + 1) + "-" + (p + 1);
-            if (v.dhcp) {
-                lines.push('configurePcIp("' + pcName + '", true);');
-            } else {
-                var pcIp   = "192.168." + idx + "." + (p + 2);
-                var pcMask = "255.255.255.0";
-                var pcGw   = "192.168." + idx + ".1";
-                lines.push('configurePcIp("' + pcName + '", false, "' + pcIp + '", "' + pcMask + '", "' + pcGw + '");');
-            }
-        }
-    });
-
-    // Configure Servers
-    if (v.servers > 0) {
-        for (var sv = 0; sv < v.servers; sv++) {
-            var srvName = "SRV" + (sv + 1);
-            if (v.dhcp) {
-                lines.push('configurePcIp("' + srvName + '", true);');
-            } else {
-                var srvIp = "192.168.0." + (v.pcs + 2 + sv);
-                lines.push('configurePcIp("' + srvName + '", false, "' + srvIp + '", "255.255.255.0", "192.168.0.1");');
-            }
-        }
-    }
-
-    return lines.join("\n");
-}
-
-// Helper: find next-hop IP for static routing (simple: direct neighbor or via first hop)
-function findNextHop(fromName, destIdx, wanLinks, rPos, numRouters, template) {
-    // For star/hub_spoke: hub knows all spokes directly, spokes go through hub
-    if (template === "star" || template === "hub_spoke") {
-        if (fromName === "R1") {
-            // Hub to spoke: direct link
-            for (var i = 0; i < wanLinks.length; i++) {
-                if (wanLinks[i].toR === rPos[destIdx].name) {
-                    return "10.0." + wanLinks[i].linkIdx + ".2";
-                }
-            }
-        } else {
-            // Spoke to anywhere: go through hub (R1)
-            for (var j = 0; j < wanLinks.length; j++) {
-                if (wanLinks[j].toR === fromName) {
-                    return "10.0." + wanLinks[j].linkIdx + ".1";
-                }
-            }
-        }
-        return null;
-    }
-
-    // For triangle: find direct link to dest, or route through first available neighbor
-    if (template === "three_router_triangle") {
-        var destName = rPos[destIdx].name;
-        // Direct link?
-        for (var t = 0; t < wanLinks.length; t++) {
-            if (wanLinks[t].fromR === fromName && wanLinks[t].toR === destName) {
-                return "10.0." + wanLinks[t].linkIdx + ".2";
-            }
-            if (wanLinks[t].toR === fromName && wanLinks[t].fromR === destName) {
-                return "10.0." + wanLinks[t].linkIdx + ".1";
-            }
-        }
-        // Not directly connected — go via first neighbor
-        for (var u = 0; u < wanLinks.length; u++) {
-            if (wanLinks[u].fromR === fromName) return "10.0." + wanLinks[u].linkIdx + ".2";
-            if (wanLinks[u].toR === fromName) return "10.0." + wanLinks[u].linkIdx + ".1";
-        }
-        return null;
-    }
-
-    // Linear chain: find direction toward destination
-    var fromIdx = -1;
-    for (var fi = 0; fi < rPos.length; fi++) {
-        if (rPos[fi].name === fromName) { fromIdx = fi; break; }
-    }
-    if (fromIdx < 0) return null;
-
-    if (destIdx > fromIdx) {
-        // Go right: use link fromIdx → fromIdx+1
-        for (var r = 0; r < wanLinks.length; r++) {
-            if (wanLinks[r].fromR === fromName) return "10.0." + wanLinks[r].linkIdx + ".2";
-        }
-        // Might be the "toR" side
-        for (var r2 = 0; r2 < wanLinks.length; r2++) {
-            if (wanLinks[r2].toR === rPos[fromIdx + 1].name && wanLinks[r2].fromR === fromName) {
-                return "10.0." + wanLinks[r2].linkIdx + ".2";
-            }
-        }
-    } else {
-        // Go left: use link fromIdx-1 → fromIdx, next-hop is .1
-        for (var l = 0; l < wanLinks.length; l++) {
-            if (wanLinks[l].toR === fromName) return "10.0." + wanLinks[l].linkIdx + ".1";
-        }
-    }
-    return null;
-}
-
-function quickBuild() {
-    var v = getQBValues();
-
-    if (!S.ptConnected) {
-        log("PT not connected — check Status tab and paste the bootstrap snippet first", "warn");
-        showNotif("PT is not connected. Paste the bootstrap snippet in PT first.");
-        switchTab("status");
-        return;
-    }
-
-    var script = buildQBScript(v);
-    log("Quick Build: sending " + v.routers + "R " + v.pcs + "PC topology via bridge…", "cmd");
-
-    var lines = script.split("\n").filter(function(l) { return l.trim() && !l.trim().startsWith("//"); });
-
-    queueCommands(lines, function(sent) {
-        if (sent > 0) {
-            S.commandCount += sent;
-            updateCommandCount();
-            log("Quick Build: " + sent + " commands queued", "ok");
-            switchTab("terminal");
-        } else {
-            log("Quick Build: failed to queue commands (bridge error)", "err");
-        }
-    });
-}
-
-// ------------------------------------------------------- Notifications -----
-
-function showNotif(msg) {
-    var strip = document.getElementById("notifStrip");
-    var msgEl = document.getElementById("notifMsg");
-    if (strip && msgEl) {
-        msgEl.textContent = msg;
-        strip.classList.add("active");
-        setTimeout(closeNotif, 8000);
-    }
-}
-
-function closeNotif() {
-    var strip = document.getElementById("notifStrip");
-    if (strip) strip.classList.remove("active");
-}
-
-// ------------------------------------------------------- Utilities ---------
-
-function setElText(id, text) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = text;
-}
-
-function setElClass(id, cls) {
-    var el = document.getElementById(id);
-    if (el) el.className = cls;
-}
-
-function setCardClass(id, cls) {
-    var el = document.getElementById(id);
-    if (el) el.className = cls;
-}
-
-function val(id) {
-    var el = document.getElementById(id);
-    return el ? el.value : "";
-}
-
-function intVal(id) {
-    return parseInt(val(id), 10) || 0;
-}
-
-function checked(id) {
-    var el = document.getElementById(id);
-    return el ? el.checked : false;
-}
-
-function pad2(n) {
-    return n < 10 ? "0" + n : "" + n;
-}
-
+// ---------------------------------------------------------------- Helpers --
+
+function setText(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+function setLed(id, cls) { var el = document.getElementById(id); if (el) el.className = "led" + (cls ? " " + cls : ""); }
+function pad2(n) { return n < 10 ? "0" + n : String(n); }
 function escapeHtml(str) {
-    var d = document.createElement("div");
-    d.appendChild(document.createTextNode(String(str)));
-    return d.innerHTML;
-}
-
-function escapeRe(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

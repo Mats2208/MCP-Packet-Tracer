@@ -67,8 +67,14 @@ def generate_switch_vlan_cli(
     return lines
 
 
-def generate_router_subinterface_cli(subinterfaces: list[SubinterfaceConfig]) -> list[str]:
-    """IOS lines for .1q subinterfaces of inter-VLAN routing on ONE router."""
+def generate_router_subinterface_cli(
+    subinterfaces: list[SubinterfaceConfig],
+    interfaces_v6: dict[str, str] | None = None,
+) -> list[str]:
+    """IOS lines for .1q subinterfaces of inter-VLAN routing on ONE router.
+
+    `interfaces_v6` (the router's, keyed "Gig0/0.10") adds the dual-stack address.
+    """
     lines: list[str] = []
     # The physical parent port must be 'no shutdown' for the subinterfaces to come up.
     parents = []
@@ -86,6 +92,10 @@ def generate_router_subinterface_cli(subinterfaces: list[SubinterfaceConfig]) ->
             ip, prefix = s.ip_cidr.split("/")
             mask = prefix_to_mask(int(prefix))
             lines.append(f" ip address {ip} {mask}")
+        v6 = (interfaces_v6 or {}).get(f"{s.parent_port}.{s.vlan_id}")
+        if v6:
+            lines.append(f" ipv6 address {v6}")
+            lines.append(" ipv6 enable")
         lines.append(" exit")
     return lines
 

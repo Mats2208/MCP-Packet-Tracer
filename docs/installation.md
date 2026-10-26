@@ -15,11 +15,33 @@
     `pydantic ≥ 2.11`. An older pydantic makes the server crash on startup. The
     pinned dependencies handle this for you; just don't force an older pydantic.
 
+## Let your AI agent install it
+
+Paste this into Claude Code, OpenCode, Codex or any coding agent:
+
+```text
+Install the Packet Tracer MCP from https://github.com/Mats2208/MCP-Packet-Tracer and set everything up for me.
+```
+
+The agent follows [`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md),
+does every step below, and leaves you one click: **Yes** when Packet Tracer asks to enable the extension.
+
 ## Install the server
 
+Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/), which brings its own Python:
+
 ```bash
-pip install packet-tracer-mcp
+curl -LsSf https://astral.sh/uv/install.sh | sh                          # macOS · Linux
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
 ```
+
+There is nothing else to install: the client runs the server with `uvx packet-tracer-mcp --stdio`, which
+downloads and caches it on first use.
+
+!!! note "pip"
+    `pip install packet-tracer-mcp` also works (then the command is `python -m packet_tracer_mcp --stdio`),
+    but on macOS/Homebrew and recent Linux distros a plain `pip install` is refused with
+    `externally-managed-environment` (PEP 668). Use `uv` or a virtualenv there.
 
 Or from source, if you want to modify it:
 
@@ -29,17 +51,11 @@ cd MCP-Packet-Tracer
 pip install -e .
 ```
 
-Either way the `packet_tracer_mcp` module becomes importable from any directory,
-so `python -m packet_tracer_mcp --stdio` works from anywhere — no need to `cd`
-into the repo or keep a server running.
-
 !!! note "The extension is not part of the package"
-    `pip install` gives you the server, and nothing else. The `.pts` extension is
-    a module compiled by Packet Tracer itself, so it ships as a
-    [release asset](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)
-    rather than inside the wheel — and Packet Tracer only accepts it through its
-    own Extensions menu anyway. You need it **only for live deploy**; planning,
-    validation and config generation work without it.
+    The server and the skill come from the package; the `.pts` extension is a module compiled by Packet
+    Tracer itself, so it ships as a
+    [release asset](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) and Packet Tracer only
+    accepts it through its own Extensions menu.
 
 ## Connect your MCP client
 
@@ -48,13 +64,13 @@ into the repo or keep a server running.
     **Linux · macOS · Git Bash · Windows `cmd.exe`:**
 
     ```bash
-    claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
+    claude mcp add --scope user --transport stdio packet-tracer -- uvx packet-tracer-mcp --stdio
     ```
 
     **Windows PowerShell** — quote the `--` separator:
 
     ```powershell
-    claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
+    claude mcp add --scope user --transport stdio packet-tracer "--" uvx packet-tracer-mcp --stdio
     ```
 
     !!! warning "PowerShell eats a bare `--`"
@@ -68,7 +84,7 @@ into the repo or keep a server running.
 
     ```bash
     claude mcp list
-    # packet-tracer: python -m packet_tracer_mcp --stdio - ✓ Connected
+    # packet-tracer: uvx packet-tracer-mcp --stdio - ✓ Connected
     ```
 
     Remove later with `claude mcp remove packet-tracer --scope user`.
@@ -82,8 +98,8 @@ into the repo or keep a server running.
       "servers": {
         "packet-tracer": {
           "type": "stdio",
-          "command": "python",
-          "args": ["-m", "packet_tracer_mcp", "--stdio"]
+          "command": "uvx",
+          "args": ["packet-tracer-mcp", "--stdio"]
         }
       }
     }
@@ -97,8 +113,8 @@ into the repo or keep a server running.
     {
       "mcpServers": {
         "packet-tracer": {
-          "command": "python",
-          "args": ["-m", "packet_tracer_mcp", "--stdio"]
+          "command": "uvx",
+          "args": ["packet-tracer-mcp", "--stdio"]
         }
       }
     }
@@ -117,39 +133,30 @@ To stream topologies into a **running** Packet Tracer, also install this project
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 
-## Claude Code Skill (recommended)
+## Agent Skill (required in practice)
 
-The repo ships a companion **Agent Skill** (`skill/SKILL.md`) that teaches the model the exact tool
-catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API — so the AI
-drives the MCP from verified facts instead of guessing. Install it **globally** from the repo root:
+The package ships a companion **Agent Skill** that teaches the model the exact tool catalog, the
+discover→plan→validate→deploy workflow and the precise Script-Engine API — so the AI drives the MCP from
+verified facts instead of guessing. Install it into your agent's skills folder:
 
-=== "Linux / macOS / Git Bash"
+```bash
+uvx packet-tracer-mcp install-skill                          # Claude Code, OpenCode → ~/.claude/skills
+uvx packet-tracer-mcp install-skill --dest ~/.agents/skills  # Codex
+```
 
-    ```bash
-    mkdir -p ~/.claude/skills/packet-tracer
-    cp -r skill/. ~/.claude/skills/packet-tracer/
-    ```
-
-=== "Windows PowerShell"
-
-    ```powershell
-    New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
-    ```
-
-Then run `/reload-skills` (or restart Claude Code) and confirm with `/skills`. Full details, including
-what it covers and a project-local alternative → **[Claude Code Skill](skill.md)**.
+Then run `/reload-skills` (or restart your agent) and confirm with `/skills`. Full details →
+**[Claude Code Skill](skill.md)**.
 
 ## Transport modes
 
 - **stdio** (recommended for desktop clients): the client spawns the server as a
   child process. The internal HTTP bridge to Packet Tracer (`:54321`) still starts
   automatically inside that process — live deploy works the same.
-- **streamable-http** (`http://127.0.0.1:39000/mcp`): start the server yourself with
+- **streamable-http** (`http://127.0.0.1:39400/mcp`): start the server yourself with
   `python -m packet_tracer_mcp` and let multiple clients share one instance.
 
-!!! note "On Windows, `python` must be on PATH"
-    If your client can't spawn the server, use the full interpreter path in the
-    `command` field (e.g. `C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe`).
+!!! note "If the client can't find `uvx`"
+    A shell or app opened before installing uv doesn't see it yet: restart it, or put the full path in
+    `command` (`~/.local/bin/uvx` on macOS/Linux, `%USERPROFILE%\.local\bin\uvx.exe` on Windows).
 
 Next: run the **[Quick Start](quickstart.md)** example.

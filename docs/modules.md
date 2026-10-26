@@ -1,6 +1,6 @@
 # Expansion Modules
 
-The catalog includes **151 expansion modules** (WICs, HWICs, NIMs, NMs, SFPs,
+The catalog includes **150 expansion modules** (WICs, HWICs, NIMs, NMs, SFPs,
 wireless/cellular adapters, …). Use `pt_list_modules` to discover exact names —
 optionally filtered by `router_model` or `category` — then `pt_add_module` (one) or
 `pt_install_modules_batch` (many).

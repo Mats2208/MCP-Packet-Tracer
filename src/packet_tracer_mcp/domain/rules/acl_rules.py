@@ -205,7 +205,7 @@ def _validate_address(addr: str, label: str, device: str, errors: list[PlanError
                 code=ErrorCode.ACL_INVALID_WILDCARD,
                 device=device,
                 message=f"{label}: '{addr}' is not a valid 'network wildcard'.",
-                suggestion="Formato: 'A.B.C.D 0.0.0.W' (ej: '192.168.1.0 0.0.0.255').",
+                suggestion="Format: 'A.B.C.D 0.0.0.W' (e.g. '192.168.1.0 0.0.0.255').",
             ))
             return
     errors.append(PlanError(

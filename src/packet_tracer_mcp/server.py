@@ -2,22 +2,25 @@
 MCP server for Packet Tracer.
 
 Entry point: creates the server, registers tools/resources, and starts
-on streamable-http (:39000) or stdio depending on the --stdio flag.
+on streamable-http (:39400) or stdio depending on the --stdio flag.
 """
 
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
 from .adapters.mcp.prompt_registry import register_prompts
 from .adapters.mcp.resource_registry import register_resources
+from .adapters.mcp.bridge_context import BridgeContext
 from .adapters.mcp.tool_registry import register_tools
 from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
 
-TRANSPORT_PORT = 39000
+TRANSPORT_PORT = 39400
 
 mcp = FastMCP(
     SERVER_NAME,
@@ -44,17 +47,40 @@ _lowlevel = getattr(mcp, "_mcp_server", None)
 if _lowlevel is not None:
     _lowlevel.version = __version__
 
-register_tools(mcp)
+# One bridge for the whole server; main() starts it before serving.
+BRIDGE = BridgeContext()
+register_tools(mcp, BRIDGE)
 register_resources(mcp)
 register_prompts(mcp)
+
+
+def workdir() -> Path:
+    """Where exports, screenshots and saved plans go (`PT_MCP_WORKDIR` overrides it).
+
+    Tools write to relative folders ("projects", "screenshots"). Relative to what the
+    client launched the server from, that could be the user's home, a repo, or `/`.
+    """
+    env = os.environ.get("PT_MCP_WORKDIR")
+    return Path(env).expanduser() if env else Path.home() / "PacketTracerMCP"
 
 
 def main():
     """Starts the MCP server.
 
-    By default uses streamable-http on :39000.
+    By default uses streamable-http on :39400 (39000 belongs to Packet Tracer's own IPC).
     With --stdio uses the stdio transport (for debugging or legacy clients).
+    `pt-mcp install-skill` installs the companion Agent Skill instead of serving.
     """
+    if sys.argv[1:2] == ["install-skill"]:
+        from .skill_install import main as install_skill
+
+        sys.exit(install_skill(sys.argv[2:]))
+    wd = workdir()
+    wd.mkdir(parents=True, exist_ok=True)
+    os.chdir(wd)
+    # Listen right away, so the extension's panel is online as soon as the agent starts.
+    # A busy port is not fatal: the tools report it on their first call.
+    BRIDGE.ensure_bridge(grace=False)
     if "--stdio" in sys.argv:
         mcp.run(transport="stdio")
     else:

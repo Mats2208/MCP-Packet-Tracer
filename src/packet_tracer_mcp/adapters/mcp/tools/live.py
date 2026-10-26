@@ -23,7 +23,7 @@ from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
 from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping
+from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions
 
 
 # --- Device console (real ping) ----------------------------------------------
@@ -47,6 +47,20 @@ _CONSOLE_PRIME_JS = (
 
 # Statistics block markers, in PT's two formats.
 _PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
+
+# New switch ports spend ~30 s in STP listening/learning before they forward, so the
+# first ping on a freshly deployed topology needs more than that to finish.
+PING_TIMEOUT_S = 45.0
+
+
+def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> str:
+    """What pt_verify_connectivity says when PT never printed the ping statistics."""
+    return (
+        f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
+        "The ping may still be running. On a topology deployed in the last minute, "
+        "switch ports may still be in STP listening/learning (~30 s): wait and retry, "
+        "or raise timeout_s."
+    )
 
 
 def console_ping_arm_js(device: str, target: str) -> str:
@@ -87,6 +101,14 @@ def console_ping_poll_js(device: str, base: int) -> str:
         "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
         "}else{reportResult('WAIT');}}"
     )
+
+
+# Names of the devices on the canvas, as a JSON array.
+_LIVE_NAMES_JS = (
+    "try{var net=ipc.network();var n=net.getDeviceCount();var a=[];"
+    "for(var i=0;i<n;i++){a.push(net.getDeviceAt(i).getName());}"
+    "reportResult(JSON.stringify(a));}catch(e){reportResult('[]');}"
+)
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -269,6 +291,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             # go to the clipboard, so the "full" pipeline ended with an empty
             # canvas even with the bridge connected: the user saw
             # "✅ Validation: PASS" and there was nothing in PT.
+            # Start the bridge first: on a fresh server it does not exist yet, and
+            # the build fell back to the clipboard while PT was a second away.
+            _ensure_bridge()
             if _pick_channel() != "":
                 parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
@@ -364,6 +389,26 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         plan = TopologyPlan.model_validate_json(plan_json)
+
+        # A name already on the canvas would be created a second time (PT allows
+        # duplicate names) while links and config land on the old device, and the
+        # getDevice(name) verification below would still say "verified".
+        live = _bridge_send_and_wait(_LIVE_NAMES_JS, timeout=5.0)
+        try:
+            live_names = json.loads(live) if live else []
+        except ValueError:
+            live_names = []
+        taken = name_collisions([d.name for d in plan.devices], live_names)
+        if taken:
+            return (
+                "Not deployed: the canvas already has device(s) named "
+                + ", ".join(taken)
+                + ". Deploying would create duplicates with the same names. Start from an "
+                "empty canvas (File > New in Packet Tracer), remove them with "
+                "pt_delete_device, or edit the existing topology with pt_add_device / "
+                "pt_add_link instead."
+            )
+
         script = generate_executable_script(plan)
         commands = [
             line.strip() for line in script.splitlines()
@@ -568,7 +613,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         from_device: str,
         to_ip: str,
         count: int = 4,
-        timeout_s: float = 20.0,
+        timeout_s: float = PING_TIMEOUT_S,
     ) -> str:
         """
         Runs a REAL ping from a device in PT and returns the result.
@@ -586,7 +631,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - to_ip: destination IP
         - count: reserved; PT uses its default per type (PC 4, IOS 5). A "-n"
           flag would break on IOS, so it is not forced for now.
-        - timeout_s: maximum wait (default 20s). A FAILED ping takes longer
+        - timeout_s: maximum wait (default 45s: on a topology deployed moments
+          ago, switch ports spend ~30s in STP before forwarding). A FAILED ping takes longer
           than a successful one: each packet waits for its own timeout before
           being declared lost (~13s measured for 4 lost packets).
         """
@@ -625,10 +671,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 }[_classify_ping(stat)]
                 return f"{from_device} → {to_ip}: {verdict}\n{stat}"
 
-        return (
-            f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
-            "The ping may still be running; retry or raise timeout_s."
-        )
+        return ping_no_result_message(from_device, to_ip, timeout_s)
 
     @mcp.tool()
     def pt_save_project(filename: str, directory: str = "") -> str:

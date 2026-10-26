@@ -99,6 +99,40 @@ PT_DEVICE_TYPE = {
 # is the most permissive — it works for any generic device with a wired interface.
 PT_DEVICE_TYPE_DEFAULT = 21
 
+# PT's device-type id per MODEL, measured live on PT 9.0.1 (2026-10-25) by creating each
+# catalog model with lw.addDevice(type, model) and reading getType(). The category map
+# above is only a fallback: it is wrong for 27 models (multilayer switches are 16,
+# Laptop-PT 18, ASAs 27, LAP-PT 44, Thing 39...), and lw.addDevice silently creates
+# nothing with a wrong id. 802, 803 and Embedded-Server-PT could not be created with
+# any id tried, so they are not listed.
+PT_MODEL_DEVICE_TYPE = {
+    "1841": 0, "1941": 0, "2620XM": 0, "2621XM": 0, "2811": 0, "2901": 0, "2911": 0,
+    "819HG-4G-IOX": 0, "819HGW": 0, "829": 0, "CGR1240": 0, "ISR4321": 0, "ISR4331": 0,
+    "Router-PT": 0, "Router-PT-Empty": 0,
+    "2950-24": 1, "2950T-24": 1, "2960-24TT": 1, "Switch-PT": 1, "Switch-PT-Empty": 1,
+    "3560-24PS": 16, "3650-24PS": 16, "IE-2000": 16,
+    "Cloud-PT": 2, "Cloud-PT-Empty": 2, "Bridge-PT": 3, "Hub-PT": 4, "Repeater-PT": 5,
+    "CoAxialSplitter-PT": 6,
+    "AccessPoint-PT": 7, "AccessPoint-PT-A": 7, "AccessPoint-PT-N": 7, "AccessPoint-PT-AC": 7,
+    "PC-PT": 8, "Server-PT": 9, "Printer-PT": 10, "Linksys-WRT300N": 11, "7960": 12,
+    "DSL-Modem-PT": 13, "Cable-Modem-PT": 14, "Laptop-PT": 18, "TabletPC-PT": 19,
+    "SMARTPHONE-PT": 20, "WirelessEndDevice-PT": 21, "WiredEndDevice-PT": 22, "TV-PT": 23,
+    "Home-VoIP-PT": 24, "Analog-Phone-PT": 25, "5505": 27, "5506-X": 27, "DLC100": 29,
+    "HomeRouter-PT-AC": 30, "Cell-Tower": 31, "Central-Office-Server": 32, "Sniffer": 35,
+    "MCU-PT": 36, "SBC-PT": 37, "Thing": 39, "WLC-PT": 41, "WLC-2504": 41, "WLC-3504": 41,
+    "LAP-PT": 44, "3702i": 44, "Copper Patch Panel": 46, "Fiber Patch Panel": 46,
+    "Copper Wall Mount": 47, "Fiber Wall Mount": 47, "Meraki-MX65W": 48,
+    "Meraki-Server": 49, "NetworkController": 50,
+}
+
+
+def pt_device_type(model: str, category: str) -> int:
+    """PT's device-type id for a model: measured per model, else the category's."""
+    if model in PT_MODEL_DEVICE_TYPE:
+        return PT_MODEL_DEVICE_TYPE[model]
+    return PT_DEVICE_TYPE.get(category, PT_DEVICE_TYPE_DEFAULT)
+
+
 # PT IpcAPI CONNECT_TYPES enum values (from the class_logical_workspace.html createLink doc).
 PT_CONNECT_TYPE = {
     "straight": 8100,

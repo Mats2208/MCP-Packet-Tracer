@@ -63,7 +63,7 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
     # --- Subinterfaces .1q (inter-VLAN routing / router-on-a-stick) ---
     subifs = [s for s in plan.subinterfaces if s.router == router.name]
     if subifs:
-        lines.extend(generate_router_subinterface_cli(subifs))
+        lines.extend(generate_router_subinterface_cli(subifs, router.interfaces_v6))
         lines.append("")
 
     # --- DHCP ---

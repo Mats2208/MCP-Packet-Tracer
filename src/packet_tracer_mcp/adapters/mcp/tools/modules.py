@@ -11,6 +11,24 @@ from ....shared.utils import js_escape
 from ....shared.utils import reply_json
 
 
+def module_target_error(spec, device_name: str, devices: list[dict]) -> str | None:
+    """Why `spec` cannot go on `device_name` given the live devices, or None if it can."""
+    target = next((d for d in devices if d.get("name") == device_name), None)
+    if target is None:
+        names = sorted({d.get("name", "") for d in devices if d.get("name")})
+        return (
+            f"Error: device '{device_name}' does not exist in PT.\n"
+            f"Current devices: {', '.join(names) or '(none)'}"
+        )
+    target_model = target.get("model", "") or ""
+    if spec.compatible_with and target_model and target_model not in spec.compatible_with:
+        return (
+            f"Error: module '{spec.name}' is not compatible with model '{target_model}'.\n"
+            f"Compatible with: {', '.join(spec.compatible_with)}"
+        )
+    return None
+
+
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     """Register this module's tools on `mcp`."""
     _bridge_send_and_wait = ctx.send_and_wait
@@ -125,6 +143,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         ports_added = ", ".join(slot_ports) if slot_ports else "(no ports)"
 
         if dry_run:
+            # Same checks as the real call when PT is reachable; offline, only the catalog.
+            devices = [] if _check_bridge() else _query_pt_devices()
+            if devices:
+                err = module_target_error(spec, device_name, devices)
+                if err:
+                    return err
             return reply_json({
                 "summary": f"[dry_run] Payload generated to install {spec.name} on {device_name} slot {slot_s}.",
                 "device": device_name,
@@ -146,20 +170,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         # Check the device exists and validate compatibility
         devices = _query_pt_devices()
         if devices:
-            target = next((d for d in devices if d.get("name") == device_name), None)
-            if target is None:
-                names = sorted({d.get("name", "") for d in devices if d.get("name")})
-                return (
-                    f"Error: device '{device_name}' does not exist in PT.\n"
-                    f"Current devices: {', '.join(names) or '(none)'}"
-                )
-            if spec.compatible_with:
-                target_model = target.get("model", "") or ""
-                if target_model and target_model not in spec.compatible_with:
-                    return (
-                        f"Error: module '{spec.name}' is not compatible with model '{target_model}'.\n"
-                        f"Compatible with: {', '.join(spec.compatible_with)}"
-                    )
+            err = module_target_error(spec, device_name, devices)
+            if err:
+                return err
 
         # Send to the bridge — the extension's helper handles the power cycle.
         # The JS must REPORT the result: it used to return it, and the tool

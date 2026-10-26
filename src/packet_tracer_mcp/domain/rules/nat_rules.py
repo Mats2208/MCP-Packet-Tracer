@@ -184,7 +184,7 @@ def _validate_inside_networks(config: NATConfig, errors: list[PlanError]) -> Non
                     code=ErrorCode.NAT_INVALID_IP,
                     device=config.router,
                     message=f"{label}: '{net}' is not a valid 'network wildcard' pair.",
-                    suggestion="Formato: 'A.B.C.D W.W.W.W' (ej: '192.168.1.0 0.0.0.255').",
+                    suggestion="Format: 'A.B.C.D W.W.W.W' (e.g. '192.168.1.0 0.0.0.255').",
                 ))
             continue
         errors.append(PlanError(

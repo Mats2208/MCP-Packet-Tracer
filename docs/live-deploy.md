@@ -7,7 +7,7 @@ There are **two channels**, and the server picks one per command automatically:
 
 ```text
                                    ┌─ HTTP bridge (:54321) ──▶ extension webview ─┐
-LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)                             ├─▶ PT Script Engine
+LLM ──▶ MCP Server (:39400) ──────►┤   (window OPEN)                             ├─▶ PT Script Engine
                                    └─ file mailbox (%LOCALAPPDATA%) ──▶ Script ──┘
                                        (window CLOSED)               Engine loop
 ```
@@ -24,7 +24,7 @@ LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)      
 
 | Port | Service | Purpose |
 |------|---------|---------|
-| **39000** | MCP server (streamable-http) | Receives tool calls from the LLM/editor |
+| **39400** | MCP server (streamable-http) | Receives tool calls from the LLM/editor |
 | **54321** | HTTP bridge | Queues JS commands while the extension window is open |
 
 ## Install the extension (one-time)
@@ -84,10 +84,10 @@ pt_export_topology        # full snapshot (positions, per-interface IPs, links)
     `.pts` from [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest).
 
 ??? question "A red error popup appeared (`An error occurred on line N`)"
-    A command threw inside the Script Engine. The Control Center's polling loop lives
-    in the webview, so it keeps running, but the popup blocks PT's UI until dismissed.
-    Click **OK** and re-run. Prefer the validated tools (`pt_add_device`,
-    `pt_add_link`, …) which pre-check inputs before sending.
+    With the V5 extension this should not happen: every command (HTTP and file-bridge)
+    runs inside a `try/catch`, so an error comes back as a tool result instead of a
+    modal. If you still see one, you are probably on an extension older than V5 —
+    install the latest `.pts`. Click **OK** to dismiss it; the polling loop keeps running.
 
 ??? question "Packet Tracer becomes very slow when the window is in the background"
     A QtWebEngine compositing limitation: when the webview is behind PT but not
