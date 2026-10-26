@@ -11,6 +11,12 @@
   2-router OSPF network with multilayer switches, laptops and a server through the MCP. Its
   `runCode` never opens the error dialog that used to freeze PT. Needs a new `.pts` (V6).
 
+- **Redesigned MCP Control Center (V6 panel).** One screen instead of four tabs: connection
+  state in plain words, the agent's activity as sentences ("Added R1 (2911)", "Cabled R1 Gi0/1 ↔
+  SW1 Gi0/1") with repeated reads folded into one row, and the JS console behind "Advanced".
+  Quick Build (a second topology generator inside the panel) and Bootstrap are gone; the
+  bridge logic is unchanged.
+
 ### Fixed (found by a live run of all 79 tools on macOS, 2026-10-25)
 
 - **Deploying over existing names duplicated devices and reported "verified".** Running

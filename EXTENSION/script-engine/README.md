@@ -24,8 +24,8 @@ Two behaviour changes against PTBuilder, both on purpose:
 ## Building the `.pts`
 
 In Packet Tracer: **Extensions → Scripting → Edit/New Script Module**, add `core.js` **first** and
-then `main.js` as the module's scripts, add `../webview/index.html`, `interface.js` and the
-Bootstrap files as its web files, and **Export** it as a `.pts`. Load order matters: `main.js`
+then `main.js` as the module's scripts, add `../webview/index.html` and `interface.js` as its
+web files, and **Export** it as a `.pts`. Load order matters: `main.js`
 overrides some of `core.js`'s functions.
 
 ## How it runs
