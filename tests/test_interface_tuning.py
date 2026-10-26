@@ -133,3 +133,34 @@ class TestOspfAuthentication:
     def test_nothing_ospf_emits_nothing_ospf(self):
         lines = generate_interface_tuning_cli(self._cfg(bandwidth=1000))
         assert not any("ospf" in line for line in lines)
+
+
+# Found on the 24-branch enterprise run (2026-10-26), reproduced on two 2911s in PT 9.0.1:
+# changing a router's OSPF network type flushes its own type-5 default LSA
+# (`default-information originate`) and PT never re-originates it, so the whole
+# network silently loses its default route.
+
+class TestOspfNetworkType:
+    def test_point_to_point_is_emitted(self):
+        cfg = InterfaceTuning(router="R1", interface="GigabitEthernet0/0", ospf_network="point-to-point")
+        assert " ip ospf network point-to-point" in generate_interface_tuning_cli(cfg)
+
+    def test_unknown_network_type_is_rejected(self):
+        cfg = InterfaceTuning(router="R1", interface="GigabitEthernet0/0", ospf_network="nbma")
+        assert not validate_interface_tuning(cfg).is_valid
+
+    def test_ospf_change_reoriginates_the_default_route_on_an_asbr(self):
+        from src.packet_tracer_mcp.infrastructure.generator.interface_tuning_cli_generator import (
+            build_interface_tuning_js_call, build_interface_tuning_payload,
+        )
+        cfg = InterfaceTuning(router="EDGE", interface="GigabitEthernet0/0", ospf_network="point-to-point")
+        js = build_interface_tuning_js_call(cfg.router, build_interface_tuning_payload(cfg), ospf_changed=True)
+        assert "reoriginateOspfDefault" in js and "getStartupFile" in js
+
+    def test_non_ospf_change_leaves_the_default_route_alone(self):
+        from src.packet_tracer_mcp.infrastructure.generator.interface_tuning_cli_generator import (
+            build_interface_tuning_js_call, build_interface_tuning_payload,
+        )
+        cfg = InterfaceTuning(router="R1", interface="Serial0/0/0", clock_rate=64000)
+        js = build_interface_tuning_js_call(cfg.router, build_interface_tuning_payload(cfg), ospf_changed=False)
+        assert "default-information" not in js

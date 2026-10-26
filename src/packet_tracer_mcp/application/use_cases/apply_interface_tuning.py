@@ -33,7 +33,8 @@ def apply_interface_tuning_uc(
             warnings.append(PlanError(code=ErrorCode.VALIDATION_ERROR,
                                       message=f"Could not validate against PT: {exc}"))
     cli_lines = generate_interface_tuning_cli(cfg)
-    js_call = build_interface_tuning_js_call(cfg.router, build_interface_tuning_payload(cfg))
+    js_call = build_interface_tuning_js_call(
+        cfg.router, build_interface_tuning_payload(cfg), ospf_changed=cfg.changes_ospf())
     sent = False
     if not errors and not dry_run and bridge_send is not None:
         sent = bool(bridge_send(js_call))
