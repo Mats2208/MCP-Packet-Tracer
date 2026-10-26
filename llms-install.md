@@ -4,7 +4,7 @@ You are an AI coding agent (Claude Code, OpenCode, Codex, Cursor, …) and the u
 **Packet Tracer MCP**. Follow these steps in order. The user may not be a developer: explain each step in
 one plain sentence before running it, in the user's language, and ask before installing anything system-wide.
 
-The **only** step the user does by hand is adding the Packet Tracer extension (step 5). Everything else is yours.
+The **only** thing the user does by hand is clicking **Yes** when Packet Tracer asks to enable the extension (step 5). Everything else is yours.
 
 ## 0. Find out where you are
 
@@ -60,25 +60,40 @@ instead of discovering them. Install it into **your own** skills folder:
 - Codex: `uvx packet-tracer-mcp install-skill --dest ~/.agents/skills`
 - Other agents: `--dest <your user-level skills folder>`
 
-## 4. Download the Packet Tracer extension for the user
+## 4. Put the Packet Tracer extension where PT finds it
 
-Download the extension to the user's Downloads folder (macOS/Linux shown; on Windows use
-`Invoke-WebRequest -OutFile "$HOME\Downloads\MCP-Control-Center.pts"`):
+Packet Tracer scans its own `extensions` folder when it starts and asks the user to enable any
+new script module there. Copy this project's extension (**MCP Control Center**, not PTBuilder or
+any other) into that folder, inside a subfolder of its own:
 
-```bash
-curl -L -o ~/Downloads/MCP-Control-Center.pts https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest/download/V5.2.pts
-```
+- **macOS** (verified, no admin needed):
+  ```bash
+  APP="$(ls -d /Applications/Cisco\ Packet\ Tracer*/Cisco\ Packet\ Tracer*.app | tail -1)"
+  mkdir -p "$APP/Contents/extensions/MCPControlCenter"
+  curl -L -o "$APP/Contents/extensions/MCPControlCenter/MCPControlCenter.pts" \
+    https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest/download/MCP-Control-Center.pts
+  ```
+- **Windows**: the folder is `C:\Program Files\Cisco Packet Tracer <version>\extensions\`, which
+  needs administrator rights. Tell the user Windows will ask for permission once, then run from
+  PowerShell (adjust the version folder you find):
+  ```powershell
+  $pt = (Get-ChildItem "C:\Program Files" -Directory -Filter "Cisco Packet Tracer*" | Select-Object -Last 1).FullName
+  $tmp = "$env:TEMP\MCPControlCenter.pts"
+  Invoke-WebRequest -OutFile $tmp https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest/download/MCP-Control-Center.pts
+  Start-Process powershell -Verb RunAs -Wait -ArgumentList "-Command", "New-Item -ItemType Directory -Force '$pt\extensions\MCPControlCenter' | Out-Null; Copy-Item '$tmp' '$pt\extensions\MCPControlCenter\MCPControlCenter.pts' -Force"
+  ```
+- **Linux**: PT installs under `/opt/pt`; copy to `/opt/pt/extensions/MCPControlCenter/MCPControlCenter.pts`
+  with `sudo` (ask the user first).
 
-It is this project's own **MCP Control Center** extension. Do not install PTBuilder or any other extension.
+If copying is not possible, fall back to the manual way: download the file to the user's Downloads
+folder and have them add it with **Extensions → Scripting → Configure PT Script Modules → Add…**.
 
-## 5. The user adds the extension (by hand, once)
+## 5. The user enables it (one click)
 
-Tell the user, step by step:
-
-1. Open Cisco Packet Tracer.
-2. **Extensions → Scripting → Configure PT Script Modules → Add…**, pick `MCP-Control-Center.pts` from
-   Downloads, confirm.
-3. **Extensions → MCP BUILDER**: the MCP Control Center window opens and connects by itself.
+Tell the user: open (or restart) Cisco Packet Tracer. A dialog says *"Cisco Packet Tracer has
+detected a new script module. Do you want to enable this script module?"* showing
+**MCP-BUILDER** by Mateo Andres Soto Gareca — click **Yes**. The MCP Control Center window opens
+and connects by itself (on later starts: **Extensions → MCP BUILDER**).
 
 Wait until the user says it is done.
 

@@ -137,10 +137,13 @@ uvx packet-tracer-mcp install-skill --dest ~/.agents/skills # Codex
 Then restart your agent (or run `/reload-skills` in Claude Code). Details →
 **[Skill docs](https://mats2208.github.io/MCP-Packet-Tracer/skill/)**.
 
-**4. Install the live-deploy extension** — Download **`V5.2.pts`** from
-[**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to
-**Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Open it with
-**Extensions → MCP BUILDER**. Full walkthrough in [Live deploy](#live-deploy) below.
+**4. Install the live-deploy extension** — Download **`MCP-Control-Center.pts`** from
+[**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest) and drop it in Packet
+Tracer's own `extensions` folder, in a subfolder (`…/extensions/MCPControlCenter/`). On macOS that is
+`Cisco Packet Tracer <version>.app/Contents/extensions/`; on Windows
+`C:\Program Files\Cisco Packet Tracer <version>\extensions\` (needs admin). Next time PT starts it
+asks *"detected a new script module… enable?"* — click **Yes**. Or add it by hand with
+**Extensions → Scripting → Configure PT Script Modules → Add…**. Full walkthrough in [Live deploy](#live-deploy) below.
 
 > **v0.6.0+ requires V5.** The bridge authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
 

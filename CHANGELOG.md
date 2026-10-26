@@ -52,6 +52,10 @@
 - **Install it by asking your agent.** `llms-install.md` tells any coding agent (Claude Code, OpenCode,
   Codex, Cursor…) how to install the MCP on Windows, macOS or Linux: detect the OS and client, register the
   server, install the skill and download the extension. The user only adds the `.pts` in Packet Tracer.
+- **One-click extension install.** Packet Tracer scans its own `extensions` folder at start and
+  asks to enable new script modules; the agent install drops the `.pts` there, so the user only
+  clicks **Yes** (verified on macOS with PT 9.0.1). The release asset gets a stable name,
+  `MCP-Control-Center.pts`.
 - **`pt-mcp install-skill [--dest DIR]`.** The skill now ships inside the wheel; before, installing it
   needed a clone (`cp -r skill/.`), so whoever installed with pip never got it.
 - **`uvx packet-tracer-mcp`.** A script named like the package, so `uv` users run the server with no
