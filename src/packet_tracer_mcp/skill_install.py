@@ -10,6 +10,7 @@ pyproject.toml) and this command puts it in place.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -33,14 +34,25 @@ def default_dest() -> Path:
     return Path.home() / ".claude" / "skills"
 
 
+def _is_link(path: Path) -> bool:
+    # A Windows directory junction (`mklink /J`, no admin needed) is not a symlink to
+    # is_symlink(), and shutil.rmtree refuses it.
+    # os.path.isjunction is 3.12+; on 3.11 a junction keeps the old behaviour.
+    isjunction = getattr(os.path, "isjunction", lambda _p: False)
+    return path.is_symlink() or isjunction(path)
+
+
 def install(dest_root: Path) -> Path:
     src = skill_source()
     dest = dest_root.expanduser() / SKILL_NAME
-    if dest.is_symlink():
+    if _is_link(dest):
         # A link to a skill kept elsewhere (a dotfiles or skills repo): drop the link, never
         # what it points to, which is not ours to delete.
-        print(f"replacing the link {dest} -> {dest.readlink()} with a copy (the linked folder is untouched)")
-        dest.unlink()
+        print(f"replacing the link {dest} -> {os.readlink(dest)} with a copy (the linked folder is untouched)")
+        if dest.is_symlink():
+            dest.unlink()
+        else:
+            os.rmdir(dest)  # removes the junction itself, not its target
     elif dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(src, dest)

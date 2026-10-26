@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
+
+import pytest
 
 from src.packet_tracer_mcp import skill_install
 
@@ -28,17 +32,41 @@ def test_reinstall_replaces_a_stale_copy(tmp_path):
     assert (stale / "SKILL.md").read_text(encoding="utf-8") == Path("skill/SKILL.md").read_text(encoding="utf-8")
 
 
-def test_symlinked_skill_is_replaced_without_touching_its_target(tmp_path):
+def _linked_skill(tmp_path: Path, make_link) -> tuple[Path, Path]:
     elsewhere = tmp_path / "my-skills" / "packet-tracer"
     elsewhere.mkdir(parents=True)
     (elsewhere / "SKILL.md").write_text("mine", encoding="utf-8")
     root = tmp_path / "skills"
     root.mkdir()
-    (root / "packet-tracer").symlink_to(elsewhere, target_is_directory=True)
+    make_link(root / "packet-tracer", elsewhere)
+    return root, elsewhere
+
+
+def _assert_link_replaced(root: Path, elsewhere: Path) -> None:
     dest = skill_install.install(root)
     assert not dest.is_symlink()
     assert _files(dest) == _files(Path("skill"))
     assert (elsewhere / "SKILL.md").read_text(encoding="utf-8") == "mine"
+
+
+def test_symlinked_skill_is_replaced_without_touching_its_target(tmp_path):
+    def symlink(link: Path, target: Path) -> None:
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as e:
+            # Windows without Developer Mode refuses symlinks (WinError 1314); junctions cover it there.
+            pytest.skip(f"symlinks not permitted here: {e}")
+
+    _assert_link_replaced(*_linked_skill(tmp_path, symlink))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="directory junctions are Windows-only")
+def test_junctioned_skill_is_replaced_without_touching_its_target(tmp_path):
+    # `mklink /J` is how Windows users link a folder without admin rights.
+    def junction(link: Path, target: Path) -> None:
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+
+    _assert_link_replaced(*_linked_skill(tmp_path, junction))
 
 
 def test_cli_exit_code_and_dest(tmp_path, capsys):
