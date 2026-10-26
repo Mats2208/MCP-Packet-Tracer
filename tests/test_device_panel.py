@@ -465,3 +465,13 @@ def test_screenshot_path_stays_inside(tmp_path, monkeypatch):
     p = screenshot_path("../../etc/passwd", "../out")
     assert p.parent.resolve().is_relative_to(tmp_path.resolve())
     assert p.suffix == ".png"
+
+
+def test_zoom_restore_plan():
+    """Zoomed out on a large network (zoom -5), centring cannot move the device to the
+    middle of the viewport, so the click missed. open() resets the zoom to 100%, clicks,
+    and restores the user's zoom with the toolbar (found on the 116-device run)."""
+    from src.packet_tracer_mcp.infrastructure.ui.presenter import zoom_restore_plan
+    assert zoom_restore_plan(0) == ("", 0)
+    assert zoom_restore_plan(-5) == ("Zoom Out", 5)
+    assert zoom_restore_plan(3) == ("Zoom In", 3)

@@ -105,6 +105,15 @@ def is_available() -> tuple[bool, str]:
     return True, ""
 
 
+def zoom_restore_plan(zoom: int) -> tuple[str, int]:
+    """Toolbar button and number of presses that bring the canvas from 100% back to `zoom`."""
+    if zoom < 0:
+        return "Zoom Out", -zoom
+    if zoom > 0:
+        return "Zoom In", zoom
+    return "", 0
+
+
 class Presenter:
     def __init__(self, send_and_wait: SendAndWait, *, sleep: Callable[[float], None] = time.sleep):
         self._send = send_and_wait
@@ -222,6 +231,30 @@ class Presenter:
                     "A click with Delete active would delete the device, so I won't click."
                 )
             steps.append("Select tool activated")
+        # Zoomed out on a large network, the whole scene fits in the viewport, so
+        # centring cannot bring the device to the middle and the click misses. Reset to
+        # 100% (where device_point() is calibrated) and give the user's zoom back after.
+        zoom = int(st.get("zoom", 0))
+        buttons = {e.name: e for e in els if e.name in ("Zoom Reset", "Zoom In", "Zoom Out")}
+        if zoom != 0 and "Zoom Reset" in buttons:
+            u.invoke(buttons["Zoom Reset"])
+            self._sleep(0.3)
+            st = self._state(device)
+            steps.append("zoom reset to 100% to click the device")
+            try:
+                return self._click_device(u, main, pid, device, st, steps)
+            finally:
+                name, times = zoom_restore_plan(zoom)
+                for _ in range(times if name in buttons else 0):
+                    u.invoke(buttons[name])
+                    self._sleep(0.1)
+                if times:
+                    steps.append(f"zoom restored ({zoom})")
+        return self._click_device(u, main, pid, device, st, steps)
+
+    def _click_device(self, u, main: int, pid: int, device: str, st: dict, steps: list[str]) -> int:
+        from . import win32
+        els = u.descendants(main)
         vp = next((e for e in els if e.automation_id.endswith("CLogicalWorkspace.QWidget")), None)
         if vp is None:
             raise PresenterError("Can't find PT's logical canvas.")
