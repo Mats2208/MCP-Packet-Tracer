@@ -36,7 +36,12 @@ def default_dest() -> Path:
 def install(dest_root: Path) -> Path:
     src = skill_source()
     dest = dest_root.expanduser() / SKILL_NAME
-    if dest.exists():
+    if dest.is_symlink():
+        # A link to a skill kept elsewhere (a dotfiles or skills repo): drop the link, never
+        # what it points to, which is not ours to delete.
+        print(f"replacing the link {dest} -> {dest.readlink()} with a copy (the linked folder is untouched)")
+        dest.unlink()
+    elif dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(src, dest)
     return dest
