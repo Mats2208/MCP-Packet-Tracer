@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -37,9 +38,15 @@ def default_dest() -> Path:
 def _is_link(path: Path) -> bool:
     # A Windows directory junction (`mklink /J`, no admin needed) is not a symlink to
     # is_symlink(), and shutil.rmtree refuses it.
-    # os.path.isjunction is 3.12+; on 3.11 a junction keeps the old behaviour.
-    isjunction = getattr(os.path, "isjunction", lambda _p: False)
-    return path.is_symlink() or isjunction(path)
+    if path.is_symlink():
+        return True
+    if hasattr(os.path, "isjunction"):  # 3.12+
+        return os.path.isjunction(path)
+    try:
+        tag = os.lstat(path).st_reparse_tag  # Windows only, 3.8+
+    except (OSError, AttributeError):
+        return False
+    return tag == getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None)
 
 
 def install(dest_root: Path) -> Path:
