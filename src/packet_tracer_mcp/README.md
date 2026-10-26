@@ -39,14 +39,14 @@ Request → TopologyRequest → Orchestrator → TopologyPlan → Validator
 
 | File | Purpose |
 |---------|-----------|
-| `server.py` | Creates the `FastMCP` instance, registers tools/resources, starts over HTTP (:39000) or stdio |
+| `server.py` | Creates the `FastMCP` instance, registers tools/resources, starts over HTTP (:39400) or stdio |
 | `__main__.py` | Entry point for `python -m packet_tracer_mcp` — calls `server.main()` |
 | `settings.py` | Global constants: `SERVER_NAME`, `SERVER_INSTRUCTIONS`, `GUIDE` (the version is the package's `__version__`) |
 
 ## Running
 
 ```bash
-# Streamable HTTP (default, puerto 39000)
+# Streamable HTTP (default, port 39400)
 python -m packet_tracer_mcp
 
 # Modo stdio (debug/legacy)

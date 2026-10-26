@@ -2,7 +2,7 @@
 MCP server for Packet Tracer.
 
 Entry point: creates the server, registers tools/resources, and starts
-on streamable-http (:39000) or stdio depending on the --stdio flag.
+on streamable-http (:39400) or stdio depending on the --stdio flag.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from .adapters.mcp.bridge_context import BridgeContext
 from .adapters.mcp.tool_registry import register_tools
 from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
 
-TRANSPORT_PORT = 39000
+TRANSPORT_PORT = 39400
 
 mcp = FastMCP(
     SERVER_NAME,
@@ -67,7 +67,7 @@ def workdir() -> Path:
 def main():
     """Starts the MCP server.
 
-    By default uses streamable-http on :39000.
+    By default uses streamable-http on :39400 (39000 belongs to Packet Tracer's own IPC).
     With --stdio uses the stdio transport (for debugging or legacy clients).
     `pt-mcp install-skill` installs the companion Agent Skill instead of serving.
     """

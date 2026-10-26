@@ -151,7 +151,7 @@ Then run `/reload-skills` (or restart your agent) and confirm with `/skills`. Fu
 - **stdio** (recommended for desktop clients): the client spawns the server as a
   child process. The internal HTTP bridge to Packet Tracer (`:54321`) still starts
   automatically inside that process — live deploy works the same.
-- **streamable-http** (`http://127.0.0.1:39000/mcp`): start the server yourself with
+- **streamable-http** (`http://127.0.0.1:39400/mcp`): start the server yourself with
   `python -m packet_tracer_mcp` and let multiple clients share one instance.
 
 !!! note "If the client can't find `uvx`"

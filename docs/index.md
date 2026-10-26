@@ -67,7 +67,7 @@ Natural language prompt
         │
    LLM (Claude / Copilot / Codex)
         │  MCP tools
-   Packet Tracer MCP Server   (:39000)
+   Packet Tracer MCP Server   (:39400)
         │  HTTP bridge (:54321, window open)  ·  file-bridge (window closed)
    MCP Control Center ext.
         │  Script Engine

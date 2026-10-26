@@ -27,6 +27,8 @@
 - **File-bridge never connected on macOS/Linux.** The V5 extension writes its mailbox under
   `<home>/AppData/Local/packet-tracer-mcp/bridge` on every OS; the server looked in
   `~/.local/state`. The server now meets it there, so the released `.pts` works unchanged.
+- **HTTP transport moved from :39000 to :39400.** Packet Tracer itself listens on `*:39000` (its
+  IPC for external apps), so the two collided. Only affects running the server without `--stdio`.
 - **`pt_diff` listed PT's own off-canvas "Power Distribution Device0" as an extra device.**
 - Spanish leftovers in English output (explainer, cable/ACL/NAT suggestions), and the explainer
   no longer claims router-to-router /30 links in a build that has none.

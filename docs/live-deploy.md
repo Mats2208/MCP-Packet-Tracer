@@ -7,7 +7,7 @@ There are **two channels**, and the server picks one per command automatically:
 
 ```text
                                    ┌─ HTTP bridge (:54321) ──▶ extension webview ─┐
-LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)                             ├─▶ PT Script Engine
+LLM ──▶ MCP Server (:39400) ──────►┤   (window OPEN)                             ├─▶ PT Script Engine
                                    └─ file mailbox (%LOCALAPPDATA%) ──▶ Script ──┘
                                        (window CLOSED)               Engine loop
 ```
@@ -24,7 +24,7 @@ LLM ──▶ MCP Server (:39000) ──────►┤   (window OPEN)      
 
 | Port | Service | Purpose |
 |------|---------|---------|
-| **39000** | MCP server (streamable-http) | Receives tool calls from the LLM/editor |
+| **39400** | MCP server (streamable-http) | Receives tool calls from the LLM/editor |
 | **54321** | HTTP bridge | Queues JS commands while the extension window is open |
 
 ## Install the extension (one-time)

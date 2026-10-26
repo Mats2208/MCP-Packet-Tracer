@@ -34,3 +34,9 @@ def test_main_starts_the_bridge_before_serving():
     src = Path("src/packet_tracer_mcp/server.py").read_text(encoding="utf-8")
     body = src[src.index("def main("):]
     assert body.index("BRIDGE.ensure_bridge(grace=False)") < body.index("mcp.run(")
+
+
+def test_http_port_does_not_clash_with_packet_tracer_ipc():
+    """PT itself listens on *:39000 (IPC/ExApps, 'each new instance takes the next free
+    port') and *:38000 (multiuser) — measured on PT 9.0.1, 2026-10-25."""
+    assert server.TRANSPORT_PORT not in range(38000, 39100)
