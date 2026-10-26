@@ -22,6 +22,9 @@ from ....infrastructure.execution.manual_executor import ManualExecutor
 from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
 from ..bridge_context import BridgeContext, DEPLOY_BATCH, stp_wait_seconds
+from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
+    PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
+)
 from ....shared.enums import RoutingProtocol, TopologyTemplate
 from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions, read_plan_source
 
@@ -47,21 +50,6 @@ _CONSOLE_PRIME_JS = (
 
 # Statistics block markers, in PT's two formats.
 _PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
-
-# New switch ports spend ~30 s in STP listening/learning before they forward, so the
-# first ping on a freshly deployed topology needs more than that to finish.
-PING_TIMEOUT_S = 45.0
-
-
-def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> str:
-    """What pt_verify_connectivity says when PT never printed the ping statistics."""
-    return (
-        f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
-        "The ping may still be running. On a topology deployed in the last minute, "
-        "switch ports may still be in STP listening/learning (~30 s): wait and retry, "
-        "or raise timeout_s."
-    )
-
 
 def console_ping_arm_js(device: str, target: str) -> str:
     """JS that makes the console usable, counts the existing blocks and fires the ping.
@@ -444,8 +432,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "  reportResult(d ? 'OK' : 'MISSING');"
                 "} catch(e) { reportResult('MISSING'); }"
             )
-            r = _bridge_send_and_wait(js, timeout=5.0)
-            if r == "OK":
+            status = device_check_status(_bridge_send_and_wait(js, timeout=5.0))
+            # PT may still be running the queued deploy: a timeout is asked again with
+            # more patience instead of being counted as a missing device.
+            for wait in (20.0, 40.0):
+                if status != "unknown":
+                    break
+                status = device_check_status(_bridge_send_and_wait(js, timeout=wait))
+            if status == "ok":
                 dev_ok += 1
             else:
                 dev_fail.append(dev.name)
@@ -486,7 +480,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             for lnk in link_fail_objs:
                 names.add(lnk.device_a)
                 names.add(lnk.device_b)
-            retry_cmds = [c for c in commands if any(f'"{n}"' in c for n in names)]
+            retry_cmds = reconcile_commands(commands, names)
             for cmd in retry_cmds:
                 _channel_send(_js_guard(cmd))
                 time.sleep(command_delay)
