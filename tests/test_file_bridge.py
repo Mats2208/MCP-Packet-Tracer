@@ -147,8 +147,14 @@ def test_posix_mailbox_matches_where_the_v5_extension_writes(monkeypatch, tmp_pa
     <home>/AppData/Local/packet-tracer-mcp/bridge, on every OS. On macOS the server
     looked in ~/.local/state/... and the heartbeat was never seen (found 2026-10-25:
     alive.txt fresh under ~/AppData on a Mac). Both sides must meet."""
+    import types
     import src.packet_tracer_mcp.infrastructure.execution.file_bridge as fbmod
-    monkeypatch.setattr(fbmod.os, "name", "posix")
+    # Only the module's view of os: patching os.name itself makes pathlib build
+    # PosixPath on Windows (Python 3.11), which crashes the whole pytest run.
+    fake_os = types.ModuleType("os")
+    fake_os.__dict__.update(fbmod.os.__dict__)
+    fake_os.name = "posix"
+    monkeypatch.setattr(fbmod, "os", fake_os)
     monkeypatch.setattr(fbmod.Path, "home", classmethod(lambda cls: tmp_path))
     assert fbmod.bridge_dir() == tmp_path / "AppData" / "Local" / "packet-tracer-mcp" / "bridge"
     js = fbmod.Path("EXTENSION/script-engine/main.js").read_text(encoding="utf-8")
