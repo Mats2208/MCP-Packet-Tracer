@@ -239,7 +239,7 @@ function clock() {
 }
 
 function addEntry(type, text, detail, kind) {
-    S.entries.push({ ts: clock(), type: type, text: text, detail: detail || "", count: 1, kind: kind || type });
+    S.entries.push({ ts: clock(), type: type, text: text, detail: detail || "", count: 1, kind: kind || type, fresh: true });
     if (S.entries.length > S.maxEntries) S.entries.splice(0, S.entries.length - S.maxEntries);
     if (type === "err") S.errCount++;
     renderList();
@@ -274,7 +274,10 @@ function renderList() {
             : '<div class="empty"><div><b>No problems</b>Errors and warnings would show up here.</div></div>';
     } else {
         list.innerHTML = shown.map(function(e) {
-            return '<div class="row ' + e.type + '">' +
+            // Only a row added since the last render animates in; re-renders stay still.
+            var cls = "row " + e.type + (e.fresh ? " new" : "");
+            e.fresh = false;
+            return '<div class="' + cls + '">' +
                 '<span class="ico">' + icon(e.kind) + "</span>" +
                 '<span class="msg">' + escapeHtml(e.text) +
                 (e.detail ? '<span class="detail">' + escapeHtml(e.detail) + "</span>" : "") +
@@ -288,8 +291,8 @@ function renderList() {
 
 function setFilter(f) {
     S.filter = f;
-    document.getElementById("f-all").className = f === "all" ? "on" : "";
-    document.getElementById("f-err").className = f === "err" ? "on" : "";
+    document.getElementById("f-all").className = "filter" + (f === "all" ? " on" : "");
+    document.getElementById("f-err").className = "filter" + (f === "err" ? " on" : "");
     renderList();
 }
 
@@ -320,7 +323,7 @@ function updateUI() {
         state = "Waiting for your agent"; cls = "pend";
         sub = "Start Claude Code, OpenCode or Codex with the packet-tracer MCP";
     }
-    document.getElementById("hero").className = "hero " + cls;
+    document.getElementById("hero").className = "status hero " + cls;
     setText("stateText", state);
     setText("stateSub", sub);
 
@@ -346,8 +349,10 @@ function updateUptime() {
 
 function toggleConsole() {
     var adv = document.getElementById("adv");
-    adv.classList.toggle("open");
-    if (adv.classList.contains("open")) document.getElementById("code").focus();
+    adv.classList.toggle("adv-open");
+    var open = adv.classList.contains("adv-open");
+    setText("advToggle", open ? "Hide console" : "Console");
+    if (open) document.getElementById("code").focus();
 }
 
 function showTab(name) {
