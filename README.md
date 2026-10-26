@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/banner.png" alt="Packet Tracer MCP — describe a network and watch it build itself in Cisco Packet Tracer" width="100%"/>
+<img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/banner.png?v=2" alt="Packet Tracer MCP — describe a network and watch it build itself in Cisco Packet Tracer" width="100%"/>
 
 **Describe a network in plain words. Your AI plans it, validates it, and builds it live in Cisco Packet Tracer — then pings it to prove it works.**
 
