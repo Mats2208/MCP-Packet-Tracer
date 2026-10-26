@@ -60,6 +60,12 @@ def js_escape(s: str) -> str:
     )
 
 
+def name_collisions(plan_names: list[str], live_names: list[str]) -> list[str]:
+    """Plan device names that already exist on the canvas, in plan order."""
+    live = set(live_names)
+    return [n for n in plan_names if n in live]
+
+
 def classify_ping(stat_line: str) -> str:
     """Classifies a ping statistics line as "ok" | "partial" | "none".
 

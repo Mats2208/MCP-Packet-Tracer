@@ -7,7 +7,9 @@ on streamable-http (:39000) or stdio depending on the --stdio flag.
 
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
@@ -49,6 +51,16 @@ register_resources(mcp)
 register_prompts(mcp)
 
 
+def workdir() -> Path:
+    """Where exports, screenshots and saved plans go (`PT_MCP_WORKDIR` overrides it).
+
+    Tools write to relative folders ("projects", "screenshots"). Relative to what the
+    client launched the server from, that could be the user's home, a repo, or `/`.
+    """
+    env = os.environ.get("PT_MCP_WORKDIR")
+    return Path(env).expanduser() if env else Path.home() / "PacketTracerMCP"
+
+
 def main():
     """Starts the MCP server.
 
@@ -60,6 +72,9 @@ def main():
         from .skill_install import main as install_skill
 
         sys.exit(install_skill(sys.argv[2:]))
+    wd = workdir()
+    wd.mkdir(parents=True, exist_ok=True)
+    os.chdir(wd)
     if "--stdio" in sys.argv:
         mcp.run(transport="stdio")
     else:

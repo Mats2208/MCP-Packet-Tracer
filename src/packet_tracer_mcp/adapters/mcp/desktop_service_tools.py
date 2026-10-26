@@ -102,6 +102,11 @@ def http_both_off_warning(device: str) -> str:
             "that only turn things off are still allowed.")
 
 
+def email_account_names(raw: str) -> list[str]:
+    """Usernames out of PT's getAllEmailAcctAsStrings() ("user:password,..."), passwords dropped."""
+    return [a.split(":", 1)[0].strip() for a in (raw or "").split(",") if a.strip()]
+
+
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
     # Last URL each host's browser loaded through pt_web_browser (this server
     # process only): tells "same URL again" apart from a failed navigation.
@@ -410,6 +415,9 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         if error:
             return error
         data.pop("ok", None)
+        # PT hands back "user:password" pairs; credentials never leave the device.
+        if "accounts" in data:
+            data["accounts"] = email_account_names(str(data["accounts"]))
         notes = ps.show_after(device, show, capture, output_dir, svc,
                               tab="Services", section=svc.upper())
         return with_notes(data, notes)

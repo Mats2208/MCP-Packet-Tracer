@@ -62,7 +62,7 @@ def validate_hardening(cfg: HardeningConfig) -> ValidationResult:
                 code=ErrorCode.HARDENING_SSH_REQUIRES_DOMAIN,
                 device=cfg.device,
                 message="SSH requires a domain-name (`ip domain-name`).",
-                suggestion="Define ssh.domain (ej 'lab.local').",
+                suggestion="Define ssh.domain (e.g. 'lab.local').",
             ))
         if cfg.ssh.modulus < 768:
             warnings.append(PlanError(
@@ -78,6 +78,18 @@ def validate_hardening(cfg: HardeningConfig) -> ValidationResult:
                 message="SSH enabled but there are no local users — you won't be able to log in.",
                 suggestion="Add at least one user in `users`.",
             ))
+
+    if cfg.console_login_local and cfg.users:
+        warnings.append(PlanError(
+            code=ErrorCode.HARDENING_CONSOLE_LOGIN,
+            device=cfg.device,
+            message="The console will ask for Username/Password (`line console 0` / `login local`).",
+            suggestion=(
+                "From the next login on, pt_cli stops at Username:. Send the credentials as its "
+                "first commands, e.g. pt_cli(device, [\"<user>\", \"<secret>\", \"enable\", ...]); "
+                "the answer to Password: is masked in the reply."
+            ),
+        ))
 
     return ValidationResult(errors=errors, warnings=warnings)
 

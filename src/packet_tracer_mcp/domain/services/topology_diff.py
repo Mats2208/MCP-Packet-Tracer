@@ -36,6 +36,12 @@ def _carries_ip(model_name: str) -> bool:
     return model.category not in _L2_CATEGORIES
 
 
+def _is_power_distribution(model_name: str) -> bool:
+    from ...infrastructure.catalog.devices import resolve_model
+    model = resolve_model(model_name or "")
+    return model is not None and model.category == "power_dist"
+
+
 def diff(plan: TopologyPlan, live: list[dict]) -> dict:
     """Compares the plan against the live topology. Reports divergences."""
     plan_devices = {d.name: d for d in plan.devices}
@@ -44,7 +50,12 @@ def diff(plan: TopologyPlan, live: list[dict]) -> dict:
     live_names = set(live_by_name)
 
     missing_devices = sorted(plan_names - live_names)   # in the plan, missing in PT
-    extra_devices = sorted(live_names - plan_names)     # in PT, not in the plan
+    # in PT, not in the plan. PT's own power-distribution device is not drift: it sits
+    # far off the canvas and nobody placed it.
+    extra_devices = sorted(
+        n for n in live_names - plan_names
+        if not _is_power_distribution(live_by_name[n].get("model", ""))
+    )
 
     ip_mismatches = []
     for name in sorted(plan_names & live_names):

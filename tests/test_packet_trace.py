@@ -167,3 +167,26 @@ class TestSimulationReaders:
         """`action` no se interpola: se mapea a una llamada de una lista cerrada."""
         src = self._src()
         assert 'if act not in ("forward", "back", "reset")' in src
+
+
+class TestExpectedDrops:
+    """Seen live (2026-10-25): a 100% ping was summarized as '⚠ did not reach their
+    destination' because of a flooded frame and an STP BPDU dropped by a router —
+    both normal. Strings are PT 9.0.1's own."""
+
+    FLOOD = ("The frame's destination MAC address does not match the receiving port's MAC "
+             "address, the broadcast address, or any multicast address. The device drops the frame.")
+    NO_SERVICE = "The device does not have a service that accepts this frame. It drops the frame."
+
+    def _frame(self, reason):
+        return {"device": "R1", "dropped": True, "traffic_type": "ICMP",
+                "decisions": [{"description": reason}]}
+
+    def test_flooded_frame_and_bpdu_are_not_failures(self):
+        out = summarize_trace([self._frame(self.FLOOD), self._frame(self.NO_SERVICE)])
+        assert out["clean"] and out["failures"] == []
+        assert len(out["expected_drops"]) == 2
+
+    def test_a_real_drop_is_still_a_failure(self):
+        out = summarize_trace([self._frame("The routing table does not have a route to the destination IP address. The router drops the packet.")])
+        assert not out["clean"] and len(out["failures"]) == 1

@@ -67,7 +67,7 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
             warnings.append(PlanError(
                 code=ErrorCode.INVALID_CABLE_TYPE,
                 message=f"Cable '{link.cable}' in {desc} may not be correct.",
-                suggestion=f"Cable sugerido: '{expected}'",
+                suggestion=f"Suggested cable: '{expected}'",
             ))
 
     return errors, warnings

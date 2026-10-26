@@ -44,7 +44,7 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
         )
     if link_subnets:
         explanations.append(
-            f"Router-to-router links use /30 subnets (point to point) — "
+            f"Point-to-point links (router↔router, router↔WAN) use /30 subnets — "
             f"saving IP addresses with only 2 hosts per link."
         )
 
@@ -70,7 +70,7 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
         )
         for pool in plan.dhcp_pools:
             explanations.append(
-                f"  Pool '{pool.pool_name}': red {pool.network}/{pool.mask}, "
+                f"  Pool '{pool.pool_name}': network {pool.network}/{pool.mask}, "
                 f"gateway {pool.gateway}"
             )
 

@@ -43,6 +43,16 @@ FAILURE_STATUSES = frozenset({
 })
 
 
+# Drops that are part of normal operation, by PT's own decision text (PT 9.0.1): a
+# flooded frame reaching a device it was not meant for, and a frame nobody on that
+# device listens to (an STP BPDU reaching a router or a PC). Counting them as failures
+# made a 100% ping read as "did not reach their destination".
+EXPECTED_DROP_REASONS = (
+    "destination MAC address does not match the receiving port's MAC address",
+    "does not have a service that accepts this frame",
+)
+
+
 def traffic_type_label(raw) -> str:
     """Label for the traffic type; passes the raw value through if it was not observed."""
     return TRAFFIC_TYPES.get(raw, f"type{raw}")
@@ -61,6 +71,7 @@ def summarize_trace(frames: list[dict]) -> dict:
     by_status: dict[str, int] = {}
     by_device: dict[str, int] = {}
     failures: list[dict] = []
+    expected: list[dict] = []
 
     for frame in frames:
         status = frame_status(frame)
@@ -71,19 +82,24 @@ def summarize_trace(frames: list[dict]) -> dict:
         by_device[device] = by_device.get(device, 0) + 1
 
         if status in FAILURE_STATUSES:
-            failures.append({
+            entry = {
                 "device": device,
                 "status": status,
                 "destination": frame.get("destination", ""),
                 "traffic": frame.get("traffic_type", ""),
                 # The last decision is the one that explains the outcome.
                 "reason": (frame.get("decisions") or [{}])[-1].get("description", ""),
-            })
+            }
+            if any(r in entry["reason"] for r in EXPECTED_DROP_REASONS):
+                expected.append(entry)
+            else:
+                failures.append(entry)
 
     return {
         "frames": len(frames),
         "by_status": dict(sorted(by_status.items())),
         "by_device": dict(sorted(by_device.items())),
         "failures": failures,
+        "expected_drops": expected,
         "clean": not failures,
     }

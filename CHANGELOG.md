@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Fixed (found by a live run of all 79 tools on macOS, 2026-10-25)
+
+- **Deploying over existing names duplicated devices and reported "verified".** Running
+  `pt_full_build` twice created a second R1/SW1/PC1 with no cables while links and config went
+  to the old ones; the check only asked `getDevice(name)`. `pt_live_deploy` now refuses when a
+  planned name is already on the canvas and says how to proceed.
+- **`pt_add_module(dry_run=True)` skipped the compatibility check** (NIM-2T on a 2911 came back
+  valid). It now runs the same checks as the real call when PT is reachable.
+- **Dual stack on router-on-a-stick lost IPv6**: subinterfaces never got their `ipv6 address`.
+- **`pt_server_service(service="email")` returned account passwords** (`"alice:alice123,..."`).
+  Only usernames come back now.
+- **`pt_cli` echoed the answer to a `Password:` prompt**; it is masked. `pt_apply_hardening`
+  now warns that `login local` on the console makes `pt_cli` stop at `Username:` and how to answer.
+- **Exports landed in whatever folder the client started the server from** (for `uvx` under a
+  desktop client, possibly `/`). The server now works in `~/PacketTracerMCP`
+  (`PT_MCP_WORKDIR` overrides it).
+- **`pt_read_packet_trace` called a 100% ping a failure**: frames flooded to the wrong host and
+  STP BPDUs reaching a router are normal drops. They are reported as `expected_drops`.
+- **`pt_diff` listed PT's own off-canvas "Power Distribution Device0" as an extra device.**
+- Spanish leftovers in English output (explainer, cable/ACL/NAT suggestions), and the explainer
+  no longer claims router-to-router /30 links in a build that has none.
+- Module count in the docs: 150 (PT's catalog lists `PT-CLOUD-NM-1CX` twice); resources: 6.
+
 ### Added
 
 - **Install it by asking your agent.** `llms-install.md` tells any coding agent (Claude Code, OpenCode,

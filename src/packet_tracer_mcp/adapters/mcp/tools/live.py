@@ -23,7 +23,7 @@ from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
 from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping
+from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions
 
 
 # --- Device console (real ping) ----------------------------------------------
@@ -87,6 +87,14 @@ def console_ping_poll_js(device: str, base: int) -> str:
         "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
         "}else{reportResult('WAIT');}}"
     )
+
+
+# Names of the devices on the canvas, as a JSON array.
+_LIVE_NAMES_JS = (
+    "try{var net=ipc.network();var n=net.getDeviceCount();var a=[];"
+    "for(var i=0;i<n;i++){a.push(net.getDeviceAt(i).getName());}"
+    "reportResult(JSON.stringify(a));}catch(e){reportResult('[]');}"
+)
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -364,6 +372,26 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         plan = TopologyPlan.model_validate_json(plan_json)
+
+        # A name already on the canvas would be created a second time (PT allows
+        # duplicate names) while links and config land on the old device, and the
+        # getDevice(name) verification below would still say "verified".
+        live = _bridge_send_and_wait(_LIVE_NAMES_JS, timeout=5.0)
+        try:
+            live_names = json.loads(live) if live else []
+        except ValueError:
+            live_names = []
+        taken = name_collisions([d.name for d in plan.devices], live_names)
+        if taken:
+            return (
+                "Not deployed: the canvas already has device(s) named "
+                + ", ".join(taken)
+                + ". Deploying would create duplicates with the same names. Start from an "
+                "empty canvas (File > New in Packet Tracer), remove them with "
+                "pt_delete_device, or edit the existing topology with pt_add_device / "
+                "pt_add_link instead."
+            )
+
         script = generate_executable_script(plan)
         commands = [
             line.strip() for line in script.splitlines()

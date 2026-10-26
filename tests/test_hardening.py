@@ -70,3 +70,13 @@ class TestApplyHardeningUseCase:
             cfg, query_pt_topology=lambda: [{"name": "R1", "model": "2911"}], dry_run=True,
         )
         assert not result["valid"]
+
+
+def test_console_login_local_warns_how_pt_cli_logs_in():
+    """After `login local` on the console, pt_cli lands on Username:/Password: (seen live
+    2026-10-25): the reply must tell the agent how to answer it."""
+    from src.packet_tracer_mcp.domain.models.errors import ErrorCode
+    cfg = HardeningConfig(device="R1", users=[LocalUser(username="admin", secret="x9")])
+    res = validate_hardening(cfg)
+    w = [x for x in res.warnings if x.code == ErrorCode.HARDENING_CONSOLE_LOGIN]
+    assert w and "pt_cli" in w[0].suggestion
