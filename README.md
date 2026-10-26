@@ -176,7 +176,7 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Server (`uvx packet-tracer-mcp`) | ✅ | ✅ | ✅ |
+| Server (`uvx packet-tracer-mcp`) | ✅ | ✅ | not tested yet |
 | Live deploy (HTTP bridge) | ✅ | ✅ | not tested yet |
 | File-bridge (extension window closed) | ✅ | ✅ | not tested yet |
 | Device panel (`pt_cli`, `pt_host_command`, services…) | ✅ | ✅ | not tested yet |
