@@ -91,6 +91,23 @@ with the default outline.
   overlap, so you do not need to reposition devices by hand after `pt_full_build` — only if you want a
   specific arrangement.
 
+### Large networks — verified against PT 9.0.1 (2026-10-26, 116 devices)
+
+- **Changing an ASBR's OSPF interface (e.g. `ip ospf network point-to-point`) flushes its own type-5
+  default LSA, and PT never re-originates it**: the whole network silently loses `O*E2 0.0.0.0/0`.
+  `pt_apply_interface_tuning(ospf_network=…)` re-enters `default-information originate` for you; with
+  raw `pt_cli`, re-enter it yourself and check `show ip ospf database external`.
+- Broadcast /30s between routers can sit in `2WAY/DROTHER`; the planner now emits point-to-point.
+- `show ip nat statistics` → `Dynamic mappings:` is **empty in PT even when PAT works**. Judge NAT by
+  `show ip nat translations` after real traffic, not by that line.
+- `getStartupFile()` returns an **array of lines**; `String()` of it joins them with commas.
+- The 2960 has `getUserPassCount()` / `getUserEntryAt()` but **no `getUserPass()`**.
+- A PC inside an SSH session keeps `getPrompt()` at `C:\>` while the screen shows the router's prompt.
+- With many devices PT zooms the canvas out (zoom −5); the UI presenter resets to 100 % to click a
+  device and restores the zoom afterwards.
+- `hardening` with `login local` on the console + `exec-timeout`: after the timeout, `pt_cli`'s first
+  command is consumed as the username. Start each `pt_cli` call with the username and password.
+
 ### Device panel — verified against PT 9.0.1 (2026-10-07)
 
 **Consoles**
