@@ -195,3 +195,22 @@ def test_hosts_use_dhcp_only_where_a_pool_serves_their_subnet():
     assert 'configurePcIp("PC-A", true);' in js
     assert 'configurePcIp("SRV-POOL", false, "10.1.1.10"' in js
     assert 'configurePcIp("PC-NOPOOL", false, "10.9.9.21"' in js
+
+
+def test_static_fallback_host_keeps_the_pools_dns():
+    """The last host of a DHCP subnet gets a static address (F17), but without the pool's
+    DNS it could not resolve names: nslookup from it went to 255.255.255.255 (found on
+    the 24-branch run, 2026-10-26)."""
+    from src.packet_tracer_mcp.domain.models.plans import DevicePlan, DHCPPool, TopologyPlan
+    from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import generate_executable_script
+    plan = TopologyPlan(
+        devices=[
+            DevicePlan(name="R1", model="2911", category="router", interfaces={"GigabitEthernet0/0": "10.1.1.1/24"}),
+            DevicePlan(name="PC-A", model="PC-PT", category="pc", interfaces={"FastEthernet0": "10.1.1.21/24"}, gateway="10.1.1.1"),
+            DevicePlan(name="PC-B", model="PC-PT", category="pc", interfaces={"FastEthernet0": "10.1.1.22/24"}, gateway="10.1.1.1"),
+        ],
+        dhcp_pools=[DHCPPool(router="R1", pool_name="LAN", network="10.1.1.0", mask="255.255.255.0",
+                             gateway="10.1.1.1", dns="10.100.50.10")],
+    )
+    js = generate_executable_script(plan)
+    assert 'configurePcIp("PC-B", false, "10.1.1.22", "255.255.255.0", "10.1.1.1", "10.100.50.10");' in js

@@ -97,7 +97,7 @@ def generate_executable_script(plan: TopologyPlan) -> str:
             last_host_per_subnet[net] = names_sorted[-1]
 
     last_names = set(last_host_per_subnet.values())
-    pool_nets = [ipaddress.ip_network(f"{p.network}/{p.mask}", strict=False) for p in plan.dhcp_pools]
+    pool_nets = [(ipaddress.ip_network(f"{p.network}/{p.mask}", strict=False), p) for p in plan.dhcp_pools]
 
     for pc in pcs:
         if pc.interfaces:
@@ -106,19 +106,19 @@ def generate_executable_script(plan: TopologyPlan) -> str:
                 ip, prefix = iface_ip.split("/")
                 mask = prefix_to_mask(int(prefix))
                 gw = pc.gateway or ""
+                pool = next((p for net, p in pool_nets if ipaddress.ip_address(ip) in net), None)
                 # DHCP only where a pool serves the host's subnet; servers keep the
                 # planned address (DNS/web need a fixed one).
-                use_dhcp = (
-                    pc.category != "server"
-                    and pc.name not in last_names
-                    and any(ipaddress.ip_address(ip) in net for net in pool_nets)
-                )
+                use_dhcp = pc.category != "server" and pc.name not in last_names and pool is not None
                 if use_dhcp:
                     lines.append(f'configurePcIp({json.dumps(pc.name)}, true);')
                 else:
+                    # A static host on a pool's subnet takes that pool's DNS, as a
+                    # lease would have given it.
+                    dns = f", {json.dumps(pool.dns)}" if pool is not None and pool.dns else ""
                     lines.append(
                         f'configurePcIp({json.dumps(pc.name)}, false, '
-                        f'{json.dumps(ip)}, {json.dumps(mask)}, {json.dumps(gw)});'
+                        f'{json.dumps(ip)}, {json.dumps(mask)}, {json.dumps(gw)}{dns});'
                     )
         elif getattr(pc, "wireless", False) and plan.dhcp_pools:
             # WiFi laptop with no wired link: gets DHCP via Wireless0 (associated with the AP).
