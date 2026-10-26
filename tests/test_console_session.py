@@ -490,3 +490,36 @@ def test_bridge_timeout_mid_run_says_commands_may_have_run():
     assert not r.ok
     assert "timeout" in r.error.lower()
     assert "may already have run" in r.error and "before retrying" in r.error
+
+
+def _host_in_ssh_fake() -> str:
+    r"""A PC's Command Prompt inside an SSH session to a router.
+
+    PT keeps getPrompt() at the host's `C:\>` while the screen shows the router's
+    prompt, so a command there used to wait for `C:\>` until it timed out
+    (found on the 24-branch enterprise run, 2026-10-26).
+    """
+    start = "C:\\>ssh -l netadmin 10.4.4.1\n\nPassword: \n\nR-AR-MDZ#"
+    return (
+        f"var __out={json.dumps(start)};var __host={json.dumps('C:\\>')};"
+        "var cl={getOutput:function(){return __out;},getPrompt:function(){return __host;},"
+        "getMode:function(){return 'user';},enterChar:function(){},"
+        "enterCommand:function(c){__out+=c+'\\nBODY OF '+c+'\\nR-AR-MDZ#';}};"
+        "var d={getCommandLine:function(){return cl;},getCommandPrompt:function(){return cl;}};"
+        "var ipc={network:function(){return {getDevice:function(){return d;}};}};"
+    )
+
+
+@requires_node
+def test_host_command_inside_an_ssh_session_finishes_at_the_remote_prompt(tmp_path):
+    fake = _host_in_ssh_fake()
+    sent: list[str] = []
+
+    def send(js, timeout):
+        sent.append(js)
+        return run_pt_js(js, fake, tmp_path)[0]
+
+    r = run_commands(send, "PC-TI-01", ["show ip ospf neighbor", "show clock"], timeout=5)
+    assert r.ok and len(sent) == 1
+    assert [x.status for x in r.results] == ["ok", "ok"]
+    assert [x.output for x in r.results] == ["BODY OF show ip ospf neighbor", "BODY OF show clock"]

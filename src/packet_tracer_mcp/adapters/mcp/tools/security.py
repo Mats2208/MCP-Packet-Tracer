@@ -57,7 +57,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         # each read carries its own guard.
         "          try {"
         "            var __u = String(__d.getUserEntryAt(__j));"
-        "            __users.push({ name: __u, algo: __algo(__d.getUserPass(__u)) });"
+        # The 2960 lists its users but has no getUserPass(): keep the user with an
+        # unknown algorithm instead of dropping it (it would read as "no local users").
+        "            __users.push({ name: __u, algo: (typeof __d.getUserPass === 'function')"
+        "              ? __algo(__d.getUserPass(__u)) : null });"
         "          } catch (__ue) {}"
         "        }"
         "      } catch (__uce) {}"

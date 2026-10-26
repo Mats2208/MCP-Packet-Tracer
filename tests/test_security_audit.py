@@ -178,7 +178,7 @@ class TestSecurityAuditReader:
         # Ninguna clave del payload lleva el valor crudo.
         assert "getEnableSecret()," not in js
         assert "__d.getUserPass(__u) }" not in js
-        assert "algo: __algo(__d.getUserPass(__u))" in js
+        assert "__algo(__d.getUserPass(__u))" in js
 
     def test_reader_skips_hosts(self):
         """Llamar getters IOS en un PC lanza y abre un modal que congela el bridge."""
@@ -189,6 +189,14 @@ class TestSecurityAuditReader:
         js = self._js()
         assert "getUserPassCount()" in js
         assert "catch (__ue) {}" in js
+
+    def test_user_is_kept_where_getuserpass_is_missing(self):
+        """PT 9.0.1's 2960 lists its users (getUserPassCount/getUserEntryAt) but has no
+        getUserPass(): the call threw, the catch dropped the user, and every 2960 was
+        reported NO_LOCAL_USERS although `username ... secret` was there and login worked
+        (found auditing the 24-branch enterprise network, 2026-10-26)."""
+        js = self._js()
+        assert "typeof __d.getUserPass === 'function'" in js
 
     def test_payload_stays_single_line(self):
         """PT descarta saltos reales al ejecutar el código: el JS va en una línea."""
