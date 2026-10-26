@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from . import __version__
 from .adapters.mcp.prompt_registry import register_prompts
 from .adapters.mcp.resource_registry import register_resources
+from .adapters.mcp.bridge_context import BridgeContext
 from .adapters.mcp.tool_registry import register_tools
 from .settings import SERVER_NAME, SERVER_INSTRUCTIONS
 
@@ -46,7 +47,9 @@ _lowlevel = getattr(mcp, "_mcp_server", None)
 if _lowlevel is not None:
     _lowlevel.version = __version__
 
-register_tools(mcp)
+# One bridge for the whole server; main() starts it before serving.
+BRIDGE = BridgeContext()
+register_tools(mcp, BRIDGE)
 register_resources(mcp)
 register_prompts(mcp)
 
@@ -75,6 +78,9 @@ def main():
     wd = workdir()
     wd.mkdir(parents=True, exist_ok=True)
     os.chdir(wd)
+    # Listen right away, so the extension's panel is online as soon as the agent starts.
+    # A busy port is not fatal: the tools report it on their first call.
+    BRIDGE.ensure_bridge(grace=False)
     if "--stdio" in sys.argv:
         mcp.run(transport="stdio")
     else:

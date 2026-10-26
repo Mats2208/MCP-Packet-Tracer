@@ -139,11 +139,12 @@ class BridgeContext:
                 pass
         return False
 
-    def ensure_bridge(self) -> bool:
+    def ensure_bridge(self, grace: bool = True) -> bool:
         """
         Ensures a bridge is listening on :54321.
         If there already is one (internal or external), does nothing.
-        If there is none, starts one in-process as a daemon thread.
+        If there is none, starts one in-process as a daemon thread and, with
+        `grace`, gives the extension a moment to find it.
         Returns True if the bridge is operational.
         """
         if self.bridge_is_up():
@@ -155,7 +156,7 @@ class BridgeContext:
                 self.instance = b
             except OSError:
                 return False  # port blocked by an external non-bridge process
-            if self.bridge_is_up():
+            if grace and self.bridge_is_up():
                 deadline = time.monotonic() + BRIDGE_GRACE_S
                 while not self.bridge_pt_connected() and time.monotonic() < deadline:
                     time.sleep(BRIDGE_GRACE_POLL_S)

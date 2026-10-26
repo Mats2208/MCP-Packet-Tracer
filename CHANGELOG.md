@@ -22,7 +22,8 @@
   STP BPDUs reaching a router are normal drops. They are reported as `expected_drops`.
 - **The first tool call of a session said "not connected"** even with PT open: the bridge
   starts on that call and the extension finds it on its next 2 s poll. It now waits up to 5 s,
-  and `pt_full_build` no longer falls back to the clipboard on a fresh server.
+  and `pt_full_build` no longer falls back to the clipboard on a fresh server. The bridge now
+  also starts with the server, so the extension's panel is online before the first tool call.
 - **File-bridge never connected on macOS/Linux.** The V5 extension writes its mailbox under
   `<home>/AppData/Local/packet-tracer-mcp/bridge` on every OS; the server looked in
   `~/.local/state`. The server now meets it there, so the released `.pts` works unchanged.

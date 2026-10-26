@@ -26,3 +26,11 @@ def test_main_enters_workdir_before_serving():
     src = Path("src/packet_tracer_mcp/server.py").read_text(encoding="utf-8")
     body = src[src.index("def main("):]
     assert body.index("os.chdir(") < body.index("mcp.run(")
+
+
+def test_main_starts_the_bridge_before_serving():
+    """So PT's panel says "online" as soon as the agent starts, not after the first tool
+    call (the panel read "offline" until then — screenshot 2026-10-25)."""
+    src = Path("src/packet_tracer_mcp/server.py").read_text(encoding="utf-8")
+    body = src[src.index("def main("):]
+    assert body.index("BRIDGE.ensure_bridge(grace=False)") < body.index("mcp.run(")

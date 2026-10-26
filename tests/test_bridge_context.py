@@ -176,3 +176,16 @@ def test_full_build_starts_the_bridge_before_choosing_a_channel():
     body = src[src.index("def pt_full_build("):]
     deploy = body[body.index("# --- Deploy ---"):]
     assert deploy.index("_ensure_bridge()") < deploy.index("_pick_channel()")
+
+
+def test_ensure_bridge_without_grace_does_not_wait(monkeypatch):
+    class FakeBridge:
+        def start(self):
+            pass
+    ctx = _ctx()
+    monkeypatch.setattr(bridge_context, "PTCommandBridge", FakeBridge)
+    monkeypatch.setattr(ctx, "bridge_is_up", lambda: ctx.instance is not None)
+    looked = []
+    monkeypatch.setattr(ctx, "bridge_pt_connected", lambda: looked.append(1) or False)
+    assert ctx.ensure_bridge(grace=False) is True
+    assert looked == []
