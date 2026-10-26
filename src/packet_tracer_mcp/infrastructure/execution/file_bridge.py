@@ -39,7 +39,16 @@ HEARTBEAT_FRESH_S = 6.0
 
 
 def bridge_dir() -> Path:
-    return token_dir() / _BRIDGE_SUBDIR
+    """Where the Script Engine's mailbox lives.
+
+    On Windows, next to the token. Elsewhere it has to be where the V5 extension
+    writes it: mcpBridgeDir() takes its FIRST token candidate,
+    <home>/AppData/Local/packet-tracer-mcp, whatever the OS. Matching it here keeps
+    the released .pts working on macOS and Linux without rebuilding it.
+    """
+    if os.name == "nt":
+        return token_dir() / _BRIDGE_SUBDIR
+    return Path.home() / "AppData" / "Local" / "packet-tracer-mcp" / _BRIDGE_SUBDIR
 
 
 def ensure_bridge_dir() -> Path:
