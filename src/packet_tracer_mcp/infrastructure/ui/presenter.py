@@ -99,8 +99,9 @@ def is_available() -> tuple[bool, str]:
     try:
         import comtypes  # noqa: F401
     except ImportError:
-        return False, ("'comtypes' is missing: install it with `pip install packet-tracer-mcp[ui]` "
-                       "(or `pip install comtypes`)")
+        return False, ("'comtypes' is missing. Installed with uvx: register the server as "
+                       "`uvx --from \"packet-tracer-mcp[ui]\" packet-tracer-mcp --stdio` and restart "
+                       "the agent. Installed with pip: `pip install packet-tracer-mcp[ui]`")
     return True, ""
 
 
