@@ -6,6 +6,8 @@ paste into the terminal of each router/switch.
 """
 
 from __future__ import annotations
+import ipaddress
+
 from ...domain.models.plans import TopologyPlan, DevicePlan
 from ...shared.utils import prefix_to_mask
 from .vlan_cli_generator import (
@@ -22,16 +24,51 @@ def generate_all_configs(plan: TopologyPlan) -> dict[str, str]:
     for dev in plan.devices:
         if dev.category == "router":
             configs[dev.name] = _router_config(dev, plan)
+        elif dev.category == "switch" and dev.interfaces and switch_supports_encap(dev.model):
+            # A multilayer switch with addresses routes: routed ports, SVIs, OSPF, DHCP.
+            configs[dev.name] = _router_config(dev, plan, l3_switch=True)
         elif dev.category == "switch":
             cfg = _switch_config(dev, plan)
             if cfg.strip():
                 configs[dev.name] = cfg
 
+    for name, extra in plan.extra_cli.items():
+        if name in configs and extra:
+            configs[name] = _with_extra_cli(configs[name], extra)
+
     return configs
 
 
-def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
-    """Generates the full config of a router."""
+def _with_extra_cli(cfg: str, extra: list[str]) -> str:
+    """Insert the plan's extra lines before the trailing `end` / `write memory`."""
+    lines = cfg.split("\n")
+    tail = lines[-2:] if lines[-2:] == ["end", "write memory"] else []
+    head = lines[: len(lines) - len(tail)]
+    return "\n".join(head + list(extra) + tail)
+
+
+def _ospf_point_to_point_interfaces(router: DevicePlan, plan: TopologyPlan) -> set[str]:
+    """The router's /30 interfaces that an OSPF `network` statement covers.
+
+    Set point-to-point at deploy time: as broadcast they sit in 2WAY/DROTHER waiting
+    for a DR election, and changing the type afterwards makes PT flush the ASBR's
+    default route (see interface_tuning_cli_generator).
+    """
+    nets = [
+        ipaddress.ip_network(f"{n['network']}/{n['wildcard']}", strict=False)
+        for o in plan.ospf_configs if o.router == router.name
+        for n in o.networks
+    ]
+    out: set[str] = set()
+    for iface, ip_cidr in router.interfaces.items():
+        addr = ipaddress.ip_interface(ip_cidr)
+        if addr.network.prefixlen == 30 and any(addr.ip in n for n in nets):
+            out.add(iface)
+    return out
+
+
+def _router_config(router: DevicePlan, plan: TopologyPlan, l3_switch: bool = False) -> str:
+    """Generates the full config of a router (or of a layer-3 multilayer switch)."""
     lines: list[str] = []
 
     lines.append("enable")
@@ -40,17 +77,29 @@ def _router_config(router: DevicePlan, plan: TopologyPlan) -> str:
     lines.append("no ip domain-lookup")
     if router.interfaces_v6:
         lines.append("ipv6 unicast-routing")
+    if l3_switch:
+        lines.append("ip routing")
+        # VLANs first: an SVI for a VLAN that does not exist stays down.
+        access = [a for a in plan.access_ports if a.switch == router.name]
+        trunks = [t for t in plan.trunks if t.switch == router.name]
+        if access or trunks or plan.vlans:
+            lines.extend(generate_switch_vlan_cli(plan.vlans, access, trunks, supports_encap=True))
     lines.append("")
 
     # --- Physical interfaces (the "Gig0/0.10" subinterfaces are emitted separately with
     #     their `encapsulation dot1Q`, so we skip them here) ---
+    ospf_p2p = _ospf_point_to_point_interfaces(router, plan)
     for iface, ip_cidr in router.interfaces.items():
         if "." in iface:
             continue
         ip, prefix = ip_cidr.split("/")
         mask = prefix_to_mask(int(prefix))
         lines.append(f"interface {iface}")
+        if l3_switch and not iface.lower().startswith("vlan"):
+            lines.append(" no switchport")
         lines.append(f" ip address {ip} {mask}")
+        if iface in ospf_p2p:
+            lines.append(" ip ospf network point-to-point")
         # IPv6 on the same physical interface (dual-stack), if applicable
         v6 = router.interfaces_v6.get(iface)
         if v6:
