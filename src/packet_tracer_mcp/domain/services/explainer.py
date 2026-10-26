@@ -101,8 +101,8 @@ def explain_plan(plan: TopologyPlan) -> list[str]:
     # Validation
     if plan.validations:
         explanations.append(
-            f"Verificaciones sugeridas: {len(plan.validations)} "
-            f"(ej: ping {plan.validations[0].from_device} → {plan.validations[0].to_target})"
+            f"Suggested checks: {len(plan.validations)} "
+            f"(e.g. ping {plan.validations[0].from_device} → {plan.validations[0].to_target})"
         )
 
     return explanations
