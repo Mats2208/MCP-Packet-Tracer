@@ -500,8 +500,9 @@ def _host_in_ssh_fake() -> str:
     (found on the 24-branch enterprise run, 2026-10-26).
     """
     start = "C:\\>ssh -l netadmin 10.4.4.1\n\nPassword: \n\nR-AR-MDZ#"
+    host_prompt = "C:\\>"
     return (
-        f"var __out={json.dumps(start)};var __host={json.dumps('C:\\>')};"
+        f"var __out={json.dumps(start)};var __host={json.dumps(host_prompt)};"
         "var cl={getOutput:function(){return __out;},getPrompt:function(){return __host;},"
         "getMode:function(){return 'user';},enterChar:function(){},"
         "enterCommand:function(c){__out+=c+'\\nBODY OF '+c+'\\nR-AR-MDZ#';}};"
