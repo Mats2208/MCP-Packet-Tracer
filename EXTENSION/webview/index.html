@@ -5,178 +5,262 @@
 <title>MCP Control Center</title>
 <style>
 :root {
-  --bg: #ffffff;
-  --bg-subtle: #f4f4f4;
-  --text: #0a0a0a;
-  --text-muted: #666666;
-  --text-faint: #a3a3a3;
-  --border: #e4e4e4;
-  --ok: #16a34a;
-  --pend: #d97706;
-  --err: #dc2626;
-  --radius: 10px;
-  --radius-btn: 6px;
-  --radius-pill: 100px;
-  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --bg: #0b0d10;
+  --surface: #12151a;
+  --surface-2: #181c22;
+  --line: #22272f;
+  --line-soft: #1a1e24;
+  --text: #eef1f4;
+  --text-2: #a4acb6;
+  --text-3: #5d6671;
+  --accent: #1ba0d7;
+  --accent-soft: rgba(27, 160, 215, 0.14);
+  --ok: #34c759;
+  --pend: #f5a524;
+  --err: #ff5d5d;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #161616;
-    --bg-subtle: #222222;
-    --text: #ededed;
-    --text-muted: #9a9a9a;
-    --text-faint: #5f5f5f;
-    --border: #2c2c2c;
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f1f3f6;
+    --line: #e3e6eb;
+    --line-soft: #eceff3;
+    --text: #0f1419;
+    --text-2: #56606b;
+    --text-3: #9aa3ad;
+    --accent: #0b84b8;
+    --accent-soft: rgba(11, 132, 184, 0.10);
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 16px rgba(16, 24, 40, 0.05);
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
-  height: 100vh; overflow: hidden; display: flex; flex-direction: column;
-  background: var(--bg); color: var(--text);
-  font: 13px/1.45 var(--font-sans); -webkit-font-smoothing: antialiased;
+  height: 100vh; overflow: hidden; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px 12px; background: var(--bg); color: var(--text);
+  font: 13px/1.45 var(--font); letter-spacing: -0.005em; -webkit-font-smoothing: antialiased;
 }
-.mono { font-family: var(--font-mono); }
+.mono { font-family: var(--mono); }
 
-/* Top bar */
-header {
-  flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-  padding: 14px 18px; border-bottom: 1px solid var(--border);
-}
-header h1 { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-.tag {
-  font: 11px var(--font-mono); color: var(--text-muted);
-  border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 1px 8px;
-}
-.state {
-  margin-left: auto; display: flex; align-items: center; gap: 8px;
-  font-weight: 500; font-size: 13px;
-}
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
-.dot.ok { background: var(--ok); }
-.dot.pend { background: var(--pend); }
-.dot.err { background: var(--err); }
+/* ---------- top bar ---------- */
+.bar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+.mark { width: 22px; height: 22px; color: var(--accent); }
+.bar h1 { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+.ver { font: 10.5px var(--mono); color: var(--text-3); padding: 1px 7px; border: 1px solid var(--line); border-radius: 100px; }
+.bar .spacer { flex: 1; }
+.link { font-size: 11.5px; color: var(--text-3); }
 
-/* Status row */
-.status {
-  flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr) auto;
-  gap: 0; border-bottom: 1px solid var(--border);
+/* ---------- hero status ---------- */
+.hero {
+  flex-shrink: 0; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px;
+  padding: 16px 18px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow); position: relative; overflow: hidden;
 }
-.cell { padding: 10px 18px; border-right: 1px solid var(--border); min-width: 0; }
-.cell:last-child { border-right: 0; }
-.cell .label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
-.cell .label .dot { width: 6px; height: 6px; }
-.cell .sub { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.counters { display: flex; gap: 18px; align-items: center; }
-.counter .num { font: 600 14px var(--font-mono); }
-.counter .sub { margin-top: 0; }
+.hero::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--text-3); transition: background .3s;
+}
+.hero.ok::before { background: var(--accent); }
+.hero.pend::before { background: var(--pend); }
+.hero.err::before { background: var(--err); }
+.hero-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pulse { position: relative; width: 12px; height: 12px; flex-shrink: 0; }
+.pulse i { position: absolute; inset: 0; border-radius: 50%; background: var(--text-3); }
+.hero.ok .pulse i { background: var(--accent); }
+.hero.pend .pulse i { background: var(--pend); }
+.hero.err .pulse i { background: var(--err); }
+.hero.ok .pulse i:last-child { animation: ring 1.8s ease-out infinite; }
+@keyframes ring { from { transform: scale(1); opacity: .55; } to { transform: scale(2.6); opacity: 0; } }
+.hero h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.hero p { color: var(--text-2); font-size: 12.5px; margin-top: 1px; }
+.stats { display: flex; gap: 22px; }
+.stat { text-align: right; }
+.stat b { display: block; font: 600 16px var(--mono); letter-spacing: -0.02em; }
+.stat span { font-size: 11px; color: var(--text-3); }
 
-/* Activity */
-.activity { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.activity-head {
-  flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 10px 18px 6px;
+/* ---------- channel tiles ---------- */
+.tiles { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0;
 }
-.activity-head h2 { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.seg { margin-left: auto; display: flex; border: 1px solid var(--border); border-radius: var(--radius-btn); overflow: hidden; }
-.seg button { border: 0; border-radius: 0; padding: 3px 10px; }
-.seg button.on { background: var(--bg-subtle); color: var(--text); }
-.list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; }
-.row {
-  display: grid; grid-template-columns: 62px 10px 1fr; gap: 8px; align-items: baseline;
-  padding: 4px 8px; border-radius: 6px;
-}
-.row:hover { background: var(--bg-subtle); }
-.row .time { font: 11px var(--font-mono); color: var(--text-faint); }
-.row .dot { width: 6px; height: 6px; align-self: center; }
-.row .msg { min-width: 0; overflow-wrap: anywhere; }
-.row .detail { display: block; font: 11px var(--font-mono); color: var(--text-muted); white-space: pre-wrap; }
-.row.err .msg { color: var(--err); }
-.empty { color: var(--text-faint); text-align: center; padding: 48px 24px; }
+.tile svg { width: 15px; height: 15px; color: var(--text-3); flex-shrink: 0; }
+.tile .t { font-size: 12px; font-weight: 500; }
+.tile .s { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile > div { min-width: 0; flex: 1; }
+.led { width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex-shrink: 0; }
+.led.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(52, 199, 89, .15); }
+.led.pend { background: var(--pend); box-shadow: 0 0 0 3px rgba(245, 165, 36, .15); }
+.led.err { background: var(--err); box-shadow: 0 0 0 3px rgba(255, 93, 93, .15); }
 
-/* Buttons */
+/* ---------- activity ---------- */
+.panel {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+}
+.panel-head { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px 16px; border-bottom: 1px solid var(--line-soft); }
+.panel-head h3 { font-size: 12.5px; font-weight: 600; }
+.panel-head .spacer { flex: 1; }
+.seg { display: flex; padding: 2px; background: var(--surface-2); border-radius: 8px; }
+.seg button { border: 0; background: transparent; padding: 3px 10px; border-radius: 6px; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+#errCount:not(:empty) { margin-left: 4px; color: var(--err); }
+.list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px 8px; }
+.row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 6px 8px; border-radius: 8px; }
+.row:hover { background: var(--surface-2); }
+.ico {
+  width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-2);
+}
+.ico svg { width: 13px; height: 13px; }
+.row.ok .ico { background: var(--accent-soft); color: var(--accent); }
+.row.warn .ico { background: rgba(245, 165, 36, .12); color: var(--pend); }
+.row.err .ico { background: rgba(255, 93, 93, .12); color: var(--err); }
+.row .msg { padding-top: 3px; min-width: 0; overflow-wrap: anywhere; }
+.row .detail { display: block; margin-top: 2px; font: 11px/1.5 var(--mono); color: var(--text-3); white-space: pre-wrap; }
+.row .time { padding-top: 4px; font: 10.5px var(--mono); color: var(--text-3); }
+.row.read .msg { color: var(--text-2); }
+.empty { height: 100%; display: grid; place-items: center; text-align: center; color: var(--text-3); padding: 24px; }
+.empty b { display: block; color: var(--text-2); font-weight: 500; margin-bottom: 2px; }
+
+/* ---------- buttons ---------- */
 button {
-  font: 12px var(--font-sans); color: var(--text-muted); background: transparent;
-  border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 4px 10px; cursor: pointer;
+  font: 12px var(--font); color: var(--text-2); background: transparent; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px;
 }
-button:hover { color: var(--text); background: var(--bg-subtle); }
-button.primary { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
-button.primary:hover { opacity: 0.85; }
-button:disabled { opacity: 0.4; cursor: default; }
+button:hover { color: var(--text); background: var(--surface-2); }
+button.primary { background: var(--text); color: var(--bg); border-color: transparent; font-weight: 600; padding: 5px 14px; }
+button.primary:hover { opacity: .88; background: var(--text); color: var(--bg); }
 
-/* Advanced console, anchored at the bottom */
-footer { flex-shrink: 0; border-top: 1px solid var(--border); }
-.foot-bar { display: flex; align-items: center; gap: 8px; padding: 8px 18px; }
-.foot-bar .hint { color: var(--text-faint); font-size: 11.5px; }
-.toggle { margin-left: auto; }
-.console { display: none; padding: 0 18px 12px; }
-.console.open { display: block; }
+/* ---------- advanced console ---------- */
+.adv { flex-shrink: 0; }
+.adv-toggle { display: flex; align-items: center; gap: 6px; border: 0; padding: 2px 4px; color: var(--text-3); }
+.adv-toggle:hover { background: transparent; color: var(--text-2); }
+.adv-toggle svg { width: 10px; height: 10px; transition: transform .15s; }
+.adv.open .adv-toggle svg { transform: rotate(90deg); }
+.console { display: none; margin-top: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.adv.open .console { display: block; }
 textarea {
-  width: 100%; height: 96px; resize: vertical; padding: 8px 10px;
-  font: 12px/1.5 var(--font-mono); color: var(--text); background: var(--bg-subtle);
-  border: 1px solid var(--border); border-radius: var(--radius-btn); outline: none;
+  display: block; width: 100%; height: 92px; resize: none; padding: 10px 12px; border: 0; outline: none;
+  font: 12px/1.55 var(--mono); color: var(--text); background: transparent;
 }
-textarea:focus { border-color: var(--text-muted); }
-.console-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.console-actions .hint { color: var(--text-faint); font-size: 11.5px; }
-.console-actions .primary { margin-left: auto; }
+textarea::placeholder { color: var(--text-3); }
+.console-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line-soft); }
+.console-bar .hint { flex: 1; font-size: 11px; color: var(--text-3); }
+kbd { font: 10.5px var(--mono); padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--text-2); }
+.tabs { display: flex; gap: 2px; }
+.tabs button { border: 0; background: transparent; font-size: 12.5px; font-weight: 600; color: var(--text-3); padding: 3px 8px; border-radius: 6px; }
+.tabs button.on { color: var(--text); background: var(--surface-2); }
+.tools { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px 8px; }
+.panel.tools-on .tools { display: block; }
+.panel.tools-on .list, .panel.tools-on #filters, .panel.tools-on #copyBtn { display: none; }
+.tool { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-bottom: 1px solid var(--line-soft); }
+.tool:last-child { border-bottom: 0; }
+.tool > div { flex: 1; min-width: 0; }
+.tool .t { font-size: 12.5px; font-weight: 500; }
+.tool .s { font-size: 11.5px; color: var(--text-3); }
 </style>
 </head>
 <body>
 
-<header>
+<div class="bar">
+  <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <circle cx="12" cy="5" r="2.4"/><circle cx="5" cy="18" r="2.4"/><circle cx="19" cy="18" r="2.4"/>
+    <path d="M10.8 7.1 6.2 15.9M13.2 7.1l4.6 8.8M7.4 18h9.2"/>
+  </svg>
   <h1>MCP Control Center</h1>
-  <span class="tag">V6</span>
-  <div class="state"><span class="dot" id="stateDot"></span><span id="stateText">Starting…</span></div>
-</header>
+  <span class="ver">V6</span>
+  <span class="spacer"></span>
+  <span class="link">mcpnetwork.top</span>
+</div>
 
-<section class="status">
-  <div class="cell">
-    <div class="label"><span class="dot" id="httpDot"></span>Agent connection</div>
-    <div class="sub mono" id="httpSub">127.0.0.1:54321</div>
-  </div>
-  <div class="cell">
-    <div class="label"><span class="dot" id="fileDot"></span>Background channel</div>
-    <div class="sub" id="fileSub">Checking…</div>
-  </div>
-  <div class="cell">
-    <div class="label"><span class="dot" id="tokenDot"></span>Security token</div>
-    <div class="sub" id="tokenSub">Reading…</div>
-  </div>
-  <div class="cell counters">
-    <div class="counter"><div class="num" id="cmdCount">0</div><div class="sub">commands</div></div>
-    <div class="counter"><div class="num" id="uptime">00:00</div><div class="sub">uptime</div></div>
-  </div>
-</section>
-
-<section class="activity">
-  <div class="activity-head">
-    <h2>Activity</h2>
-    <div class="seg">
-      <button id="f-all" class="on" onclick="setFilter('all')">All</button>
-      <button id="f-err" onclick="setFilter('err')">Problems <span id="errCount" class="mono"></span></button>
+<section class="hero" id="hero">
+  <div class="hero-main">
+    <span class="pulse"><i></i><i></i></span>
+    <div>
+      <h2 id="stateText">Starting…</h2>
+      <p id="stateSub">Checking the connection to your AI agent</p>
     </div>
-    <button onclick="copyLogs()">Copy</button>
   </div>
-  <div class="list" id="list">
-    <div class="empty" id="empty">Nothing yet. Ask your AI agent to build a network — every action shows up here.</div>
+  <div class="stats">
+    <div class="stat"><b id="cmdCount">0</b><span>commands</span></div>
+    <div class="stat"><b id="uptime">00:00</b><span>uptime</span></div>
   </div>
 </section>
 
-<footer>
-  <div class="foot-bar">
-    <span class="hint">Packet Tracer MCP · mcpnetwork.top</span>
-    <button class="toggle" id="advToggle" onclick="toggleConsole()">Advanced ▸</button>
+<section class="tiles">
+  <div class="tile">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 8h3l2-4 2 8 2-4h3"/></svg>
+    <div><div class="t">HTTP bridge</div><div class="s mono" id="httpSub">:54321</div></div>
+    <span class="led" id="httpDot"></span>
   </div>
-  <div class="console" id="console">
-    <textarea id="code" spellcheck="false" placeholder="JavaScript for PT's Script Engine, e.g. reportResult(getDevices('router'))"></textarea>
-    <div class="console-actions">
-      <span class="hint">Runs in Packet Tracer through the bridge · Ctrl+Enter</span>
+  <div class="tile">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3" width="11" height="10" rx="2"/><path d="M5 6.5h6M5 9.5h4"/></svg>
+    <div><div class="t">File bridge</div><div class="s" id="fileSub">Checking…</div></div>
+    <span class="led" id="fileDot"></span>
+  </div>
+  <div class="tile">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="6.5" rx="1.6"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+    <div><div class="t">Token</div><div class="s" id="tokenSub">Reading…</div></div>
+    <span class="led" id="tokenDot"></span>
+  </div>
+</section>
+
+<section class="panel" id="panel">
+  <div class="panel-head">
+    <div class="tabs">
+      <button id="tab-activity" class="on" onclick="showTab('activity')">Activity</button>
+      <button id="tab-tools" onclick="showTab('tools')">Tools</button>
+    </div>
+    <span class="spacer"></span>
+    <div class="seg" id="filters">
+      <button id="f-all" class="on" onclick="setFilter('all')">All</button>
+      <button id="f-err" onclick="setFilter('err')">Problems<span id="errCount" class="mono"></span></button>
+    </div>
+    <button id="copyBtn" onclick="copyLogs()">Copy</button>
+  </div>
+  <div class="list" id="list"></div>
+  <div class="tools" id="tools">
+    <div class="tool">
+      <div><div class="t">Check bridge</div><div class="s">Round trip to the MCP server, and whether it is polling</div></div>
+      <button onclick="toolCheckBridge()">Run</button>
+    </div>
+    <div class="tool">
+      <div><div class="t">Canvas summary</div><div class="s">Devices by type and links, read straight from Packet Tracer</div></div>
+      <button onclick="toolCanvas()">Run</button>
+    </div>
+    <div class="tool">
+      <div><div class="t">Reload token</div><div class="s">Read the security token from disk again (after a server restart)</div></div>
+      <button onclick="toolReloadToken()">Run</button>
+    </div>
+    <div class="tool">
+      <div><div class="t">Copy diagnostics</div><div class="s">Bridge, file bridge, token and canvas state, ready to paste in an issue</div></div>
+      <button onclick="toolDiagnostics()">Copy</button>
+    </div>
+    <div class="tool">
+      <div><div class="t">Clear activity</div><div class="s">Empty the activity list</div></div>
+      <button onclick="toolClear()">Clear</button>
+    </div>
+  </div>
+</section>
+
+<section class="adv" id="adv">
+  <button class="adv-toggle" onclick="toggleConsole()">
+    <svg viewBox="0 0 10 10" fill="currentColor"><path d="M3 1.5 7.5 5 3 8.5z"/></svg>
+    <span id="advToggle">Advanced console</span>
+  </button>
+  <div class="console">
+    <textarea id="code" spellcheck="false" placeholder="// JavaScript for Packet Tracer's Script Engine&#10;reportResult(getDevices('router'))"></textarea>
+    <div class="console-bar">
+      <span class="hint">Runs in Packet Tracer through the bridge · <kbd>Ctrl</kbd> <kbd>Enter</kbd></span>
       <button onclick="clearCode()">Clear</button>
       <button class="primary" id="runBtn" onclick="runConsole()">Run</button>
     </div>
   </div>
-</footer>
+</section>
 
 <script src="interface.js"></script>
 <script>init();</script>

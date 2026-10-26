@@ -33,5 +33,5 @@ def test_panel_loads_nothing_from_the_network():
 
 def test_every_element_the_script_touches_exists():
     ids = set(re.findall(r'id="([^"]+)"', HTML))
-    used = set(re.findall(r'(?:getElementById|setText|setDot)\("([^"]+)"', JS))
+    used = set(re.findall(r'(?:getElementById|setText|setLed)\("([^"]+)"', JS))
     assert used <= ids, used - ids

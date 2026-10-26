@@ -40,3 +40,10 @@ def test_main_js_needs_nothing_outside_core():
         assert used in main
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
     assert "!EXTENSION/script-engine/core.js" in gitignore
+
+
+def test_device_type_filter_ids_match_pt():
+    """getDevices("laptop") must find laptops: PT 9.0.1 reports type 18 (measured)."""
+    for name, pt_type in (("laptop", 18), ("multilayerswitch", 16), ("asa", 27), ("printer", 10)):
+        assert re.search(rf"\b{name}: {pt_type}\b", CORE), name
+    assert re.search(r"^function mcpCanvasSummary\(\)", CORE, re.M)

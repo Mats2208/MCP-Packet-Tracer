@@ -64,16 +64,35 @@ function configureIosDevice(deviceName, commands) {
     return true;
 }
 
-/* Lower-case type names accepted by getDevices() as a filter. */
+/* Lower-case type names accepted by getDevices() as a filter. Ids measured on PT 9.0.1
+   (2026-10-25) with getType(); PTBuilder's list was off from laptop (18, not 17) onwards. */
 var deviceTypes = {
     router: 0, switch: 1, cloud: 2, bridge: 3, hub: 4, repeater: 5, coaxialsplitter: 6,
     accesspoint: 7, pc: 8, server: 9, printer: 10, wirelessrouter: 11, ipphone: 12,
-    dslmodem: 13, cablemodem: 14, remotenetwork: 15, multilayerswitch: 16, laptop: 17,
-    tabletpc: 18, pda: 19, wirelessenddevice: 20, wiredenddevice: 21, tv: 22, homevoip: 23,
-    analogphone: 24, multiuser: 25, asa: 26, ioe: 27, homegateway: 28, celltower: 29,
-    ciscoaccesspoint: 30, centralofficeserver: 31, embeddedciscoaccesspoint: 32,
-    sniffer: 33, mcu: 34, sbc: 35, thing: 36, mcucomponent: 37, embeddedserver: 38
+    dslmodem: 13, cablemodem: 14, remotenetwork: 15, multilayerswitch: 16, laptop: 18,
+    tabletpc: 19, smartphone: 20, wirelessenddevice: 21, wiredenddevice: 22, tv: 23,
+    homevoip: 24, analogphone: 25, asa: 27, dlc: 29, homerouter: 30, celltower: 31,
+    centralofficeserver: 32, sniffer: 35, mcu: 36, sbc: 37, thing: 39, wlc: 41,
+    lightweightaccesspoint: 44, powerdistribution: 45, patchpanel: 46, wallmount: 47,
+    merakisecurity: 48, merakiserver: 49, networkcontroller: 50
 };
+
+/* For the panel's Tools: what is on the canvas, as JSON (devices by type, links). */
+function mcpCanvasSummary() {
+    var names = {};
+    for (var k in deviceTypes) { names[deviceTypes[k]] = k; }
+    var net = ipc.network();
+    var byType = {};
+    var shown = 0;
+    for (var i = 0; i < net.getDeviceCount(); i++) {
+        var t = net.getDeviceAt(i).getType();
+        if (t === deviceTypes.powerdistribution) { continue; } // PT's own, off-canvas
+        var label = names[t] || ("type " + t);
+        byType[label] = (byType[label] || 0) + 1;
+        shown++;
+    }
+    return JSON.stringify({ devices: shown, links: net.getLinkCount(), byType: byType });
+}
 
 /*
  * Names of the devices on the canvas. `filter`: a type name, a type number, or an

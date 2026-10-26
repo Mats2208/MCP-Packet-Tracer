@@ -1,6 +1,6 @@
 // ============================================================================
 // MCP Control Center V6 — the window Packet Tracer shows for the MCP extension.
-// Connection state, what the agent did, and an advanced JS console. The bridge
+// Connection state, what the agent did, debug tools and a JS console. The bridge
 // logic (token, long-poll, file channel) is unchanged from V5.
 // ============================================================================
 
@@ -191,16 +191,16 @@ function pollCommands() {
 /* Turns the JavaScript the server sends into sentences. Anything not recognised
    is a read (query, console poll) and is folded into one counting row. */
 var PATTERNS = [
-    [/lwAddDevice\("((?:[^"\\]|\\.)*)",\s*\d+,\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }],
-    [/addDevice\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }],
+    [/lwAddDevice\("((?:[^"\\]|\\.)*)",\s*\d+,\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }, "device"],
+    [/addDevice\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/, function(m) { return "Added " + m[1] + " (" + m[2] + ")"; }, "device"],
     [/(?:lwAddLink|addLink)\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"/,
-        function(m) { return "Cabled " + m[1] + " " + shortPort(m[2]) + " ↔ " + m[3] + " " + shortPort(m[4]); }],
-    [/configureIosDevice\("((?:[^"\\]|\\.)*)"/, function(m) { return "Configured " + m[1]; }],
-    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*true/, function(m) { return m[1] + " gets its IP by DHCP"; }],
-    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*false,\s*"([^"]*)"/, function(m) { return "Set " + m[1] + " to " + m[2]; }],
-    [/addModule\("((?:[^"\\]|\\.)*)",\s*"([^"]*)",\s*"([^"]*)"/, function(m) { return "Installed " + m[3] + " on " + m[1] + " (slot " + m[2] + ")"; }],
-    [/swapLaptopToWireless\("((?:[^"\\]|\\.)*)"/, function(m) { return m[1] + " switched to Wi-Fi"; }],
-    [/removeDevice\(/, function() { return "Removed a device"; }]
+        function(m) { return "Cabled " + m[1] + " " + shortPort(m[2]) + " ↔ " + m[3] + " " + shortPort(m[4]); }, "link"],
+    [/configureIosDevice\("((?:[^"\\]|\\.)*)"/, function(m) { return "Configured " + m[1]; }, "config"],
+    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*true/, function(m) { return m[1] + " gets its IP by DHCP"; }, "ip"],
+    [/configurePcIp\("((?:[^"\\]|\\.)*)",\s*false,\s*"([^"]*)"/, function(m) { return "Set " + m[1] + " to " + m[2]; }, "ip"],
+    [/addModule\("((?:[^"\\]|\\.)*)",\s*"([^"]*)",\s*"([^"]*)"/, function(m) { return "Installed " + m[3] + " on " + m[1] + " (slot " + m[2] + ")"; }, "device"],
+    [/swapLaptopToWireless\("((?:[^"\\]|\\.)*)"/, function(m) { return m[1] + " switched to Wi-Fi"; }, "ip"],
+    [/removeDevice\(/, function() { return "Removed a device"; }, "device"]
 ];
 
 function shortPort(p) {
@@ -212,7 +212,7 @@ function describeBatch(lines) {
     lines.forEach(function(line) {
         for (var i = 0; i < PATTERNS.length; i++) {
             var m = line.match(PATTERNS[i][0]);
-            if (m) { addEntry("ok", PATTERNS[i][1](m)); return; }
+            if (m) { addEntry("ok", PATTERNS[i][1](m), "", PATTERNS[i][2]); return; }
         }
         reads++;
     });
@@ -238,14 +238,30 @@ function clock() {
     return new Date().toLocaleTimeString("en-GB", { hour12: false });
 }
 
-function addEntry(type, text, detail) {
-    S.entries.push({ ts: clock(), type: type, text: text, detail: detail || "", count: 1 });
+function addEntry(type, text, detail, kind) {
+    S.entries.push({ ts: clock(), type: type, text: text, detail: detail || "", count: 1, kind: kind || type });
     if (S.entries.length > S.maxEntries) S.entries.splice(0, S.entries.length - S.maxEntries);
     if (type === "err") S.errCount++;
     renderList();
 }
 
-var DOT = { ok: "ok", err: "err", warn: "pend", info: "", read: "", cmd: "" };
+var ICONS = {
+    device: '<rect x="2.5" y="3.5" width="11" height="9" rx="2"/><path d="M5.5 12.5v1.5M10.5 12.5v1.5"/>',
+    link:   '<circle cx="4" cy="8" r="2"/><circle cx="12" cy="8" r="2"/><path d="M6 8h4"/>',
+    config: '<path d="M3.5 5.5 6 8l-2.5 2.5M8 11h4.5"/>',
+    ip:     '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5"/>',
+    read:   '<path d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>',
+    ok:     '<path d="m3.5 8.5 3 3 6-7"/>',
+    warn:   '<path d="M8 2.8 14 13H2z"/><path d="M8 7v2.6M8 11.4v.1"/>',
+    err:    '<circle cx="8" cy="8" r="5.5"/><path d="m6 6 4 4M10 6l-4 4"/>',
+    info:   '<circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v3.6M8 5.2v.1"/>',
+    tool:   '<path d="M10.5 2.5a3 3 0 0 0-3.2 4L2.8 11a1.3 1.3 0 0 0 1.9 1.9l4.5-4.5a3 3 0 0 0 4-3.2l-1.8 1.8-1.7-.4-.4-1.7z"/>'
+};
+
+function icon(kind) {
+    return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+        (ICONS[kind] || ICONS.info) + "</svg>";
+}
 
 function renderList() {
     var list = document.getElementById("list");
@@ -253,17 +269,17 @@ function renderList() {
         return S.filter === "all" || e.type === "err" || e.type === "warn";
     });
     if (!shown.length) {
-        list.innerHTML = '<div class="empty">' + (S.filter === "all"
-            ? "Nothing yet. Ask your AI agent to build a network — every action shows up here."
-            : "No problems so far.") + "</div>";
+        list.innerHTML = S.filter === "all"
+            ? '<div class="empty"><div><b>Nothing yet</b>Ask your AI agent to build a network — every action shows up here.</div></div>'
+            : '<div class="empty"><div><b>No problems</b>Errors and warnings would show up here.</div></div>';
     } else {
         list.innerHTML = shown.map(function(e) {
             return '<div class="row ' + e.type + '">' +
-                '<span class="time">' + e.ts + "</span>" +
-                '<span class="dot ' + (DOT[e.type] || "") + '"></span>' +
+                '<span class="ico">' + icon(e.kind) + "</span>" +
                 '<span class="msg">' + escapeHtml(e.text) +
                 (e.detail ? '<span class="detail">' + escapeHtml(e.detail) + "</span>" : "") +
-                "</span></div>";
+                "</span>" +
+                '<span class="time">' + e.ts + "</span></div>";
         }).join("");
         list.scrollTop = list.scrollHeight;
     }
@@ -290,22 +306,32 @@ function copyLogs() {
 
 function updateUI() {
     var fb = S.fileBridge && S.fileBridge.active;
-    var state, cls;
-    if (S.tokenOk === false) { state = "Security token missing"; cls = "err"; }
-    else if (S.ptConnected) { state = "Connected to your agent"; cls = "ok"; }
-    else if (S.bridgeUp) { state = "MCP server found, connecting…"; cls = "pend"; }
-    else { state = "Waiting for the MCP server"; cls = "pend"; }
+    var state, sub, cls;
+    if (S.tokenOk === false) {
+        state = "Security token missing"; cls = "err";
+        sub = "Start your AI agent with the MCP server once, then reopen this window";
+    } else if (S.ptConnected) {
+        state = "Connected to your agent"; cls = "ok";
+        sub = "Your AI is driving Packet Tracer" + (fb ? " · keeps working if you close this window" : "");
+    } else if (S.bridgeUp) {
+        state = "Connecting…"; cls = "pend";
+        sub = "The MCP server is up; waiting for the first poll";
+    } else {
+        state = "Waiting for your agent"; cls = "pend";
+        sub = "Start Claude Code, OpenCode or Codex with the packet-tracer MCP";
+    }
+    document.getElementById("hero").className = "hero " + cls;
     setText("stateText", state);
-    setDot("stateDot", cls);
+    setText("stateSub", sub);
 
-    setDot("httpDot", S.ptConnected ? "ok" : (S.bridgeUp ? "pend" : ""));
-    setText("httpSub", S.ptConnected ? "127.0.0.1:54321 · live" : (S.bridgeUp ? "127.0.0.1:54321 · starting" : "Start your AI agent"));
+    setLed("httpDot", S.ptConnected ? "ok" : (S.bridgeUp ? "pend" : ""));
+    setText("httpSub", S.ptConnected ? ":54321 · live" : (S.bridgeUp ? ":54321 · starting" : ":54321 · offline"));
 
-    setDot("fileDot", fb ? "ok" : "");
-    setText("fileSub", fb ? "Active · survives closing this" : "Inactive");
+    setLed("fileDot", fb ? "ok" : "");
+    setText("fileSub", fb ? "Active" + (S.fileBridge.count ? " · " + S.fileBridge.count + " cmds" : "") : "Inactive");
 
-    setDot("tokenDot", S.tokenOk === true ? "ok" : (S.tokenOk === false ? "err" : ""));
-    setText("tokenSub", S.tokenOk === true ? "Found · only your agent gets in" : (S.tokenOk === false ? "Not found on this machine" : "Reading…"));
+    setLed("tokenDot", S.tokenOk === true ? "ok" : (S.tokenOk === false ? "err" : ""));
+    setText("tokenSub", S.tokenOk === true ? "Loaded" : (S.tokenOk === false ? "Not found" : "Reading…"));
 
     setText("cmdCount", String(S.commandCount));
 }
@@ -319,11 +345,87 @@ function updateUptime() {
 // -------------------------------------------------------------- Console ----
 
 function toggleConsole() {
-    var c = document.getElementById("console");
-    var open = !c.classList.contains("open");
-    c.classList.toggle("open", open);
-    document.getElementById("advToggle").textContent = open ? "Advanced ▾" : "Advanced ▸";
-    if (open) document.getElementById("code").focus();
+    var adv = document.getElementById("adv");
+    adv.classList.toggle("open");
+    if (adv.classList.contains("open")) document.getElementById("code").focus();
+}
+
+function showTab(name) {
+    document.getElementById("panel").className = "panel" + (name === "tools" ? " tools-on" : "");
+    document.getElementById("tab-activity").className = name === "activity" ? "on" : "";
+    document.getElementById("tab-tools").className = name === "tools" ? "on" : "";
+}
+
+// ---------------------------------------------------------------- Tools ----
+
+function toolCheckBridge() {
+    var t0 = Date.now();
+    var x = new XMLHttpRequest();
+    x.open("GET", bridgeUrl("/status"), true);
+    x.timeout = 3000;
+    x.onload = function() {
+        var ms = Date.now() - t0;
+        if (x.status === 401) { addEntry("err", "Bridge answered, but rejected the token", "Use Reload token, or restart your agent", "tool"); return; }
+        try {
+            var d = JSON.parse(x.responseText);
+            addEntry(d.connected ? "info" : "warn", "Bridge answered in " + ms + " ms",
+                (d.connected ? "Polling normally" : "Not polling right now") +
+                (d.last_poll_ago != null ? " · last poll " + d.last_poll_ago + " s ago" : ""), "tool");
+        } catch(e) { addEntry("err", "Bridge sent something unexpected (" + x.status + ")", "", "tool"); }
+        showTab("activity");
+    };
+    x.onerror = x.ontimeout = function() {
+        addEntry("err", "No bridge on 127.0.0.1:54321", "Start your AI agent with the packet-tracer MCP", "tool");
+        showTab("activity");
+    };
+    x.send();
+}
+
+function toolCanvas() {
+    try {
+        $se("mcpCanvasSummary").then(function(raw) {
+            var d = JSON.parse(raw);
+            var parts = Object.keys(d.byType).sort().map(function(k) { return d.byType[k] + " " + k; });
+            addEntry("info", d.devices + " devices · " + d.links + " links on the canvas", parts.join(" · ") || "Empty canvas", "tool");
+            showTab("activity");
+        }).catch(function(e) { addEntry("err", "Could not read the canvas", String(e), "tool"); showTab("activity"); });
+    } catch(e) { addEntry("err", "Script Engine unavailable", String(e), "tool"); }
+}
+
+function toolReloadToken() {
+    _tokenReloads = 0;
+    loadToken(function(ok) {
+        addEntry(ok ? "info" : "err", ok ? "Token reloaded from disk" : "Token still not found", "", "tool");
+        showTab("activity");
+    });
+}
+
+function toolDiagnostics() {
+    var lines = [
+        "MCP Control Center V6",
+        "HTTP bridge: " + (S.ptConnected ? "connected" : (S.bridgeUp ? "up, not polling" : "offline")),
+        "File bridge: " + (S.fileBridge ? JSON.stringify(S.fileBridge) : "unknown"),
+        "Token: " + (S.tokenOk === true ? "loaded" : (S.tokenOk === false ? "missing" : "unknown")),
+        "Commands this session: " + S.commandCount,
+        "User agent: " + navigator.userAgent
+    ];
+    var finish = function(extra) {
+        var text = lines.concat(extra || []).join("\n");
+        navigator.clipboard.writeText(text).then(function() {
+            addEntry("info", "Diagnostics copied to the clipboard", "", "tool");
+        }).catch(function(e) { addEntry("err", "Could not copy", String(e), "tool"); });
+        showTab("activity");
+    };
+    try {
+        $se("mcpCanvasSummary").then(function(raw) { finish(["Canvas: " + raw]); }).catch(function() { finish(); });
+    } catch(e) { finish(); }
+}
+
+function toolClear() {
+    S.entries = [];
+    S.errCount = 0;
+    renderList();
+    showTab("activity");
 }
 
 /* Sends the code through the bridge, the same path the agent's commands take. */
@@ -360,7 +462,7 @@ function clearCode() {
 // ---------------------------------------------------------------- Helpers --
 
 function setText(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
-function setDot(id, cls) { var el = document.getElementById(id); if (el) el.className = "dot" + (cls ? " " + cls : ""); }
+function setLed(id, cls) { var el = document.getElementById(id); if (el) el.className = "led" + (cls ? " " + cls : ""); }
 function pad2(n) { return n < 10 ? "0" + n : String(n); }
 function escapeHtml(str) {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
