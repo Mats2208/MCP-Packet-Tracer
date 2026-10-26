@@ -40,7 +40,7 @@ fully cabled, configured and running topology.
 | **Telemetry & backup** | NetFlow exporters, real startup-config, workspace behaviour | Collector address + version; serial and config-register; auto-cabling |
 | **Deploy** | Real-time HTTP bridge to PT (auto-reconciles) | No copy-paste — commands stream directly |
 | **Export** | Plans, JS scripts, CLI configs | Reusable project files on disk |
-| **Catalog** | 74 devices · 151 modules · 15 cables | With aliases and validation |
+| **Catalog** | 74 devices · 150 modules · 15 cables | With aliases and validation |
 
 <div class="grid" markdown>
 
@@ -49,13 +49,13 @@ fully cabled, configured and running topology.
 { .stat }
 </div>
 <div markdown>
-**5** MCP Resources
+**6** MCP Resources
 </div>
 <div markdown>
 **74** Device models
 </div>
 <div markdown>
-**151** Modules
+**150** Modules
 </div>
 
 </div>
