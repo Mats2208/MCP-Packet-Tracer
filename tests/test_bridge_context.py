@@ -189,3 +189,32 @@ def test_ensure_bridge_without_grace_does_not_wait(monkeypatch):
     monkeypatch.setattr(ctx, "bridge_pt_connected", lambda: looked.append(1) or False)
     assert ctx.ensure_bridge(grace=False) is True
     assert looked == []
+
+
+# The first ping after cabling came back NO CONNECTIVITY: new switch ports spend ~30 s
+# in STP listening/learning. The context remembers when links were last created so
+# pt_verify_connectivity can wait out that window instead of reporting a false failure.
+
+def test_link_creation_is_timestamped_on_every_send_path():
+    ctx = _ctx()
+    ctx.pick_channel = lambda: "file"
+    assert ctx.last_link_change is None
+    ctx.send_payload('addLink("R1","Gi0/0","SW1","Gi0/1","straight");')
+    first = ctx.last_link_change
+    assert first is not None
+    ctx.send_and_wait('reportResult(lwAddLink("PC1","Fa0","SW1","Fa0/1","straight"))')
+    assert ctx.last_link_change >= first
+
+
+def test_reads_do_not_count_as_link_changes():
+    ctx = _ctx()
+    ctx.pick_channel = lambda: "file"
+    ctx.send_and_wait("reportResult(getDevices(''))")
+    assert ctx.last_link_change is None
+
+
+def test_stp_wait_covers_only_the_rest_of_the_window():
+    from src.packet_tracer_mcp.adapters.mcp.bridge_context import STP_SETTLE_S, stp_wait_seconds
+    assert stp_wait_seconds(None, 100.0) == 0
+    assert stp_wait_seconds(100.0, 100.0 + STP_SETTLE_S + 1) == 0
+    assert stp_wait_seconds(100.0, 110.0) == pytest.approx(STP_SETTLE_S - 10)

@@ -21,9 +21,9 @@ from ....infrastructure.generator.cli_config_generator import (
 from ....infrastructure.execution.manual_executor import ManualExecutor
 from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
-from ..bridge_context import BridgeContext, DEPLOY_BATCH
+from ..bridge_context import BridgeContext, DEPLOY_BATCH, stp_wait_seconds
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions
+from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions, read_plan_source
 
 
 # --- Device console (real ping) ----------------------------------------------
@@ -359,8 +359,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
     @mcp.tool()
     def pt_live_deploy(
-        plan_json: str,
+        plan_json: str = "",
         command_delay: float = 0.0,
+        plan_path: str = "",
     ) -> str:
         """
         Sends commands directly to Packet Tracer in real time.
@@ -371,6 +372,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         Parameters:
         - plan_json: plan JSON (output of pt_plan_topology or pt_full_build)
+        - plan_path: instead of plan_json, a .json file with the plan. Use it for
+          large hand-written designs (dozens of sites); `extra_cli` in the plan
+          carries per-device IOS lines (summaries, hardening, NAT...).
         - command_delay: delay between BATCHES in seconds (default 0.0).
           Commands are no longer sent one by one: they go in batches that PT runs in
           a single runCode, where each one carries its own try/catch. Measured
@@ -388,7 +392,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        plan = TopologyPlan.model_validate_json(plan_json)
+        try:
+            plan = TopologyPlan.model_validate_json(read_plan_source(plan_json, plan_path))
+        except ValueError as exc:
+            return f"Invalid plan: {exc}"
 
         # A name already on the canvas would be created a second time (PT allows
         # duplicate names) while links and config land on the old device, and the
@@ -640,6 +647,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
+        # Links created moments ago are still in STP listening/learning: a ping now
+        # is lost and reads as a fault. Wait out the rest of that window first.
+        stp_wait = stp_wait_seconds(ctx.last_link_change, time.monotonic())
+        if stp_wait > 0:
+            time.sleep(stp_wait)
+        waited = f"\n(waited {stp_wait:.0f}s for STP on links created moments ago)" if stp_wait > 0 else ""
+
         # The JS lives in `console_ping_arm_js` / `console_ping_poll_js` (module
         # level) so it can be tested without a bridge that `getCommandPrompt`, which
         # only exists on hosts and broke every IOS ping, never creeps back in.
@@ -669,9 +683,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                     "partial": "PARTIAL CONNECTIVITY (packet loss)",
                     "none": "NO CONNECTIVITY",
                 }[_classify_ping(stat)]
-                return f"{from_device} → {to_ip}: {verdict}\n{stat}"
+                return f"{from_device} → {to_ip}: {verdict}\n{stat}{waited}"
 
-        return ping_no_result_message(from_device, to_ip, timeout_s)
+        return ping_no_result_message(from_device, to_ip, timeout_s) + waited
 
     @mcp.tool()
     def pt_save_project(filename: str, directory: str = "") -> str:

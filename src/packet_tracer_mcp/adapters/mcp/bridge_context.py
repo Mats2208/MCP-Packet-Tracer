@@ -59,6 +59,24 @@ BRIDGE_GRACE_S = 5.0
 BRIDGE_GRACE_POLL_S = 0.25
 
 
+# New switch ports spend ~30 s in STP listening/learning (15 s + 15 s) before they
+# forward, so a ping right after cabling is lost. pt_verify_connectivity waits out
+# what is left of this window after the last link was created.
+STP_SETTLE_S = 32.0
+_LINK_CALLS = ("addLink(", "lwAddLink(", "createLink(")
+
+
+def creates_links(js: str) -> bool:
+    return any(call in js for call in _LINK_CALLS)
+
+
+def stp_wait_seconds(last_link_change: float | None, now: float, settle: float = STP_SETTLE_S) -> float:
+    """Seconds still to wait before a ping can cross links created at `last_link_change`."""
+    if last_link_change is None:
+        return 0.0
+    return max(0.0, settle - (now - last_link_change))
+
+
 class BridgeContext:
     """One per MCP server: owns the in-process HTTP bridge and the file channel."""
 
@@ -67,6 +85,12 @@ class BridgeContext:
         self.url = f"http://127.0.0.1:{port}"
         self.file_bridge = file_bridge if file_bridge is not None else FileBridge()
         self.instance: PTCommandBridge | None = None
+        # time.monotonic() of the last JS that created a link (see STP_SETTLE_S).
+        self.last_link_change: float | None = None
+
+    def _note(self, js: str) -> None:
+        if creates_links(js):
+            self.last_link_change = time.monotonic()
 
     def _signed(self, url: str) -> str:
         """Add the bridge token to the URL.
@@ -172,6 +196,7 @@ class BridgeContext:
 
     def channel_send(self, payload: str) -> bool:
         """Send fire-and-forget over the available channel."""
+        self._note(payload)
         ch = self.pick_channel()
         if ch == "http":
             status, _ = self.http_post(f"{self.url}/queue", payload)
@@ -212,6 +237,7 @@ class BridgeContext:
         - file: the Script Engine injects a local reportResult that captures the
           value and writes it to the res file; here the "raw" js is sent with its try/catch.
         """
+        self._note(js_call)
         ch = self.pick_channel()
         guarded = (
             "try{" + js_call + "}catch(__pterr){reportResult('PT_ERROR: '+__pterr);}"
