@@ -90,71 +90,75 @@ A **Model Context Protocol (MCP) server** that gives any LLM (Claude, GitHub Cop
 
 ## Installation
 
-**1. Install the server**
+Needs Cisco Packet Tracer 8.2+ (tested on 9.0). Live deploy is tested on **Windows**; UI mode is Windows-only.
 
-```bash
-pip install packet-tracer-mcp
+### The easy way: let your AI agent install it
+
+Paste this into Claude Code, OpenCode, Codex or any coding agent:
+
+```text
+Install Packet Tracer MCP for me following https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/llms-install.md
 ```
 
-For **UI mode** on Windows (opening and capturing the device windows), add the `ui` extra:
+The agent detects your OS and client, installs everything (server + skill), downloads the extension and tells
+you the one thing you do by hand: adding the extension in Packet Tracer. The steps it follows are in
+[`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md).
+
+### Manual install
+
+**1. Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/)** — it brings its own Python, so
+you don't need to install Python or touch PATH.
+
+_macOS · Linux:_ `curl -LsSf https://astral.sh/uv/install.sh | sh`
+_Windows (PowerShell):_ `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+**2. Connect your MCP client** (Claude Code shown; other clients in the
+[Installation docs](https://mats2208.github.io/MCP-Packet-Tracer/installation/))
 
 ```bash
-pip install "packet-tracer-mcp[ui]"
-```
-
-Or from source, if you want to modify it:
-
-```bash
-git clone https://github.com/Mats2208/MCP-Packet-Tracer
-cd MCP-Packet-Tracer
-pip install -e .
-```
-
-**2. Connect your MCP client** (Claude Code shown)
-
-_Linux · macOS · Git Bash · Windows `cmd.exe`:_
-
-```bash
-claude mcp add --scope user --transport stdio packet-tracer -- python -m packet_tracer_mcp --stdio
+claude mcp add --scope user --transport stdio packet-tracer -- uvx packet-tracer-mcp --stdio
 ```
 
 _Windows PowerShell_ — quote the `--` separator, or PowerShell swallows it and Claude aborts with `error: unknown option '-m'`:
 
 ```powershell
-claude mcp add --scope user --transport stdio packet-tracer "--" python -m packet_tracer_mcp --stdio
+claude mcp add --scope user --transport stdio packet-tracer "--" uvx packet-tracer-mcp --stdio
 ```
 
 Verify with `claude mcp list` (look for `packet-tracer … ✓ Connected`).
 
-**3. Install the live-deploy extension** — _only if you want real-time deploy into a running Packet Tracer_
-
-Download **`V5.2.pts`** from [**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to **Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Full walkthrough in [Live deploy](#live-deploy) below.
-
-> **v0.6.0+ requires V5.** The bridge now authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
-
-**4. Install the Claude Code Skill** — _recommended; makes the AI use the MCP correctly instead of guessing_
-
-The repo ships a companion **[Agent Skill](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/skill/SKILL.md)** that teaches the model the exact tool
-catalog, the discover→plan→validate→deploy workflow, and the precise Script-Engine API (so it never
-invents method/model/port names). Install it **globally** from the repo root:
-
-_Linux · macOS · Git Bash:_
+**3. Install the Agent Skill** — _required in practice: without it the AI guesses model, port and API names
+instead of discovering them_
 
 ```bash
-mkdir -p ~/.claude/skills/packet-tracer && cp -r skill/. ~/.claude/skills/packet-tracer/
+uvx packet-tracer-mcp install-skill                         # Claude Code, OpenCode → ~/.claude/skills
+uvx packet-tracer-mcp install-skill --dest ~/.agents/skills # Codex
 ```
 
-_Windows PowerShell:_
-
-```powershell
-New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null; Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
-```
-
-Then run `/reload-skills` in Claude Code (or restart it) and confirm with `/skills`. Details →
+Then restart your agent (or run `/reload-skills` in Claude Code). Details →
 **[Skill docs](https://mats2208.github.io/MCP-Packet-Tracer/skill/)**.
 
-> Requires **Python 3.11+** (deps `mcp[cli]>=1.13`, `pydantic>=2.11` install automatically).
-> Full setup for every client → **[Installation docs](https://mats2208.github.io/MCP-Packet-Tracer/installation/)**.
+**4. Install the live-deploy extension** — Download **`V5.2.pts`** from
+[**Releases**](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest), then in Packet Tracer go to
+**Extensions → Scripting → Configure PT Script Modules → Add…** and select it. Open it with
+**Extensions → MCP BUILDER**. Full walkthrough in [Live deploy](#live-deploy) below.
+
+> **v0.6.0+ requires V5.** The bridge authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
+
+<details>
+<summary>Prefer pip?</summary>
+
+```bash
+pip install packet-tracer-mcp            # then use `python -m packet_tracer_mcp --stdio` as the command
+pip install "packet-tracer-mcp[ui]"      # Windows: adds UI mode (opening and capturing device windows)
+```
+
+Requires Python 3.11+. On macOS (Homebrew) and recent Linux distros a plain `pip install` is refused
+(`externally-managed-environment`, PEP 668): use `uv` as above, or a virtualenv. With `uv`, UI mode is
+`uvx --from "packet-tracer-mcp[ui]" packet-tracer-mcp --stdio`.
+
+From source, to modify it: `git clone https://github.com/Mats2208/MCP-Packet-Tracer && cd MCP-Packet-Tracer && pip install -e .`
+</details>
 
 ## Quick start
 

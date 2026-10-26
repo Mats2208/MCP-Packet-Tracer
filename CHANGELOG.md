@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Install it by asking your agent.** `llms-install.md` tells any coding agent (Claude Code, OpenCode,
+  Codex, Cursor…) how to install the MCP on Windows, macOS or Linux: detect the OS and client, register the
+  server, install the skill and download the extension. The user only adds the `.pts` in Packet Tracer.
+- **`pt-mcp install-skill [--dest DIR]`.** The skill now ships inside the wheel; before, installing it
+  needed a clone (`cp -r skill/.`), so whoever installed with pip never got it.
+- **`uvx packet-tracer-mcp`.** A script named like the package, so `uv` users run the server with no
+  `--from` and no Python install. The docs now lead with `uv`: on macOS/Homebrew and recent Linux a plain
+  `pip install` fails with `externally-managed-environment` (PEP 668).
 - **Device-panel control: every tab of a device window, without touching the screen.**
   17 new tools (62 → 79 with upstream's `pt_configure_dhcp_server`) drive what a student does inside a device through Packet
   Tracer's own API: `pt_cli` (IOS CLI tab — one command at a time, waits for the

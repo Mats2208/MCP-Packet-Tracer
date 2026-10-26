@@ -54,7 +54,12 @@ def main():
 
     By default uses streamable-http on :39000.
     With --stdio uses the stdio transport (for debugging or legacy clients).
+    `pt-mcp install-skill` installs the companion Agent Skill instead of serving.
     """
+    if sys.argv[1:2] == ["install-skill"]:
+        from .skill_install import main as install_skill
+
+        sys.exit(install_skill(sys.argv[2:]))
     if "--stdio" in sys.argv:
         mcp.run(transport="stdio")
     else:

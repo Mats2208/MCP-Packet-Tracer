@@ -31,6 +31,7 @@ classifiers = [
     "Intended Audience :: Education",
     "Intended Audience :: System Administrators",
     "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -71,9 +72,15 @@ pythonpath = ["."]
 
 [project.scripts]
 pt-mcp = "packet_tracer_mcp.server:main"
+# Same entry point under the package name, so `uvx packet-tracer-mcp` works without --from.
+packet-tracer-mcp = "packet_tracer_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/packet_tracer_mcp"]
+
+# The Agent Skill travels inside the wheel: `pt-mcp install-skill` copies it into place.
+[tool.hatch.build.targets.wheel.force-include]
+"skill" = "packet_tracer_mcp/_skill"
 
 [tool.hatch.build.targets.sdist]
 # El sdist por defecto se lleva TODO lo que no esté en .gitignore: los GIFs y

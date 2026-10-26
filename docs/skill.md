@@ -24,29 +24,16 @@ happen.
 
 ## Install (global — recommended)
 
-Run from the cloned repo root. This copies the Skill to your **user** skills folder so it's available
-in **every** project where you use the MCP.
+The Skill ships inside the package. One command copies it to your **user** skills folder so it's
+available in **every** project where you use the MCP — no clone needed:
 
-=== "Linux / macOS / Git Bash"
+```bash
+uvx packet-tracer-mcp install-skill                          # Claude Code, OpenCode → ~/.claude/skills
+uvx packet-tracer-mcp install-skill --dest ~/.agents/skills  # Codex
+```
 
-    ```bash
-    mkdir -p ~/.claude/skills/packet-tracer
-    cp -r skill/. ~/.claude/skills/packet-tracer/
-    ```
-
-=== "Windows PowerShell"
-
-    ```powershell
-    New-Item -ItemType Directory -Force "$HOME\.claude\skills\packet-tracer" | Out-Null
-    Copy-Item -Recurse -Force skill\* "$HOME\.claude\skills\packet-tracer\"
-    ```
-
-=== "Windows cmd.exe"
-
-    ```bat
-    mkdir "%USERPROFILE%\.claude\skills\packet-tracer" 2>nul
-    xcopy /E /I /Y skill "%USERPROFILE%\.claude\skills\packet-tracer"
-    ```
+Installed with pip instead? `pt-mcp install-skill` does the same. From a clone, `cp -r skill/.
+~/.claude/skills/packet-tracer/` still works.
 
 Then run **`/reload-skills`** in Claude Code (or restart it). Verify with **`/skills`** — you should
 see **`packet-tracer`** listed. Claude loads it automatically whenever you work with the MCP.
@@ -57,5 +44,6 @@ see **`packet-tracer`** listed. Claude loads it automatically whenever you work 
 
 ## Updating
 
-The Skill ships with the repo and tracks the MCP version. After `git pull`, re-run the copy command
-above to refresh your installed copy, then `/reload-skills`.
+The Skill tracks the MCP version. After upgrading (`uvx` picks up new releases with
+`uvx packet-tracer-mcp@latest install-skill`), re-run the install command to refresh your copy, then
+`/reload-skills`.
