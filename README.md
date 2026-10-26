@@ -29,6 +29,15 @@
 
 ---
 
+## Video
+
+<p align="center">
+  <a href="https://youtu.be/RthD8h0CEhQ">
+    <img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/video-thumbnail.jpg" alt="Watch on YouTube: one sentence builds a full network in Packet Tracer" width="720"/>
+  </a>
+</p>
+<p align="center"><sub>▶ <a href="https://youtu.be/RthD8h0CEhQ">Watch on YouTube</a> (6 min): install, how it works, and three live examples. Spanish narration, English subtitles.</sub></p>
+
 ## Showcase
 
 <p align="center">
