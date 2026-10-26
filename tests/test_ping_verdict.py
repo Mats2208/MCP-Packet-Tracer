@@ -85,3 +85,20 @@ class TestIosConsoleJs:
         """Un nombre con comillas no puede romper el JS generado."""
         js = console_ping_arm_js('R"1', "10.0.0.9")
         assert 'getDevice("R\\"1")' in js or "getDevice(\"R\\\"1\")" in js
+
+
+# The first ping right after a deploy came back "no result after 20s" (Windows run,
+# 2026-10-25): new switch ports spend ~30 s in STP listening/learning before they
+# forward, so 20 s was shorter than a healthy ping on a fresh topology.
+
+def test_default_ping_timeout_outlasts_stp_convergence():
+    from tests._registry_src import tool_api
+    schema = tool_api()["pt_verify_connectivity"]["inputSchema"]["properties"]["timeout_s"]
+    assert schema["default"] >= 45
+
+
+def test_no_result_message_explains_a_fresh_topology():
+    from src.packet_tracer_mcp.adapters.mcp.tools.live import ping_no_result_message
+    msg = ping_no_result_message("PC1", "192.168.1.11", 45)
+    assert msg.startswith("PC1 → 192.168.1.11: no result after 45s")
+    assert "STP" in msg and "timeout_s" in msg

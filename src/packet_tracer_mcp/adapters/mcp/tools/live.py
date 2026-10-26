@@ -48,6 +48,20 @@ _CONSOLE_PRIME_JS = (
 # Statistics block markers, in PT's two formats.
 _PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
 
+# New switch ports spend ~30 s in STP listening/learning before they forward, so the
+# first ping on a freshly deployed topology needs more than that to finish.
+PING_TIMEOUT_S = 45.0
+
+
+def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> str:
+    """What pt_verify_connectivity says when PT never printed the ping statistics."""
+    return (
+        f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
+        "The ping may still be running. On a topology deployed in the last minute, "
+        "switch ports may still be in STP listening/learning (~30 s): wait and retry, "
+        "or raise timeout_s."
+    )
+
 
 def console_ping_arm_js(device: str, target: str) -> str:
     """JS that makes the console usable, counts the existing blocks and fires the ping.
@@ -599,7 +613,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         from_device: str,
         to_ip: str,
         count: int = 4,
-        timeout_s: float = 20.0,
+        timeout_s: float = PING_TIMEOUT_S,
     ) -> str:
         """
         Runs a REAL ping from a device in PT and returns the result.
@@ -617,7 +631,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - to_ip: destination IP
         - count: reserved; PT uses its default per type (PC 4, IOS 5). A "-n"
           flag would break on IOS, so it is not forced for now.
-        - timeout_s: maximum wait (default 20s). A FAILED ping takes longer
+        - timeout_s: maximum wait (default 45s: on a topology deployed moments
+          ago, switch ports spend ~30s in STP before forwarding). A FAILED ping takes longer
           than a successful one: each packet waits for its own timeout before
           being declared lost (~13s measured for 4 lost packets).
         """
@@ -656,10 +671,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 }[_classify_ping(stat)]
                 return f"{from_device} → {to_ip}: {verdict}\n{stat}"
 
-        return (
-            f"{from_device} → {to_ip}: no result after {timeout_s:.0f}s. "
-            "The ping may still be running; retry or raise timeout_s."
-        )
+        return ping_no_result_message(from_device, to_ip, timeout_s)
 
     @mcp.tool()
     def pt_save_project(filename: str, directory: str = "") -> str:

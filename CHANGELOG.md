@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 ### Changed
 
@@ -65,6 +65,11 @@
   `prefers-color-scheme`, which follows the OS. The panel now follows PT's theme and uses the OS
   only as a fallback. Verified by injecting the change into the running panel on PT 9.0.1;
   **needs a new `.pts` build**.
+- **The first ping after a deploy came back "no result after 20s".** New switch ports spend
+  ~30 s in STP before forwarding. `pt_verify_connectivity` now waits 45 s by default, and the
+  no-result message says to wait for STP on a topology deployed in the last minute.
+- A file-bridge test patched `os.name` globally, which made `pathlib` build `PosixPath` on
+  Windows with Python 3.11 and crashed the whole CI run there.
 - The symlink test is skipped where Windows refuses symlinks (no Developer Mode, WinError 1314)
   instead of failing the suite; the new junction test covers that case there.
 - `llms-install.md`: PT's dialog names the module **MCP-Control-Center** (the menu entry is still
