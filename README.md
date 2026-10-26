@@ -186,6 +186,7 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
+| Install by agent (`llms-install.md`, PT detects the extension) | ✅ | ✅ | not tested yet |
 | Server (`uvx packet-tracer-mcp`) | ✅ | ✅ | not tested yet |
 | Live deploy (HTTP bridge) | ✅ | ✅ | not tested yet |
 | File-bridge (extension window closed) | ✅ | ✅ | not tested yet |
@@ -193,7 +194,10 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 | UI mode (open/capture device windows) | ✅ | — | — |
 
 macOS was verified end to end on Packet Tracer 9.0.1: all 79 tools were run against a live
-canvas, and the bugs that run found are fixed in this release. Linux runs the same code path as
+canvas, and the bugs that run found are fixed in this release. Windows 11 was verified the same
+day on PT 9.0.1: the agent install (extension copied to `Program Files`, one UAC prompt, PT's
+"enable?" dialog), both bridge channels on the first call, OSPF + DHCP builds checked with real
+pings, and UI mode capturing device windows. Linux runs the same code path as
 macOS; if you try it, an issue with the result is very welcome.
 
 ## Live deploy

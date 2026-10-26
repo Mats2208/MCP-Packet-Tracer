@@ -53,6 +53,23 @@
   modules were type 22; PT installs them only as 23.
 - Module count in the docs: 150 (PT's catalog lists `PT-CLOUD-NM-1CX` twice); resources: 6.
 
+### Fixed (found by the Windows install run, 2026-10-25)
+
+- **`install-skill` failed on Windows when the skill folder was a directory junction**
+  (`mklink /J`, the way to link a folder there without admin rights): `shutil.rmtree` refuses
+  junctions ("Cannot call rmtree on a symbolic link"). The junction is now removed like a symlink,
+  leaving its target untouched.
+- **V6 panel unreadable on Windows in dark mode**: the active tab and filter were near-white on
+  white. PT injects a stylesheet that forces `html, body` to its own theme
+  (`--pt-bg-color`, `!important`), while the panel picked its palette from
+  `prefers-color-scheme`, which follows the OS. The panel now follows PT's theme and uses the OS
+  only as a fallback. Verified by injecting the change into the running panel on PT 9.0.1;
+  **needs a new `.pts` build**.
+- The symlink test is skipped where Windows refuses symlinks (no Developer Mode, WinError 1314)
+  instead of failing the suite; the new junction test covers that case there.
+- `llms-install.md`: PT's dialog names the module **MCP-Control-Center** (the menu entry is still
+  **MCP BUILDER**), and PT only finds new modules when it starts, so it must be fully closed first.
+
 ### Added
 
 - **Install it by asking your agent.** `llms-install.md` tells any coding agent (Claude Code, OpenCode,

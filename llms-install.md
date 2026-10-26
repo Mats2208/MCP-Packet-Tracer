@@ -90,10 +90,12 @@ folder and have them add it with **Extensions → Scripting → Configure PT Scr
 
 ## 5. The user enables it (one click)
 
-Tell the user: open (or restart) Cisco Packet Tracer. A dialog says *"Cisco Packet Tracer has
+Tell the user: open (or restart) Cisco Packet Tracer. PT only looks for new modules when it starts,
+so if it was already open it must be closed completely first. A dialog says *"Cisco Packet Tracer has
 detected a new script module. Do you want to enable this script module?"* showing
-**MCP-BUILDER** by Mateo Andres Soto Gareca — click **Yes**. The MCP Control Center window opens
-and connects by itself (on later starts: **Extensions → MCP BUILDER**).
+**Name: MCP-Control-Center** by Mateo Andres Soto Gareca — click **Yes**. The MCP Control Center window
+opens and connects by itself (on later starts: **Extensions → MCP BUILDER**). Verified on Windows 11 and
+macOS with PT 9.0.1.
 
 Wait until the user says it is done.
 
