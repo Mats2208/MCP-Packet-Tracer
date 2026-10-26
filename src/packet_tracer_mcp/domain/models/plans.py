@@ -132,6 +132,9 @@ class TopologyPlan(BaseModel):
     validations: list[ValidationCheck] = Field(default_factory=list)
     # IPv6 dual-stack on (hosts use SLAAC, routers get ipv6 address via CLI)
     dual_stack: bool = False
+    # IOS lines per device, typed from global config after the generated config
+    # (summaries, hardening, ACLs, NAT...): one deploy carries a whole custom design.
+    extra_cli: dict[str, list[str]] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

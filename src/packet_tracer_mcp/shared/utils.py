@@ -176,3 +176,24 @@ def reply_json(obj: Any) -> str:
     ):
         obj = {k: v for k, v in obj.items() if k != "js_payload"}
     return to_json(obj)
+
+
+# A plan for a large network (tens of sites) is too big to pass as a tool argument;
+# the agent writes it to disk and hands over the path. 5 MB is far above any real plan.
+_MAX_PLAN_BYTES = 5 * 1024 * 1024
+
+
+def read_plan_source(plan_json: str, plan_path: str) -> str:
+    """The plan's JSON text, from `plan_json` or from the `.json` file at `plan_path`."""
+    if plan_path:
+        path = Path(plan_path).expanduser()
+        if path.suffix.lower() != ".json":
+            raise ValueError(f"plan_path must point to a .json file, not '{path.name}'.")
+        if not path.is_file():
+            raise ValueError(f"plan_path not found: {path}")
+        if path.stat().st_size > _MAX_PLAN_BYTES:
+            raise ValueError(f"{path.name} is larger than {_MAX_PLAN_BYTES // (1024 * 1024)} MB.")
+        return path.read_text(encoding="utf-8")
+    if plan_json:
+        return plan_json
+    raise ValueError("Pass the plan as plan_json or plan_path (a .json file).")

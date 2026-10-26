@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.10.1
+
+Found by building a 24-branch, 116-device enterprise WAN (multi-area OSPF, NAT, DHCP, SSH) on PT 9.0.1
+using only the MCP's tools.
+
+### Added
+
+- **Large custom designs through the MCP.** `pt_validate_plan` and `pt_live_deploy` take `plan_path` (a
+  `.json` plan; a 24-branch plan is ~150 KB, too big for a tool argument). `TopologyPlan.extra_cli`
+  carries per-device IOS lines after the generated config (summaries, hardening, NAT, VLANs), validated
+  for unknown devices and line breaks. A 3560 with addresses in the plan is layer 3: `ip routing`,
+  routed ports, SVIs, OSPF, DHCP.
+- `pt_apply_interface_tuning(ospf_network="point-to-point")`.
+
+### Fixed
+
+- **The default route vanished after an OSPF interface change on the ASBR.** PT flushes the router's
+  own type-5 LSA and never re-originates it. OSPF /30s are now point-to-point from deploy time, and
+  `pt_apply_interface_tuning` re-enters `default-information originate` on an ASBR after any OSPF change.
+- **`pt_live_deploy` could duplicate a device**: a verification that timed out while PT was still
+  running a large deploy counted as missing, and the reconcile re-created it. Timeouts are retried and
+  re-sent device creations are guarded by `getDevice(name)`.
+- Hosts get DHCP only where a pool serves their subnet; servers keep their planned address. The static
+  fallback host of each LAN now gets the pool's DNS (it could not resolve names).
+- `pt_audit_security` reported "no local users" on every 2960 (it has no `getUserPass()`).
+- `pt_host_command` inside an SSH session timed out on every command (PT keeps the host prompt).
+- `pt_verify_connectivity` waits out the ~30 s STP window after links are created instead of reporting
+  a false failure; its default timeout is 45 s and the no-result message names STP.
+- UI mode could not open device windows on a zoomed-out canvas; `llms-install.md` registers the `[ui]`
+  extra on Windows, and the missing-comtypes message explains the uvx way.
+
 ## 0.10.0
 
 ### Changed

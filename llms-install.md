@@ -31,12 +31,15 @@ use its full path: `~/.local/bin/uvx` (macOS/Linux) or `%USERPROFILE%\.local\bin
 
 ## 2. Register the MCP server in your client
 
-The server command is always `uvx packet-tracer-mcp --stdio`.
+The server command is `uvx packet-tracer-mcp --stdio`. **On Windows** use
+`uvx --from "packet-tracer-mcp[ui]" packet-tracer-mcp --stdio` instead: the `[ui]` extra is what lets the
+MCP open Packet Tracer's device windows and capture them (UI mode exists only on Windows). Put the same
+`--from "packet-tracer-mcp[ui]"` in front of `packet-tracer-mcp` in every command and JSON `args` below.
 
 - **Claude Code** (bash, zsh, Git Bash, `cmd.exe`):
   `claude mcp add --scope user --transport stdio packet-tracer -- uvx packet-tracer-mcp --stdio`
-  In **PowerShell** quote the separator, or it is swallowed and Claude fails with `unknown option '-m'`:
-  `claude mcp add --scope user --transport stdio packet-tracer "--" uvx packet-tracer-mcp --stdio`
+  In **PowerShell** (Windows) quote the separator, or it is swallowed and Claude fails with `unknown option '-m'`:
+  `claude mcp add --scope user --transport stdio packet-tracer "--" uvx --from "packet-tracer-mcp[ui]" packet-tracer-mcp --stdio`
   Check with `claude mcp list` → `packet-tracer: … ✓ Connected`.
 - **Codex:** `codex mcp add packet-tracer -- uvx packet-tracer-mcp --stdio`
 - **OpenCode:** add to `~/.config/opencode/opencode.json` (merge, do not overwrite other keys):

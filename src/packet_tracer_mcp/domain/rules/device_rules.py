@@ -56,4 +56,21 @@ def validate_devices(plan: TopologyPlan) -> list[PlanError]:
                 ),
             ))
 
+    # extra_cli: each line is typed as one IOS command, so a line break would smuggle
+    # in an unrequested one (`reload`...), and a key with no device is a typo.
+    for name, lines in plan.extra_cli.items():
+        if name not in names_seen:
+            errors.append(PlanError(
+                code=ErrorCode.DEVICE_INVALID_NAME, device=name,
+                message=f"extra_cli names '{name}', which is not a device of the plan.",
+                suggestion="Use the exact name of a router or switch in `devices`.",
+            ))
+        for line in lines:
+            if has_control_chars(line):
+                errors.append(PlanError(
+                    code=ErrorCode.DEVICE_INVALID_NAME, device=name,
+                    message=f"extra_cli line for '{name}' contains a line break: {line!r}",
+                    suggestion="One IOS command per list item.",
+                ))
+
     return errors

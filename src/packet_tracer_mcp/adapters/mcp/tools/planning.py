@@ -27,7 +27,7 @@ from ....infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ....infrastructure.catalog.aliases import MODEL_ALIASES
 from ....infrastructure.catalog.templates import list_templates
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import reply_json
+from ....shared.utils import read_plan_source, reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -221,13 +221,20 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     # VALIDATION
     # ------------------------------------------------------------------
     @mcp.tool()
-    def pt_validate_plan(plan_json: str) -> str:
+    def pt_validate_plan(plan_json: str = "", plan_path: str = "") -> str:
         """
         Validates a topology plan. Returns typed errors and warnings.
 
         Parameters:
         - plan_json: plan JSON (output of pt_plan_topology)
+        - plan_path: instead of plan_json, a .json file with the plan (large designs)
         """
+        try:
+            plan_json = read_plan_source(plan_json, plan_path)
+        except ValueError as exc:
+            return reply_json({"valid": False, "error_count": 1, "warning_count": 0,
+                               "errors": [{"code": "INVALID_PLAN_SOURCE", "message": str(exc)}],
+                               "warnings": [], "summary": f"❌ {exc}"})
         try:
             raw = json.loads(plan_json)
         except json.JSONDecodeError as exc:

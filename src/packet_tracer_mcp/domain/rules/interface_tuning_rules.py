@@ -12,6 +12,10 @@ _VALID_CLOCK_RATES = {
 }
 
 
+# PT 9.0.1 answers `ip ospf network broadcast` with % Invalid input.
+OSPF_NETWORK_TYPES = {"point-to-point"}
+
+
 def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
@@ -31,6 +35,13 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
                 message=f"clock_rate {cfg.clock_rate} is not a standard IOS value.",
                 suggestion="Valores comunes: 64000, 128000, 1000000, 2000000.",
             ))
+
+    if cfg.ospf_network is not None and cfg.ospf_network not in OSPF_NETWORK_TYPES:
+        errors.append(PlanError(
+            code=ErrorCode.VALIDATION_ERROR, device=cfg.router,
+            message=f"ospf_network '{cfg.ospf_network}' is not supported.",
+            suggestion="PT accepts only 'point-to-point' (use it on /30 links between routers).",
+        ))
 
     # --- OSPF authentication ---
     for label, value in (("ospf_auth_key", cfg.ospf_auth_key),

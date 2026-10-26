@@ -59,3 +59,28 @@ class TestReconcileWiring:
         assert "GLOBAL.lwAddDevice = function" in js
         assert "if (!ipc.network().getDevice(name))" in js
         assert "addDevice(name, model, x, y)" in js
+
+
+# On the 116-device deploy (2026-10-26) the first device's check timed out while PT was
+# still running 347 queued commands; the timeout counted as MISSING and the reconcile
+# re-sent its lwAddDevice, stacking an unconfigured duplicate MLS-CORE-SCZ on the canvas.
+
+def test_reconcile_never_creates_a_device_that_already_exists():
+    from src.packet_tracer_mcp.adapters.mcp.tools.live import reconcile_commands
+    commands = [
+        'lwAddDevice("CORE", 16, "3560-24PS", 1500, 720);',
+        'lwAddDevice("PC1", 8, "PC-PT", 100, 100);',
+        'configureIosDevice("CORE", "hostname CORE");',
+    ]
+    retry = reconcile_commands(commands, {"CORE"})
+    add = next(c for c in retry if "lwAddDevice" in c)
+    assert add.startswith('if(!ipc.network().getDevice("CORE")){')
+    assert not any('"PC1"' in c for c in retry)
+    assert any("configureIosDevice" in c for c in retry)
+
+
+def test_a_timed_out_check_is_not_a_missing_device():
+    from src.packet_tracer_mcp.adapters.mcp.tools.live import device_check_status
+    assert device_check_status("OK") == "ok"
+    assert device_check_status("MISSING") == "missing"
+    assert device_check_status(None) == "unknown"

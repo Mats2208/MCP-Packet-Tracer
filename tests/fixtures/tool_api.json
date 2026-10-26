@@ -299,7 +299,7 @@
   }
  },
  "pt_apply_interface_tuning": {
-  "description": "Tunes the parameters of a router interface in the active topology.\n\nParameters (all optional except router/interface):\n- router: router name in PT.\n- interface: interface to tune (e.g. \"Serial0/0/0\", \"GigabitEthernet0/0\").\n- clock_rate: ONLY on Serial interfaces (DCE end). E.g. 64000, 2000000.\n  Applying clock_rate to a non-serial interface is a validation error.\n- bandwidth: bandwidth in kbps (`bandwidth N`).\n- ospf_cost / ospf_priority: per-interface OSPF knobs.\n- ospf_hello_interval / ospf_dead_interval: OSPF timers. They must\n  match the neighbour's or the adjacency won't form; the IOS\n  convention is dead = 4 x hello, and dead <= hello is rejected.\n- ospf_md5_key + ospf_md5_key_id: OSPF message-digest authentication\n  (recommended). The id must match the neighbour's.\n- ospf_auth_key: plain-text OSPF authentication. It works, but the\n  key travels readable across the network — a warning is emitted.\n- delay: interface delay (affects the EIGRP metric), in tens of microseconds.\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: authenticate OSPF with MD5 between R1 and its neighbour:\n  pt_apply_interface_tuning(router=\"R1\", interface=\"GigabitEthernet0/0\",\n                            ospf_md5_key_id=1, ospf_md5_key=\"s3cr3t\")",
+  "description": "Tunes the parameters of a router interface in the active topology.\n\nParameters (all optional except router/interface):\n- router: router name in PT.\n- interface: interface to tune (e.g. \"Serial0/0/0\", \"GigabitEthernet0/0\").\n- clock_rate: ONLY on Serial interfaces (DCE end). E.g. 64000, 2000000.\n  Applying clock_rate to a non-serial interface is a validation error.\n- bandwidth: bandwidth in kbps (`bandwidth N`).\n- ospf_cost / ospf_priority: per-interface OSPF knobs.\n- ospf_hello_interval / ospf_dead_interval: OSPF timers. They must\n  match the neighbour's or the adjacency won't form; the IOS\n  convention is dead = 4 x hello, and dead <= hello is rejected.\n- ospf_md5_key + ospf_md5_key_id: OSPF message-digest authentication\n  (recommended). The id must match the neighbour's.\n- ospf_auth_key: plain-text OSPF authentication. It works, but the\n  key travels readable across the network — a warning is emitted.\n- delay: interface delay (affects the EIGRP metric), in tens of microseconds.\n- ospf_network: \"point-to-point\" (only type PT accepts), for /30 links.\n  An ASBR's default route is re-originated (PT drops it on the change).\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: authenticate OSPF with MD5 between R1 and its neighbour:\n  pt_apply_interface_tuning(router=\"R1\", interface=\"GigabitEthernet0/0\",\n                            ospf_md5_key_id=1, ospf_md5_key=\"s3cr3t\")",
   "inputSchema": {
    "properties": {
     "bandwidth": {
@@ -418,6 +418,18 @@
      ],
      "default": null,
      "title": "Ospf Md5 Key Id"
+    },
+    "ospf_network": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ospf Network"
     },
     "ospf_priority": {
      "anyOf": [
@@ -1821,7 +1833,7 @@
   }
  },
  "pt_live_deploy": {
-  "description": "Sends commands directly to Packet Tracer in real time.\n\nRequires PT open with the MCP Control Center extension installed. With the\nwindow open HTTP is used; if you close it, the file channel (Script\nEngine) takes over. The bridge starts by itself inside the MCP server.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- command_delay: delay between BATCHES in seconds (default 0.0).\n  Commands are no longer sent one by one: they go in batches that PT runs in\n  a single runCode, where each one carries its own try/catch. Measured\n  against PT 9.0, creating 10 devices + links + configuring IOS in one go\n  takes ~100 ms and the config is applied. Raise it only if your\n  installation chokes.",
+  "description": "Sends commands directly to Packet Tracer in real time.\n\nRequires PT open with the MCP Control Center extension installed. With the\nwindow open HTTP is used; if you close it, the file channel (Script\nEngine) takes over. The bridge starts by itself inside the MCP server.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- plan_path: instead of plan_json, a .json file with the plan. Use it for\n  large hand-written designs (dozens of sites); `extra_cli` in the plan\n  carries per-device IOS lines (summaries, hardening, NAT...).\n- command_delay: delay between BATCHES in seconds (default 0.0).\n  Commands are no longer sent one by one: they go in batches that PT runs in\n  a single runCode, where each one carries its own try/catch. Measured\n  against PT 9.0, creating 10 devices + links + configuring IOS in one go\n  takes ~100 ms and the config is applied. Raise it only if your\n  installation chokes.",
   "inputSchema": {
    "properties": {
     "command_delay": {
@@ -1830,13 +1842,16 @@
      "type": "number"
     },
     "plan_json": {
+     "default": "",
      "title": "Plan Json",
+     "type": "string"
+    },
+    "plan_path": {
+     "default": "",
+     "title": "Plan Path",
      "type": "string"
     }
    },
-   "required": [
-    "plan_json"
-   ],
    "title": "pt_live_deployArguments",
    "type": "object"
   }
@@ -2950,17 +2965,20 @@
   }
  },
  "pt_validate_plan": {
-  "description": "Validates a topology plan. Returns typed errors and warnings.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology)",
+  "description": "Validates a topology plan. Returns typed errors and warnings.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology)\n- plan_path: instead of plan_json, a .json file with the plan (large designs)",
   "inputSchema": {
    "properties": {
     "plan_json": {
+     "default": "",
      "title": "Plan Json",
+     "type": "string"
+    },
+    "plan_path": {
+     "default": "",
+     "title": "Plan Path",
      "type": "string"
     }
    },
-   "required": [
-    "plan_json"
-   ],
    "title": "pt_validate_planArguments",
    "type": "object"
   }

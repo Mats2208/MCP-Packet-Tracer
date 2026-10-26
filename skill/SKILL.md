@@ -52,6 +52,16 @@ LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Cent
 - New topology, stepwise: `pt_list_devices` → `pt_plan_topology` → `pt_validate_plan` → `pt_live_deploy`.
 - Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
 - Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
+- **Large custom design** (dozens of sites, hierarchy, multi-area OSPF): write the plan yourself as a
+  `.json` TopologyPlan file, then `pt_validate_plan(plan_path=…)` → `pt_live_deploy(plan_path=…)`. Do not
+  paste a 100 KB plan as `plan_json`, and do not script around the MCP.
+  - Put addresses in `devices[].interfaces`, OSPF in `ospf_configs` (area per network), pools in
+    `dhcp_pools`, statics in `static_routes`: the MCP validates them and emits the config. A 3560 with
+    addresses becomes layer 3 (routed ports, SVIs). OSPF /30s come out `point-to-point`.
+  - Everything without a field (hardening, `area N range`, timers, NAT, VLANs, port-security) goes in
+    `extra_cli: {"DEVICE": ["ios line", …]}`, typed after the generated config.
+  - Then `pt_server_*` for services and `pt_cli` / `pt_verify_connectivity` / `pt_health_check` /
+    `pt_audit_security` to verify. Verified with a 116-device, 24-branch network on PT 9.0.1.
 
 ## Reference files: read on demand
 

@@ -252,6 +252,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         ospf_md5_key_id: int | None = None,
         ospf_md5_key: str | None = None,
         delay: int | None = None,
+        ospf_network: str | None = None,
         dry_run: bool = False,
     ) -> str:
         """
@@ -272,6 +273,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - ospf_auth_key: plain-text OSPF authentication. It works, but the
           key travels readable across the network — a warning is emitted.
         - delay: interface delay (affects the EIGRP metric), in tens of microseconds.
+        - ospf_network: "point-to-point" (only type PT accepts), for /30 links.
+          An ASBR's default route is re-originated (PT drops it on the change).
         - dry_run: if True, only validates and returns the CLI/payload.
 
         Example: authenticate OSPF with MD5 between R1 and its neighbour:
@@ -284,7 +287,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             ospf_hello_interval=ospf_hello_interval,
             ospf_dead_interval=ospf_dead_interval, ospf_auth_key=ospf_auth_key,
             ospf_md5_key_id=ospf_md5_key_id, ospf_md5_key=ospf_md5_key,
-            delay=delay,
+            delay=delay, ospf_network=ospf_network,
         )
         bridge_ok = _pick_channel() != ""
         result = apply_interface_tuning_uc(
