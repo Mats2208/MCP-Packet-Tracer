@@ -84,7 +84,27 @@ function handleUnauthorized() {
 
 // ------------------------------------------------------------------ Init ---
 
+/* PT injects a stylesheet that forces html/body to var(--pt-bg-color) / var(--pt-text-color)
+   with !important, following PT's theme. prefers-color-scheme follows the OS instead, so on
+   Windows in dark mode (PT light) a palette taken from it put near-white text on PT's white
+   body. Follow PT; the OS is only the fallback for a PT that does not inject those variables. */
+function applyTheme() {
+    var pt = getComputedStyle(document.documentElement).getPropertyValue("--pt-bg-color");
+    var rgb = (pt || "").match(/\d+(\.\d+)?/g);
+    var light;
+    if (rgb && rgb.length >= 3) {
+        light = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 128;
+    } else {
+        light = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+    }
+    document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+}
+
 function init() {
+    applyTheme();
+    // PT's sheet may land after this inline call: check again when it does, and on load.
+    window.addEventListener("load", applyTheme);
+    try { new MutationObserver(applyTheme).observe(document.head, { childList: true }); } catch(e) {}
     loadToken();
     try {
         $getData("code").then(function(code) {

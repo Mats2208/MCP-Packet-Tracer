@@ -19,20 +19,19 @@
   --font: "Geist", "Satoshi", -apple-system, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --mono: "Geist Mono", "SF Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
 }
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #fbfbfa;
-    --wash: rgba(11, 132, 184, 0.06);
-    --raise: rgba(15, 20, 25, 0.035);
-    --line: rgba(15, 20, 25, 0.08);
-    --text: #111417;
-    --text-2: #5c656e;
-    --text-3: #9ca3ab;
-    --accent: #0a7fb2;
-    --ok: #1f9d4f;
-    --pend: #c77f12;
-    --err: #d43c3c;
-  }
+/* Set by applyTheme() from PT's own theme, not from prefers-color-scheme (see interface.js). */
+:root[data-theme="light"] {
+  --bg: #fbfbfa;
+  --wash: rgba(11, 132, 184, 0.06);
+  --raise: rgba(15, 20, 25, 0.035);
+  --line: rgba(15, 20, 25, 0.08);
+  --text: #111417;
+  --text-2: #5c656e;
+  --text-3: #9ca3ab;
+  --accent: #0a7fb2;
+  --ok: #1f9d4f;
+  --pend: #c77f12;
+  --err: #d43c3c;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
