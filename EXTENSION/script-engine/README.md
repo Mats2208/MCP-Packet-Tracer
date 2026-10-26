@@ -5,33 +5,35 @@ Tracer extension (the `.pts` distributed via
 [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)). The
 other half is the webview UI in [`../webview/`](../webview/).
 
-## What's tracked here, and why only `main.js`
+## Files
 
-| File | Origin | Tracked in git? |
-| --- | --- | --- |
-| `main.js` | **This project.** Bridge bootstrap, token read (`getMcpToken`), the file-bridge loop, and `installMcpHelpers()`. | **Yes** |
-| `userfunctions.js`, `devices.js`, `links.js`, `modules.js`, `runcode.js`, `windows.js` | Reference copies of **[PTBuilder](https://github.com/kimmknight/PTBuilder)**'s script engine, by Kim Knight. | No — see below |
+| File | What it is |
+| --- | --- |
+| `core.js` | The runtime the server calls by name: `addDevice`, `addLink`, `configureIosDevice`, `getDevices`, `runCode`, `htmlWindow` and the `allDeviceTypes` / `allModuleTypes` / `allLinkTypes` tables. Same names and signatures PTBuilder used, this project's own implementation (MIT). The tables are generated from the server catalog: `python -m src.packet_tracer_mcp.devtools.ext_tables`. |
+| `main.js` | Menu entry, token read, the file-bridge loop and `installMcpHelpers()` (`lwAddDevice`, `lwAddLink`, `configurePcIp`, `addModule`, ...). |
 
-PTBuilder is credited as the starting point in the
-[main README](../../README.md#credits--acknowledgements) and
-[docs/credits](https://mats2208.github.io/MCP-Packet-Tracer/credits/). Its
-repository carries **no license**, so those files are not redistributed from this
-repository. They are `.gitignore`d on purpose (`EXTENSION/script-engine/*.js`
-except `main.js`).
+Up to V5 the extension was built on top of [PTBuilder](https://github.com/kimmknight/PTBuilder)'s
+script engine, credited in the [main README](../../README.md#credits--acknowledgements). Since
+V6 nothing from it is needed: the whole module is in this folder.
+
+Two behaviour changes against PTBuilder, both on purpose:
+- `runCode` never opens a message box on error (a modal freezes PT until someone clicks it);
+  it returns `false` and keeps the message in `runCodeLastError`.
+- `allDeviceTypes` covers the server catalog's models with ids measured on PT 9.0.1.
 
 ## Building the `.pts`
 
-To compile the extension you need the PTBuilder reference files alongside
-`main.js`. Get them from [PTBuilder](https://github.com/kimmknight/PTBuilder),
-place them in this folder, and package with the webview UI from `../webview/`.
-The published `.pts` in Releases is the ready-to-install build.
+In Packet Tracer: **Extensions → Scripting → Edit/New Script Module**, add `core.js` **first** and
+then `main.js` as the module's scripts, add `../webview/index.html`, `interface.js` and the
+Bootstrap files as its web files, and **Export** it as a `.pts`. Load order matters: `main.js`
+overrides some of `core.js`'s functions.
 
 ## How it runs
 
 `main.js`'s `main()` runs whenever Packet Tracer is open (the module registers
 the **Extensions → MCP BUILDER** menu). It:
 
-1. installs the improved helpers (`installMcpHelpers` — `lwAddDevice`, `lwAddLink`,
+1. (core.js is already loaded) installs the improved helpers (`installMcpHelpers` — `lwAddDevice`, `lwAddLink`,
    `configurePcIp`, `configurePcIpv6`, `swapLaptopToWireless`, `addModule`);
 2. shows the webview window (HTTP polling lives there);
 3. starts the file-bridge loop, which runs **with the window closed** — it reads

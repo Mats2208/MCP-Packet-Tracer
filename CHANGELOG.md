@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- **The extension no longer needs PTBuilder.** `EXTENSION/script-engine/core.js` implements the
+  globals the server calls (`addDevice`, `addLink`, `configureIosDevice`, `getDevices`, `runCode`,
+  `htmlWindow` and the type tables) with the same names and signatures, as this project's own
+  code. Verified by loading it into a running PT 9.0.1 in place of PTBuilder and deploying a
+  2-router OSPF network with multilayer switches, laptops and a server through the MCP. Its
+  `runCode` never opens the error dialog that used to freeze PT. Needs a new `.pts` (V6).
+
 ### Fixed (found by a live run of all 79 tools on macOS, 2026-10-25)
 
 - **Deploying over existing names duplicated devices and reported "verified".** Running
@@ -32,6 +41,10 @@
 - **`pt_diff` listed PT's own off-canvas "Power Distribution Device0" as an extra device.**
 - Spanish leftovers in English output (explainer, cable/ACL/NAT suggestions), and the explainer
   no longer claims router-to-router /30 links in a build that has none.
+- **27 catalog models had the wrong PT device-type id** (multilayer switches, Laptop-PT, Printer,
+  ASAs, LAP-PT, Thing...): `lw.addDevice` creates nothing with a wrong id, so they only appeared
+  through PTBuilder's fallback. Ids are now per model, measured live on PT 9.0.1. The PT-IOT-NM
+  modules were type 22; PT installs them only as 23.
 - Module count in the docs: 150 (PT's catalog lists `PT-CLOUD-NM-1CX` twice); resources: 6.
 
 ### Added

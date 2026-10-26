@@ -772,25 +772,25 @@ PT_CELL_NM_3G4G = ModuleSpec(
 )
 
 # =====================================================================
-# Type 22-23 — PT IoT NM modules
+# Type 23 — PT IoT NM modules (22 is refused by PT 9.0.1: measured 2026-10-25)
 # =====================================================================
 PT_IOT_NM_1CE_T22 = ModuleSpec(
-    name="PT-IOT-NM-1CE", module_type=22, category="pt_iot_nm",
+    name="PT-IOT-NM-1CE", module_type=23, category="pt_iot_nm",
     ports_added=("Ethernet0",),
     description="1-port Copper Ethernet for IoT (type 22)",
 )
 PT_IOT_NM_1CFE_T22 = ModuleSpec(
-    name="PT-IOT-NM-1CFE", module_type=22, category="pt_iot_nm",
+    name="PT-IOT-NM-1CFE", module_type=23, category="pt_iot_nm",
     ports_added=("FastEthernet0",),
     description="1-port Copper FastEthernet for IoT (type 22)",
 )
 PT_IOT_NM_1CGE_T22 = ModuleSpec(
-    name="PT-IOT-NM-1CGE", module_type=22, category="pt_iot_nm",
+    name="PT-IOT-NM-1CGE", module_type=23, category="pt_iot_nm",
     ports_added=("GigabitEthernet0",),
     description="1-port Copper GigabitEthernet for IoT (type 22)",
 )
 PT_IOT_NM_1W_T22 = ModuleSpec(
-    name="PT-IOT-NM-1W", module_type=22, category="pt_iot_nm",
+    name="PT-IOT-NM-1W", module_type=23, category="pt_iot_nm",
     ports_added=(),
     description="Wireless adapter for IoT (type 22)",
 )

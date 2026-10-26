@@ -20,11 +20,11 @@ build/
 venv/
 env/
 
-# EXTENSION/script-engine: only main.js is our own code (bridge, token,
-# installMcpHelpers). The rest are reference copies of PTBuilder's script engine
-# (kimmknight/PTBuilder, credited in the README) — not redistributed here.
+# EXTENSION/script-engine: core.js + main.js are the whole Script Engine side (our own
+# code since V6). Anything else here is a local reference copy, never committed.
 EXTENSION/script-engine/*.js
 !EXTENSION/script-engine/main.js
+!EXTENSION/script-engine/core.js
 
 # macOS
 .DS_Store
