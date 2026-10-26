@@ -266,7 +266,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             normal = len(result["expected_drops"])
             result["summary"] = (
                 f"{result['frames']} frame(s) read, none failed."
-                + (f" {normal} dropped as normal operation (flooded frames, STP BPDUs)." if normal else "")
+                + (f" {normal} dropped as normal operation (flooded frames, STP BPDUs, multicast at hosts)." if normal else "")
             )
         else:
             reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])

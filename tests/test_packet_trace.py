@@ -190,3 +190,13 @@ class TestExpectedDrops:
     def test_a_real_drop_is_still_a_failure(self):
         out = summarize_trace([self._frame("The routing table does not have a route to the destination IP address. The router drops the packet.")])
         assert not out["clean"] and len(out["failures"]) == 1
+
+    MCAST = ("The destination IP is not the broadcast address and it does not match the "
+             "port's IP address. The device drops the packet.")
+
+    def test_multicast_reaching_a_host_is_expected_but_unicast_is_not(self):
+        hello = dict(self._frame(self.MCAST), destination="224.0.0.5")
+        stray = dict(self._frame(self.MCAST), destination="192.168.1.9")
+        out = summarize_trace([hello, stray])
+        assert [f["destination"] for f in out["expected_drops"]] == ["224.0.0.5"]
+        assert [f["destination"] for f in out["failures"]] == ["192.168.1.9"]

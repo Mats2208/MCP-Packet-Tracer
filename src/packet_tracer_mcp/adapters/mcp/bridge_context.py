@@ -8,6 +8,7 @@ Moved out of register_tools so it can be imported and tested.
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 
@@ -50,6 +51,12 @@ LIVE_DEVICES_JS = (
     "}"
     "reportResult(JSON.stringify({devices:arr,links:net.getLinkCount()}));"
 )
+
+
+# After starting the bridge, how long to wait for the extension to find it. It polls
+# /status every 2 s, so a first call answered "not connected" while PT was a moment away.
+BRIDGE_GRACE_S = 5.0
+BRIDGE_GRACE_POLL_S = 0.25
 
 
 class BridgeContext:
@@ -148,6 +155,10 @@ class BridgeContext:
                 self.instance = b
             except OSError:
                 return False  # port blocked by an external non-bridge process
+            if self.bridge_is_up():
+                deadline = time.monotonic() + BRIDGE_GRACE_S
+                while not self.bridge_pt_connected() and time.monotonic() < deadline:
+                    time.sleep(BRIDGE_GRACE_POLL_S)
         return self.bridge_is_up()
 
     def pick_channel(self) -> str:
@@ -237,8 +248,11 @@ class BridgeContext:
         ch = self.pick_channel()
         if ch in ("http", "file"):
             return None
-        # No live channel: start HTTP in case the window is about to open.
+        # No live channel: start HTTP in case the window is about to open, and look
+        # again — the extension may have found it during ensure_bridge's grace period.
         self.ensure_bridge()
+        if self.pick_channel() in ("http", "file"):
+            return None
         if self.instance is not None and self.instance.saw_recent_unauthorized:
             return self.stale_client_message()
         return (

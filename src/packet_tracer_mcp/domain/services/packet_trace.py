@@ -17,6 +17,8 @@ That turns "the ping does not work" into a concrete cause.
 
 from __future__ import annotations
 
+import ipaddress
+
 # getUserTrafficType() returns an integer. 0 is ICMP and 5 is ARP, MEASURED (ping
 # from PC1 to its gateway: the ICMP stays buffered and the ARP broadcast goes out first).
 # Anything else has not been observed, so the raw value is returned instead of inventing names.
@@ -51,6 +53,22 @@ EXPECTED_DROP_REASONS = (
     "destination MAC address does not match the receiving port's MAC address",
     "does not have a service that accepts this frame",
 )
+
+
+# Normal only when the destination is multicast (an OSPF hello at 224.0.0.5 reaching a
+# PC); the same text for a unicast destination is a real addressing problem.
+_MULTICAST_DROP_REASON = "destination IP is not the broadcast address and it does not match the port's IP address"
+
+
+def _is_expected_drop(reason: str, destination: str) -> bool:
+    if any(r in reason for r in EXPECTED_DROP_REASONS):
+        return True
+    if _MULTICAST_DROP_REASON in reason:
+        try:
+            return ipaddress.ip_address(destination).is_multicast
+        except ValueError:
+            return False
+    return False
 
 
 def traffic_type_label(raw) -> str:
@@ -90,7 +108,7 @@ def summarize_trace(frames: list[dict]) -> dict:
                 # The last decision is the one that explains the outcome.
                 "reason": (frame.get("decisions") or [{}])[-1].get("description", ""),
             }
-            if any(r in entry["reason"] for r in EXPECTED_DROP_REASONS):
+            if _is_expected_drop(entry["reason"], entry["destination"]):
                 expected.append(entry)
             else:
                 failures.append(entry)

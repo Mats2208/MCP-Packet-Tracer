@@ -277,6 +277,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             # go to the clipboard, so the "full" pipeline ended with an empty
             # canvas even with the bridge connected: the user saw
             # "✅ Validation: PASS" and there was nothing in PT.
+            # Start the bridge first: on a fresh server it does not exist yet, and
+            # the build fell back to the clipboard while PT was a second away.
+            _ensure_bridge()
             if _pick_channel() != "":
                 parts.append(pt_live_deploy(plan.model_dump_json()))
                 parts.append("")
