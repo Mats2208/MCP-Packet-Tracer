@@ -4,6 +4,8 @@
 
 **Describe a network in plain words. Your AI plans it, validates it, and builds it live in Cisco Packet Tracer — then pings it to prove it works.**
 
+<sub>Install it by asking your agent: <i>"Install the Packet Tracer MCP from github.com/Mats2208/MCP-Packet-Tracer and set everything up for me."</i></sub>
+
 [![PyPI](https://img.shields.io/pypi/v/packet-tracer-mcp?style=flat-square&logo=pypi&logoColor=white&color=blue&label=pypi)](https://pypi.org/project/packet-tracer-mcp/)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
@@ -91,17 +93,22 @@ Every tool is listed in the **[tool reference](https://mats2208.github.io/MCP-Pa
 
 Needs Cisco Packet Tracer 8.2+ (tested on 9.0 and 9.0.1) on Windows or macOS — see [Platforms](#platforms).
 
-### The easy way: let your AI agent install it
+### The easy way: ask your AI agent
 
-Paste this into Claude Code, OpenCode, Codex or any coding agent:
+Open Claude Code, OpenCode, Codex or any coding agent and say:
 
 ```text
-Install Packet Tracer MCP for me following https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/llms-install.md
+Install the Packet Tracer MCP from https://github.com/Mats2208/MCP-Packet-Tracer and set everything up for me.
 ```
 
-The agent detects your OS and client, installs everything (server + skill), downloads the extension and tells
-you the one thing you do by hand: adding the extension in Packet Tracer. The steps it follows are in
-[`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md).
+That's it. The agent finds its instructions here, checks your OS and agent, installs the server and the
+skill, and puts the extension where Packet Tracer finds it. The next time you open Packet Tracer it asks
+*"detected a new script module… enable?"* — click **Yes**. That click is the only thing you do by hand.
+
+> [!NOTE]
+> **AI agent reading this?** Don't follow the manual steps below. Follow
+> [`llms-install.md`](llms-install.md) — it is written for you: OS detection, every client's registration
+> command, the skill, the extension, and how to verify with the user.
 
 ### Manual install
 

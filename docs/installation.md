@@ -20,10 +20,11 @@
 Paste this into Claude Code, OpenCode, Codex or any coding agent:
 
 ```text
-Install Packet Tracer MCP for me following https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/llms-install.md
+Install the Packet Tracer MCP from https://github.com/Mats2208/MCP-Packet-Tracer and set everything up for me.
 ```
 
-It detects your OS and client and does every step below except adding the extension in Packet Tracer.
+The agent follows [`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md),
+does every step below, and leaves you one click: **Yes** when Packet Tracer asks to enable the extension.
 
 ## Install the server
 
