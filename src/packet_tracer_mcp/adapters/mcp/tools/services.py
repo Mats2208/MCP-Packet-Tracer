@@ -8,6 +8,7 @@ from ....domain.models.netflow import NetflowExporter
 from ....domain.models.errors import ErrorCode, PlanError
 from ....domain.rules.netflow_rules import validate_netflow, validate_netflow_against_topology
 from ....domain.models.dhcp_server import DEFAULT_SERVER_POOL, DhcpServerPool
+from ....domain.services.qos import qos_policy_maps
 from ....domain.rules.text_rules import has_control_chars
 from ....domain.rules.dhcp_server_rules import (
     resolve_range,
@@ -48,6 +49,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Unlike the rest of the advanced features, NetFlow does NOT go through CLI: it is
         configured directly and read back to verify it was applied. If
         the name already exists, it is reconfigured instead of duplicated.
+        The exported FLOWS are not read: no way to read them was measured on PT 9
+        (the exporter manager has no exporter or monitor count either).
 
         Parameters:
         - device: router where the exporter lives.
@@ -448,13 +451,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Reads a device's REAL QoS configuration: class-maps and policy-maps.
 
-        Read only: QoS cannot be created programmatically in PT, so to
-        CONFIGURE it you send IOS CLI with pt_send_raw
-        (`configureIosDevice`). This tool is for checking that it was applied.
+        Read only (PT's API cannot create class/policy-maps): to CONFIGURE QoS
+        use pt_apply_qos. This tool checks that it was applied.
 
-        Returns, per class-map, its match type and CLI representation; per
-        policy-map, how many classes it has and which features it uses (bandwidth, priority,
-        shaping, fair-queue).
+        Returns, per class-map, its match type and CLI; per policy-map, its
+        classes in order, each with its name, priority (kbps), bandwidth (kbps),
+        fair-queue and whether it is class-default. PT does not give a class
+        its name, so names come from the running-config, matched by position.
 
         Parameters:
         - device: router name in PT.
@@ -466,9 +469,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         dev = json.dumps(device.strip())
+        # __call: a guarded getter (missing or throwing -> null). PolicyMap.toString()
+        # THROWS on PT 9 (measured), so it is never called; the CLI comes from the
+        # running-config instead.
         js = (
             "try {"
             f"  var __d = ipc.network().getDevice({dev});"
+            "  function __call(o, m) { try { return (o && typeof o[m] === 'function') ? o[m]() : null; }"
+            "    catch (__x) { return null; } }"
             "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
             "  else if (typeof __d.getClassMapManager !== 'function') {"
             "    reportResult(JSON.stringify({ found: true, supported: false }));"
@@ -482,29 +490,47 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "      try {"
             "        var __c = __cm.getClassMapAt(__i);"
             "        if (!__c) continue;"
-            "        __cs.push({ name: __c.getMapName(), description: __c.getDescription(),"
-            "          match: __c.getMatchTypeString(), statements: __c.getStatementCnt(),"
-            "          is_default: !!__c.isClassDefault(), cli: __c.toString() });"
+            "        __cs.push({ name: __c.getMapName(), description: __call(__c, 'getDescription'),"
+            "          match: __call(__c, 'getMatchTypeString'), statements: __call(__c, 'getStatementCnt'),"
+            "          is_default: !!__call(__c, 'isClassDefault'), cli: __call(__c, 'toString') });"
             "      } catch (__ce) {}"
             "    }"
-            "    if (__pm) {"
-            "      var __pn = __pm.getPolicyMapCount();"
-            "      for (var __j = 0; __j < __pn; __j++) {"
-            "        try {"
-            "          var __p = __pm.getPolicyMapAt(__j);"
-            "          if (!__p) continue;"
-            "          __ps.push({ name: __p.getMapName(), classes: __p.getClassCnt(),"
-            "            total_bandwidth: __p.getTotalBandwidth(),"
-            "            bandwidth: !!__p.isBandwidthConfigured(),"
-            "            priority: !!__p.isPriorityConfigured(),"
-            "            shaping: !!__p.isShapeConfigured(),"
-            "            fair_queue: !!__p.isFairQueueConfigured(),"
-            "            cli: __p.toString(true) });"
-            "        } catch (__pe) {}"
-            "      }"
+            "    var __pn = 0;"
+            "    try { __pn = __pm ? __pm.getPolicyMapCount() : 0; } catch (__x) {}"
+            "    for (var __j = 0; __j < __pn; __j++) {"
+            "      try {"
+            "        var __p = __pm.getPolicyMapAt(__j);"
+            "        if (!__p) continue;"
+            "        var __name = String(__p.getMapName());"
+            "        if (__name.indexOf('default-policy-map') >= 0) continue;"
+            "        var __k = 0, __cls = [];"
+            "        try { __k = __p.getClassCnt(); } catch (__x) {}"
+            "        for (var __q = 0; __q < __k; __q++) {"
+            "          try {"
+            "            var __pc = __p.getClassAt(__q);"
+            "            if (!__pc) continue;"
+            "            __cls.push({ priority_kbps: __call(__pc, 'getPriority'),"
+            "              bandwidth_configured: !!__call(__pc, 'isBandwidthConfigured'),"
+            "              bandwidth: __call(__pc, 'getBandwidth'),"
+            "              fair_queue: !!__call(__pc, 'isFairQueueConfigured'),"
+            "              class_default: !!__call(__pc, 'isClassDefault') });"
+            "          } catch (__x) {}"
+            "        }"
+            "        __ps.push({ name: __name, class_count: __k,"
+            "          priority: !!__call(__p, 'isPriorityConfigured'),"
+            "          fair_queue: !!__call(__p, 'isFairQueueConfigured'),"
+            "          bandwidth: __call(__p, 'isBandwidthConfigured'),"
+            "          shaping: __call(__p, 'isShapeConfigured'),"
+            "          total_bandwidth: __call(__p, 'getTotalBandwidth'), classes: __cls });"
+            "      } catch (__pe) {}"
+            "    }"
+            "    var __rc = null;"
+            "    if (__ps.length && typeof __d.enterCommand === 'function') {"
+            "      try { var __r = __d.enterCommand('show running-config', 'enable');"
+            "        __rc = { first: String(__r.first), second: String(__r.second) }; } catch (__x) {}"
             "    }"
             "    reportResult(JSON.stringify({ found: true, supported: true,"
-            "      class_maps: __cs, policy_maps: __ps }));"
+            "      class_maps: __cs, policy_maps: __ps, running_config: __rc }));"
             "  }"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
@@ -528,11 +554,21 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return f"'{device}' does not expose QoS (PT's hosts don't have it)."
 
         cmaps = data.get("class_maps", [])
-        pmaps = data.get("policy_maps", [])
+        pmaps, warnings = qos_policy_maps(data.get("policy_maps", []),
+                                          data.pop("running_config", None))
+        data["policy_maps"] = pmaps
+        if warnings:
+            data["warnings"] = warnings
         custom = [c for c in cmaps if not c.get("is_default")]
         data["summary"] = (
             f"{len(cmaps)} class-map(s) ({len(custom)} custom), "
-            f"{len(pmaps)} policy-map(s). QoS is read-only through the API: "
-            "to configure it use IOS CLI."
+            f"{len(pmaps)} policy-map(s)"
+            + "".join(f"; {p['name']}: " + ", ".join(
+                f"{c['name'] or '?'}" + (f" priority {c['priority_kbps']} kbps"
+                                         if c["priority_kbps"] else "")
+                + (f" bandwidth {c['bandwidth_kbps']} kbps" if c["bandwidth_kbps"] else "")
+                + (" fair-queue" if c["fair_queue"] else "")
+                for c in p["classes"]) for p in pmaps)
+            + ". To configure QoS use pt_apply_qos."
         )
         return reply_json(data)
