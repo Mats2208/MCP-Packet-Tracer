@@ -21,12 +21,12 @@ To find a tool: search this file for its name, then open that file and search `d
 | `application/use_cases/` | use cases: rules + generators, dependencies injected |
 | `domain/models/` | Pydantic models (no validation inside) |
 | `domain/rules/` | validation rules returning ValidationResult |
-| `domain/services/` | planning, IP plan, estimator, explainer, diff, audit, packet trace |
+| `domain/services/` | planning, IP plan, estimator, explainer, diff, audit, packet trace, activity, exam HTML |
 | `infrastructure/catalog/` | device, cable, module, alias and template catalogs |
 | `infrastructure/execution/` | live HTTP bridge, file bridge, token, console session engine |
 | `infrastructure/generator/` | PTBuilder JS and IOS CLI generators (json.dumps for every JS field) |
 | `infrastructure/persistence/` | project repository (save/load plans) |
-| `infrastructure/ui/` | UI mode: Win32 + UI Automation presenter (Windows, [ui] extra) |
+| `infrastructure/ui/` | UI mode: Win32 + UI Automation presenter, Activity Wizard driver (Windows, [ui] extra) |
 | `shared/` | constants, enums, ui_mode store, utils (safe paths, workdir_subdir, to_json, reply_json) |
 | `devtools/codemap.py` | this generator |
 
@@ -37,6 +37,7 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/desktop_service_tools.py` | pt_email_client, pt_host_firewall, pt_server_dhcp, pt_server_dns, pt_server_http, pt_server_service, pt_terminal, pt_web_browser |
 | `adapters/mcp/device_panel_tools.py` | pt_cli, pt_host_command, pt_host_ip_config, pt_read_device_panel, pt_remove_module, pt_ui_capture, pt_ui_close, pt_ui_mode, pt_ui_open |
 | `adapters/mcp/tools/acl.py` | pt_apply_acl, pt_apply_acl_object, pt_remove_acl, pt_remove_acl_object |
+| `adapters/mcp/tools/activity.py` | pt_activity_build_initial, pt_activity_check, pt_activity_create, pt_activity_create_exam, pt_activity_exit_wizard, pt_activity_mark, pt_activity_open, pt_activity_reset, pt_activity_save, pt_activity_set_instructions, pt_activity_status, pt_activity_tree |
 | `adapters/mcp/tools/canvas.py` | pt_add_note, pt_clear_annotations, pt_screenshot |
 | `adapters/mcp/tools/convergence.py` | pt_read_acl, pt_read_arp, pt_read_cdp, pt_read_dhcp_leases, pt_read_mac_table, pt_read_nat, pt_read_ospf, pt_read_routes, pt_read_stp |
 | `adapters/mcp/tools/inspect.py` | pt_device_power, pt_diff, pt_health_check, pt_inspect_ports |

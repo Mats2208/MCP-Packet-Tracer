@@ -1,4 +1,216 @@
 {
+ "pt_activity_build_initial": {
+  "description": "Copies the answer network to the initial network (confirming \"Replace Initial\nNetwork?\") and shows it. Nothing is erased here: the config students must\nwrite is stripped with pt_cli / pt_host_ip_config.\n\nParameters:\n- reset_config: include that next step in the reply.",
+  "inputSchema": {
+   "properties": {
+    "reset_config": {
+     "default": true,
+     "title": "Reset Config",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_activity_build_initialArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_check": {
+  "description": "Grades the open activity item by item: each leaf of the assessed tree with its\npath, ok, value and points. Empty nodes are ignored.\n\nParameters:\n- only_incorrect: list only what is wrong.\n- refresh: after opening, PT's counters are stale until the network changes.\n  True sets a host's gateway to its own value, an innocuous change that makes\n  PT recalculate, and then reads.",
+  "inputSchema": {
+   "properties": {
+    "only_incorrect": {
+     "default": true,
+     "title": "Only Incorrect",
+     "type": "boolean"
+    },
+    "refresh": {
+     "default": false,
+     "title": "Refresh",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_activity_checkArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_create": {
+  "description": "Starts a new activity: a new file with the Activity Wizard open. The canvas is\nthen the answer network; build it with the normal tools.\n\nParameters:\n- force: discard what is open. Without it the tool refuses when an activity\n  or a never-saved network is open (PT cannot tell if a saved one changed).",
+  "inputSchema": {
+   "properties": {
+    "force": {
+     "default": false,
+     "title": "Force",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_activity_createArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_create_exam": {
+  "description": "Builds a whole exam: create, build_answer, set_instructions, mark,\ncopy_to_initial, clear_initial, save, exit_wizard.\n\nParameters:\n- spec: title, situation, addressing [{device, interface, ip, mask, gateway}],\n  requirements [{text, items, note}] (**word** = bold), language (es/en),\n  items (paths for pt_activity_mark), plan or plan_path (the answer network),\n  answer_commands and initial_commands ({device: [config lines]}, typed between\n  configure terminal and end), output_path (.pka), overwrite.\n- start_at: step to resume from, after a failure.\n- force: passed to pt_activity_create.\n- dry_run: validate and render the HTML, sending nothing.\n\nReply: one entry per step, failed_step and how to retry. Host IPs are not\nstripped by clear_initial (IOS only).",
+  "inputSchema": {
+   "properties": {
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "force": {
+     "default": false,
+     "title": "Force",
+     "type": "boolean"
+    },
+    "spec": {
+     "additionalProperties": true,
+     "title": "Spec",
+     "type": "object"
+    },
+    "start_at": {
+     "default": "",
+     "title": "Start At",
+     "type": "string"
+    }
+   },
+   "required": [
+    "spec"
+   ],
+   "title": "pt_activity_create_examArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_exit_wizard": {
+  "description": "Closes the Activity Wizard, answering its two dialogs (New: No, Exit?: Yes) one\nat a time. Save first: what is not saved is lost. PT clears the workspace.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_activity_exit_wizardArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_mark": {
+  "description": "Marks assessment items: setCheck(true) on the whole chain from the root.\n\nParameters:\n- items: paths, e.g. [[\"SW1\", \"Ports\", \"FastEthernet0/1\", \"Access VLAN\"]].\n- clear_others: uncheck everything else first.\n\nReply: marked, missing (with the step not found and the names there). A path\nwith a missing step changes nothing. Marks count after save and reopen.",
+  "inputSchema": {
+   "properties": {
+    "clear_others": {
+     "default": false,
+     "title": "Clear Others",
+     "type": "boolean"
+    },
+    "items": {
+     "items": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "title": "Items",
+     "type": "array"
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "title": "pt_activity_markArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_open": {
+  "description": "Opens a .pka activity in Packet Tracer; it replaces what is open.\n\nParameters:\n- path: full path to an existing .pka (relative = inside the working directory).\n- password: only for a protected activity, the instructor's password. It goes\n  to PT's confirmPassword and is neither stored nor echoed. Without it a\n  protected activity opens but its API stays locked.",
+  "inputSchema": {
+   "properties": {
+    "password": {
+     "default": "",
+     "title": "Password",
+     "type": "string"
+    },
+    "path": {
+     "title": "Path",
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "title": "pt_activity_openArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_reset": {
+  "description": "Resets the open activity to its initial network, as a student's Reset does.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_activity_resetArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_save": {
+  "description": "Saves the activity as a .pka, with the Wizard open or not, and verifies the\nfile on disk. Marks and rubric count only after reopening it.\n\nParameters:\n- path: full path (the folder must exist) or a name for PT's save folder.\n- overwrite: replace an existing file.",
+  "inputSchema": {
+   "properties": {
+    "overwrite": {
+     "default": false,
+     "title": "Overwrite",
+     "type": "boolean"
+    },
+    "path": {
+     "title": "Path",
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "title": "pt_activity_saveArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_set_instructions": {
+  "description": "Writes the HTML of the first instruction page, with the Wizard open.\n\nGoes through Import Page (a temporary file and PT's file dialog), the only\nway PT keeps the HTML, and reads it back with getInstructionSource(0).\nReply: html_preserved, identical (apart from whitespace).",
+  "inputSchema": {
+   "properties": {
+    "html": {
+     "title": "Html",
+     "type": "string"
+    }
+   },
+   "required": [
+    "html"
+   ],
+   "title": "pt_activity_set_instructionsArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_status": {
+  "description": "State of the open activity: whether it is one, password confirmed, items,\ncorrect items, points, percentage, time, instructions as text, feedback.\n\nA password-protected activity replies locked=true. Counters are stale after\nopening until the network changes (pt_activity_check(refresh=True)).",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_activity_statusArguments",
+   "type": "object"
+  }
+ },
+ "pt_activity_tree": {
+  "description": "Children of a node of the assessment tree, to find what pt_activity_mark takes.\n\nParameters:\n- path: steps from the top, e.g. [\"R1\", \"Ports\", \"GigabitEthernet0/0\"].\n  Empty = the top level (devices, ConnectivityTests...).",
+  "inputSchema": {
+   "properties": {
+    "path": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Path"
+    }
+   },
+   "title": "pt_activity_treeArguments",
+   "type": "object"
+  }
+ },
  "pt_add_device": {
   "description": "Add a single device to Packet Tracer with validation.\nChecks: name not empty, model exists in catalog, no duplicate name.\n\nParameters:\n- name: device name (e.g. \"R1\", \"SW-Core\", \"PC-Admin\")\n- model: PT model type (e.g. \"2911\", \"2960-24TT\", \"PC-PT\", \"Server-PT\")\n- x: X coordinate on canvas (default 200)\n- y: Y coordinate on canvas (default 200)",
   "inputSchema": {
@@ -2866,7 +3078,7 @@
   }
  },
  "pt_send_raw": {
-  "description": "Send arbitrary JavaScript to Packet Tracer via bridge.\nUseful for exploring the IPC API or running custom commands.\n\nIf wait_result=True, reportResult() is auto-injected into scope.\nJust call reportResult(data) in your code — no need to define it.\nExamples:\n  pt_send_raw(\"reportResult(getDevices('router'))\", wait_result=True)\n  pt_send_raw(\"addDevice('TestR','2911',500,300)\")\n\nParameters:\n- js_code: JavaScript to execute in PT's Script Engine\n- wait_result: if True, waits for a response via reportResult()",
+  "description": "Send arbitrary JavaScript to Packet Tracer via bridge.\nUseful for exploring the IPC API or running custom commands.\n\nIf wait_result=True, reportResult() is auto-injected into scope.\nJust call reportResult(data) in your code — no need to define it.\nExamples:\n  pt_send_raw(\"reportResult(getDevices('router'))\", wait_result=True)\n  pt_send_raw(\"addDevice('TestR','2911',500,300)\")\n\nParameters:\n- js_code: JavaScript to execute in PT's Script Engine\n- wait_result: if True, waits for a response via reportResult()\n\nRefused: activity password material (getHashedPassword,\ngetChallengeKeyAsBase64, getChallengeKeyAsInts) and reading the bytes\nof a .pka/.pkt.",
   "inputSchema": {
    "properties": {
     "js_code": {
