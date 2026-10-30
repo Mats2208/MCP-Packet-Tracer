@@ -91,6 +91,15 @@ def generate_executable_script(plan: TopologyPlan) -> str:
 
     from .cli_config_generator import static_host_ips
 
+    # Hosts keep the extension's configurePcIp here instead of host_js.host_ip_config_js
+    # (what pt_host_ip_config sends), on purpose:
+    # - host_ip_config_js runs dhcpRun at once. In the deploy the routers' DHCP pools
+    #   are still being configured, so the request would fail; configurePcIp only sets
+    #   the DHCP flag and the lease is renewed after the deploy (renew_dhcp_leases).
+    # - it reports through reportResult, and the deploy lines are queued
+    #   fire-and-forget: every host would push an unread result onto the bridge.
+    # - it is ~3.5 KB per host against ~60 bytes, on a script that can hold
+    #   a hundred hosts.
     pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
 
     # Servers and the last host of each subnet keep their planned IP (Fix F17);
