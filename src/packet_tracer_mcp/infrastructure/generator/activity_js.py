@@ -205,10 +205,12 @@ def save_activity_js(directory: str, name: str, overwrite: bool) -> str:
         f"var full=dir+'/'+{json.dumps(name)};var fm=ipc.systemFileManager();"
         "var had=!!fm.fileExists(full);"
         f"if(had&&!{json.dumps(bool(overwrite))}){{out({{ok:true,saved:false,exists:true,path:full}});return;}}"
-        "var t0=null;try{if(had){t0=fm.getFileModificationTime(full);}}catch(e){}"
+        "var t0=null;var s0=null;try{if(had){t0=fm.getFileModificationTime(full);s0=fm.getFileSize(full);}}catch(e){}"
         "aw.fileSaveAsNoPrompt(full,false);"
-        "var ok=!!fm.fileExists(full);var t1=null;try{t1=fm.getFileModificationTime(full);}catch(e){}"
-        "if(ok&&t0!==null&&t1!==null&&String(t0)===String(t1)){ok=false;}"
+        "var ok=!!fm.fileExists(full);var t1=null;var s1=null;"
+        "try{t1=fm.getFileModificationTime(full);s1=fm.getFileSize(full);}catch(e){}"
+        # Times are whole seconds: the same second and the same size says nothing was written.
+        "if(ok&&t0!==null&&t1!==null&&String(t0)===String(t1)&&String(s0)===String(s1)){ok=false;}"
         "out({ok:true,saved:ok,path:full,size:ok?fm.getFileSize(full):0});"
     )
 

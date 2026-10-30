@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -17,6 +18,7 @@ from src.packet_tracer_mcp.infrastructure.generator import activity_js as js
 from src.packet_tracer_mcp.infrastructure.ui.wizard import (
     WizardDriver, WizardError, modal_message, open_modals,
 )
+from src.packet_tracer_mcp.infrastructure.ui import wizard as wizard_module
 from tests._fake_ctx import FakeCtx, tools
 from tests._pt_js import requires_node, run_pt_js
 
@@ -225,15 +227,26 @@ class FakeWizard:
         from contextlib import nullcontext
         return nullcontext()
 
-    def __init__(self, source=""):
+    def __init__(self, source="", importable=True, gui_cells=True):
         self.calls = []
         self.source = source
+        self.importable = importable
+        self.gui_cells = gui_cells
 
     def __getattr__(self, name):
         def call(*args):
             self.calls.append(name)
             return ["New", "Exit?"] if name == "exit" else None
         return call
+
+    def can_import(self):
+        return self.importable
+
+    def can_set_points(self):
+        return self.gui_cells
+
+    def can_set_connectivity(self):
+        return self.gui_cells
 
     def create(self, source):
         self.calls.append("create")
@@ -625,6 +638,9 @@ def test_exam_dry_run_and_invalid_spec_send_nothing():
 
 
 class ScriptedOps:
+    def keep_focus(self):
+        return nullcontext()
+
     def __init__(self, fail_on=""):
         self.log = []
         self.fail_on = fail_on
@@ -697,7 +713,8 @@ def test_exam_fails_on_a_rejected_ios_line():
     assert out["failed_step"] == "build_answer"
 
 
-def test_exam_tool_reaches_other_tools_through_the_registry():
+def test_exam_tool_reaches_other_tools_through_the_registry(monkeypatch):
+    monkeypatch.setattr(wizard_module.WizardDriver, "keep_focus", lambda self: nullcontext())
     calls: list = []
     ctx = FakeCtx(replies=[json.dumps({"ok": True, "wizard": True})])
     registered = _exam_registry(ctx, calls)
@@ -709,7 +726,9 @@ def test_connectivity_step_adds_one_pdu_per_test_then_sets_conditions():
     ops = ScriptedOps()
     sent, conditions = [], []
     ops.call = lambda source, **kw: sent.append(source) or {"codes": [0, 0]}
-    ops.wizard = type("W", (), {"set_connectivity": lambda self, r: conditions.extend(r),
+    ops.wizard = type("W", (), {"can_set_connectivity": lambda self: True,
+                                "keep_focus": lambda self: nullcontext(),
+                                "set_connectivity": lambda self, r: conditions.extend(r),
                                 "show_answer_page": lambda self: None})()
     spec = dict(SPEC, connectivity=[{"source": "A", "destination": "B"},
                                     {"source": "A", "destination": "C", "reachable": False}])
@@ -770,3 +789,166 @@ def test_points_are_read_back_after_writing():
     ops.wizard = type("W", (), {"set_points": lambda self, wanted: {}})()
     assert ops.set_points([{"path": ["A"], "points": 5}]) == {
         "set": 1, "not_reached": [], "not_applied": [], "total_points": 5}
+
+
+# -- macOS: dialogs have no title, and nothing may take the user's keyboard ---
+def test_set_instructions_stays_plain_when_import_would_take_the_keyboard():
+    wizard = FakeWizard(importable=False)
+    ops = _ops([{"ok": True, "source": "Hello you"}], wizard)[0]
+    out = ops.set_instructions("<p>Hello <b>you</b></p>")
+    assert wizard.calls == ["set_plain_instructions"]
+    assert out["html_preserved"] is False and "PT_UI_ALLOW_FOREGROUND" in out["warning"]
+
+
+def test_plain_instructions_that_pt_dropped_are_a_failure():
+    """Measured: AXValue alone looks stored, then the page change wipes it."""
+    ops = _ops([{"ok": True, "source": "<html><body><p></p></body></html>"}],
+               FakeWizard(importable=False))[0]
+    with pytest.raises(activity.ActivityError, match="did not keep"):
+        ops.set_instructions("<p>Hello</p>")
+
+
+def test_open_modals_trusts_a_platform_that_lists_them():
+    class Mac(FakeWin):
+        def modal_windows(self, pid):
+            return [(300, "Any unsaved changes will be lost.")]
+
+    assert open_modals(Mac()) == [(1, 300, "Any unsaved changes will be lost.")]
+
+
+def test_exit_answers_by_title_or_by_text():
+    assert wizard_module.exit_answer("New") == wizard_module.NO_NAMES
+    assert wizard_module.exit_answer("Exit?") == wizard_module.YES_NAMES
+    assert wizard_module.exit_answer("Any unsaved changes will be lost.") == wizard_module.NO_NAMES
+    assert wizard_module.exit_answer("Are you sure you want to exit?") == wizard_module.YES_NAMES
+    assert wizard_module.exit_answer("Delete everything?") is None
+
+
+def test_replace_dialog_is_found_by_its_text():
+    win = FakeWin()
+    win.windows[300] = "Cannot be undone.\nReplace the Initial Network?"
+    d = _driver(win, [])
+    assert d._titled(1, wizard_module.REPLACE_TITLE) == 300
+
+
+def test_reset_reads_the_score_after_it_settles():
+    naps = []
+    ctx = FakeCtx(replies=[json.dumps({"ok": True, "percent": 11.1}),
+                           json.dumps({"ok": True, "percent": 22.2})])
+    ops = activity.ActivityOps(ctx, FakeWizard(), sleep=naps.append)
+    assert ops.reset()["percent"] == 22.2 and naps == [activity.REFRESH_SETTLE_S]
+
+
+def test_save_counts_a_same_second_write_that_changed_the_size():
+    source = js.save_activity_js("/tmp", "a.pka", True)
+    assert "String(s0)===String(s1)" in source
+
+
+def test_the_whole_exam_runs_inside_the_focus_guard():
+    """Measured on macOS: between GUI steps PT kept the foreground for 35 s."""
+    log = []
+
+    class Guarded(FakeWizard):
+        def keep_focus(self):
+            class G:
+                def __enter__(self):
+                    log.append("in")
+
+                def __exit__(self, *a):
+                    log.append("out")
+            return G()
+
+    ops = _ops([], Guarded())[0]
+    activity.run_exam(ops, ExamSpec.model_validate(SPEC), lambda *a, **k: "x", force=False,
+                      start_at="exit_wizard")
+    assert log == ["in", "out"]
+
+
+def test_keys_only_go_out_after_raising_the_widgets_window():
+    """Measured on macOS: with PT's main window in front, posted keys never reach the Wizard."""
+    from src.packet_tracer_mcp.infrastructure.ui import macax
+    log = []
+
+    class Raw:
+        def perform(self, action):
+            log.append(action)
+            return 0
+
+        def set_true(self, attr):
+            log.append(attr)
+            return 0
+
+    class Widget(Raw):
+        def get(self, attr):
+            return Raw() if attr == "AXWindow" else None
+
+    macax.key_window(Widget())
+    assert log == ["AXRaise", "AXMain"]
+
+
+def test_press_waits_for_a_dialogs_buttons_to_get_their_names():
+    """Measured on macOS: 'No No button in the dialog. It has: , , .'"""
+    win = FakeWin()
+    reads = [[El(name="", control_type=50000)], [El(name="No", control_type=50000)]]
+
+    class Slow(FakeUia):
+        def descendants(self, hwnd):
+            return reads.pop(0) if reads else []
+
+    pressed = []
+    d = WizardDriver(lambda s, t: "1", win=win, uia_factory=lambda: Slow(win), sleep=lambda s: None,
+                     available=lambda: (True, ""))
+    d._click = lambda dialog, el: pressed.append(el.name)
+    d._press(300, wizard_module.NO_NAMES)
+    assert pressed == ["No"]
+
+
+@pytest.fixture(autouse=True)
+def no_real_gui(monkeypatch):
+    """open_modals must never see the machine's own Packet Tracer in a test."""
+    monkeypatch.setattr(wizard_module, "native", type("NoGui", (), {
+        "is_supported": staticmethod(lambda: False)}))
+
+
+def test_exit_answers_a_dialog_whose_text_cannot_be_read_by_its_buttons():
+    win = FakeWin()
+    d = _driver(win, [])
+    assert d._exit_answer_by_buttons(300) in (wizard_module.YES_NAMES, None)
+
+    class Saving(FakeUia):
+        def descendants(self, hwnd):
+            return [El(name=n, control_type=50000) for n in ("Yes", "No", "Cancel")]
+
+    d._u = Saving(win)
+    assert d._exit_answer_by_buttons(300) == wizard_module.NO_NAMES
+
+
+def test_exit_waits_for_a_dialog_that_has_no_text_yet():
+    win = FakeWin()
+    reads = [[], [(300, "")], [(300, "Are you sure you want to exit?")]]  # [] = before the click
+
+    def modal_windows(pid):
+        return reads.pop(0) if reads else []
+
+    win.modal_windows = modal_windows
+    d = _driver(win, [])
+    d._exit_answer_by_buttons = lambda dialog: None  # its buttons have no names yet either
+    pressed = []
+    d._press = lambda dialog, names: (pressed.append(names), win.windows.pop(200, None))
+    assert d.exit() == ["Are you sure you want to exit?"]
+    assert pressed == [wizard_module.YES_NAMES]
+
+
+def test_html_import_waits_for_the_user_to_stop_typing(monkeypatch):
+    from src.packet_tracer_mcp.infrastructure.ui import macax
+    idle = iter([1.0, 2.0, 9.0])
+    monkeypatch.setenv("PT_UI_ALLOW_FOREGROUND", "1")
+    monkeypatch.setattr(macax, "_idle_seconds", lambda: next(idle))
+    monkeypatch.setattr(macax.time, "sleep", lambda s: None)
+    assert macax.can_fill_file_dialog() is True
+
+
+def test_html_import_stays_off_without_the_opt_in(monkeypatch):
+    from src.packet_tracer_mcp.infrastructure.ui import macax
+    monkeypatch.delenv("PT_UI_ALLOW_FOREGROUND", raising=False)
+    assert macax.can_fill_file_dialog() is False

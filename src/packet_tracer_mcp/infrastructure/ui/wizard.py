@@ -21,17 +21,22 @@ import time
 from typing import Callable, Optional
 
 from ...domain.services.activity import is_modal_title
-from . import win32
+from . import macax, win32
 from contextlib import nullcontext
 
 from .presenter import is_available, pid_js
 from .uia import Uia
+
+# The window side of the driver, by platform. macax also plays Uia's part.
+native = macax if macax.is_supported() else win32
 
 SendAndWait = Callable[[str, float], Optional[str]]
 
 WIZARD_TITLE = "Activity Wizard"
 IMPORT_TITLE = "Import Instruction Page"
 REPLACE_TITLE = "Replace Initial Network?"
+# Message boxes have no title on macOS: what stands in for each one in their text.
+DIALOG_TEXTS = {REPLACE_TITLE: "Replace the Initial Network?"}
 YES_NAMES = ("Yes", "&Yes", "Sí", "Si", "OK")
 NO_NAMES = ("No", "&No")
 BUTTON_CONTROL = 50000
@@ -52,8 +57,36 @@ STATUS_CELL = 2
 CONDITION_OFFSET_PX = 150
 
 
+POINTS_UNSUPPORTED = ("Points per item can't be set on macOS: PT's Points cell only opens with a "
+                      "real double click and its API only reads points. Every item keeps 1 point.")
+
+
+CONNECTIVITY_UNSUPPORTED = ("Connectivity tests were skipped: their Test Condition can't be set on "
+                            "macOS yet. Grade reachability through assessment items.")
+
+
 class WizardError(RuntimeError):
     pass
+
+
+def exit_answer(title: str) -> tuple[str, ...] | None:
+    """The button for a dialog met while exiting: titled on Windows, by its text on macOS."""
+    if title == "New" or "unsaved changes" in title.lower():
+        return NO_NAMES
+    if title == "Exit?" or "exit" in title.lower():
+        return YES_NAMES
+    return None
+
+
+def gui_available() -> tuple[bool, str]:
+    """(available, reason) to drive the Wizard, on this platform."""
+    if macax.is_supported():
+        return (True, "") if macax.trusted() else (False, macax.PERMISSION_HELP)
+    return is_available()
+
+
+def default_uia():
+    return macax.Uia() if macax.is_supported() else Uia()
 
 
 def row_paths(rows: list[tuple[str, int, object]]) -> dict[tuple[str, ...], object]:
@@ -74,10 +107,14 @@ def row_paths(rows: list[tuple[str, int, object]]) -> dict[tuple[str, ...], obje
     return out
 
 
-def open_modals(win=win32) -> list[tuple[int, int, str]]:
-    """(pid, hwnd, title) of the modals open in PT. Never touches the bridge."""
+def open_modals(win=None) -> list[tuple[int, object, str]]:
+    """(pid, window, title) of the modals open in PT. Never touches the bridge."""
+    win = win or native
     if not win.is_supported():
         return []
+    listed = getattr(win, "modal_windows", None)
+    if listed:  # the platform says what is modal; titles can be empty there
+        return [(pid, w, t) for pid in win.pt_pids() for w, t in listed(pid)]
     return [(pid, hwnd, title.split(" -- ")[0]) for pid in win.pt_pids()
             for hwnd, title in win.top_windows(pid) if is_modal_title(title.split(" -- ")[0])]
 
@@ -92,12 +129,12 @@ def modal_message(modals: list[tuple[int, int, str]]) -> str | None:
 
 
 class WizardDriver:
-    def __init__(self, send: SendAndWait, *, win=win32, uia_factory: Callable = Uia,
+    def __init__(self, send: SendAndWait, *, win=None, uia_factory: Callable = default_uia,
                  sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.monotonic,
-                 available: Callable[[], tuple[bool, str]] = is_available):
+                 available: Callable[[], tuple[bool, str]] = gui_available):
         self._send = send
-        self._win = win
+        self._win = win or native
         self._uia_factory = uia_factory
         self._sleep = sleep
         self._clock = clock
@@ -136,6 +173,10 @@ class WizardDriver:
         raise WizardError(f"Widget '{suffix}' was not found in the Activity Wizard.")
 
     def _click(self, hwnd: int, el) -> None:
+        press = getattr(self._uia, "press", None)
+        if press:
+            press(el)
+            return
         left, top, right, bottom = el.rect()
         if right <= left or bottom <= top:
             raise WizardError(f"'{el.automation_id or el.name}' is not on screen.")
@@ -153,6 +194,8 @@ class WizardDriver:
         """A dialog by title. PT appends " -- Cisco Packet Tracer" to its message boxes."""
         for hwnd, text in self._win.top_windows(pid):
             if text == title or text.startswith(f"{title} -- "):
+                return hwnd
+            if title in DIALOG_TEXTS and DIALOG_TEXTS[title] in text:
                 return hwnd
         return None
 
@@ -177,8 +220,14 @@ class WizardDriver:
             self._sleep(_POLL_S)
 
     def _press(self, dialog: int, names: tuple[str, ...]) -> None:
-        buttons = [e for e in self._uia.descendants(dialog) if e.control_type == BUTTON_CONTROL]
-        match = next((e for e in buttons if e.name in names), None)
+        deadline = self._clock() + DIALOG_WAIT_S
+        while True:
+            buttons = [e for e in self._uia.descendants(dialog) if e.control_type == BUTTON_CONTROL]
+            match = next((e for e in buttons if e.name in names), None)
+            # On macOS a box shows up before its buttons have their names.
+            if match or self._clock() >= deadline or any(e.name for e in buttons):
+                break
+            self._sleep(_POLL_S)
         if match is None:
             have = ", ".join(e.name for e in buttons) or "(none)"
             raise WizardError(f"No {names[0]} button in the dialog. It has: {have}.")
@@ -219,6 +268,21 @@ class WizardDriver:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def can_import(self) -> bool:
+        """False where importing a file would take the user's keyboard."""
+        check = getattr(self._win, "can_fill_file_dialog", None)
+        return check() if check else True
+
+    def set_plain_instructions(self, text: str) -> None:
+        """The first page as plain text, through the editor: no dialog, no keyboard."""
+        self.require_gui()
+        pid = self.pid()
+        with self._win.keep_user_focus(pid):
+            hwnd = self._window(pid)
+            self._page(hwnd, "m_instructionsBtn")
+            self._uia.write_editor(self._find(hwnd, "m_txtInstruction"), text)
+            self._page(hwnd, "m_answerNetworkBtn")  # PT keeps a page's text when it is left
 
     def keep_focus(self):
         """Guards the user's keyboard while PT opens a window (off Windows, nothing)."""
@@ -274,6 +338,13 @@ class WizardDriver:
                 rows.append((cells[i].name, cells[i].rect()[0], cells[i + 1]))
         return rows
 
+    def can_set_points(self) -> bool:
+        return not hasattr(self._win, "can_fill_file_dialog")
+
+    def can_set_connectivity(self) -> bool:
+        """The condition is a combo inside a cell, reached with posted clicks: Windows."""
+        return self.can_set_points()
+
     def set_points(self, targets: dict[tuple[str, ...], int]) -> dict[tuple[str, ...], int]:
         """Writes the Points cell of each path ({path: points}); returns what was not reached.
 
@@ -282,6 +353,8 @@ class WizardDriver:
         leaves few rows, and a row's path comes from its indentation.
         """
         self.require_gui()
+        if not self.can_set_points():
+            raise WizardError(POINTS_UNSUPPORTED)
         pending = dict(targets)
         pid = self.pid()
         with self._win.keep_user_focus(pid):
@@ -342,11 +415,18 @@ class WizardDriver:
             self._click(hwnd, self._find(hwnd, "m_showInitNetworkBtn"))
             self._sleep(_PAGE_SETTLE_S)
 
+    def _exit_answer_by_buttons(self, dialog) -> tuple[str, ...] | None:
+        """macOS can't always read a message box's text (not while the label has the focus).
+        Only "save your network?" offers Cancel; None while the buttons have no names yet."""
+        names = {e.name for e in self._uia.descendants(dialog) if e.control_type == BUTTON_CONTROL}
+        if "Cancel" in names:
+            return NO_NAMES
+        return YES_NAMES if names & set(YES_NAMES) else None
+
     def exit(self) -> list[str]:
         """Exit button, then "New" -> No and "Exit?" -> Yes. Returns what was answered."""
         self.require_gui()
         pid = self.pid()
-        answers = {"New": NO_NAMES, "Exit?": YES_NAMES}
         answered: list[str] = []
         with self._win.keep_user_focus(pid):
             hwnd = self._window(pid)
@@ -356,12 +436,16 @@ class WizardDriver:
                 modals = open_modals(self._win)
                 if modals:
                     _, dialog, title = modals[0]
-                    if title not in answers:
+                    names = exit_answer(title)
+                    if names is None and title:
                         raise WizardError(f"Unexpected dialog '{title}' while exiting: "
                                           "close it in PT.")
-                    self._press(dialog, answers[title])
-                    answered.append(title)
-                    self._sleep(_PAGE_SETTLE_S)
+                    if names is None:
+                        names = self._exit_answer_by_buttons(dialog)
+                    if names:
+                        self._press(dialog, names)
+                        answered.append(title)
+                        self._sleep(_PAGE_SETTLE_S)
                 elif not self._win.find_window(pid, WIZARD_TITLE):
                     break
                 if self._clock() >= deadline:

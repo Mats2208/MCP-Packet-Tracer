@@ -47,7 +47,7 @@
   }
  },
  "pt_activity_create_exam": {
-  "description": "Builds a whole exam: create, build_answer, set_instructions, mark, points, connectivity,\ncopy_to_initial, clear_initial, save, exit_wizard.\n\nParameters:\n- spec: title, situation, addressing [{device, interface, ip, mask, gateway}],\n  requirements [{text, items, note}] (**word** = bold), language (es/en),\n  items (paths for pt_activity_mark), plan or plan_path (the answer network),\n  answer_commands and initial_commands ({device: [config lines]}, typed between\n  configure terminal and end), points [{path, points}] (default 1 each; Windows),\n  connectivity [{source, destination, reachable}]\n  (ping tests PT grades), initial_hosts (hosts left with no address),\n  output_path (.pka), overwrite.\n- start_at: step to resume from, after a failure.\n- force: passed to pt_activity_create.\n- dry_run: validate and render the HTML, sending nothing.\n\nReply: one entry per step, failed_step and how to retry.",
+  "description": "Builds a whole exam: create, build_answer, set_instructions, mark, points, connectivity,\ncopy_to_initial, clear_initial, save, exit_wizard.\n\nParameters:\n- spec: title, situation, addressing [{device, interface, ip, mask, gateway}],\n  requirements [{text, items, note}] (**word** = bold), language (es/en),\n  items (paths for pt_activity_mark), plan or plan_path (the answer network),\n  answer_commands and initial_commands ({device: [config lines]}, typed between\n  configure terminal and end), points [{path, points}] (default 1 each; not on macOS),\n  connectivity [{source, destination, reachable}]\n  (ping tests PT grades; not on macOS), initial_hosts (hosts left with no address),\n  output_path (.pka), overwrite.\n- start_at: step to resume from, after a failure.\n- force: passed to pt_activity_create.\n- dry_run: validate and render the HTML, sending nothing.\n\nReply: one entry per step, failed_step and how to retry.",
   "inputSchema": {
    "properties": {
     "dry_run": {
@@ -135,7 +135,7 @@
   }
  },
  "pt_activity_points": {
-  "description": "Sets how many points checked items are worth, with the Activity Wizard open.\nPT's API can only read points, so this drives the Wizard's window: Windows only.\n\n- points: [{\"path\": [\"SW1\", \"Ports\", \"FastEthernet0/1\", \"Access VLAN\"], \"points\": 5}].\n  Every path must be checked already (pt_activity_mark).\n\nReply: set, not_reached, not_applied (read back from PT) and total_points.",
+  "description": "Sets how many points checked items are worth, with the Activity Wizard open.\nPT's API can only read points, so this drives the Wizard's window: not on macOS.\n\n- points: [{\"path\": [\"SW1\", \"Ports\", \"FastEthernet0/1\", \"Access VLAN\"], \"points\": 5}].\n  Every path must be checked already (pt_activity_mark).\n\nReply: set, not_reached, not_applied (read back from PT) and total_points.",
   "inputSchema": {
    "properties": {
     "points": {

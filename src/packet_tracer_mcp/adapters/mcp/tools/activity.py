@@ -23,7 +23,9 @@ from ....domain.services.activity import (
 from ....domain.services.exam_html import render_exam_html
 from ....infrastructure.execution.live_checks import file_open_js, file_open_outcome
 from ....infrastructure.generator import activity_js as js
-from ....infrastructure.ui.wizard import WizardDriver, WizardError, modal_message, open_modals
+from ....infrastructure.ui.wizard import (
+    CONNECTIVITY_UNSUPPORTED, POINTS_UNSUPPORTED, WizardDriver, WizardError, modal_message, open_modals,
+)
 from ....shared.utils import (
     reply_json, resolve_open_path, resolve_save_dir, safe_name_component,
 )
@@ -35,6 +37,11 @@ REOPEN_NOTE = ("PT fixes the graded tree when a file loads: pt_activity_save, "
                "pt_activity_exit_wizard, then pt_activity_open before evaluating.")
 STALE_NOTE = ("After opening, these counters are stale until the network changes: "
               "pt_activity_check(refresh=True) recalculates them.")
+PLAIN_NOTE = ("Stored as plain text. Keeping the HTML on macOS means bringing PT forward for a few "
+              "seconds, which takes the keyboard: opt in with PT_UI_ALLOW_FOREGROUND=1. With it, "
+              "this appears only if the keyboard was never idle for 5 s within a minute.")
+PASSWORD_REJECTED = ("PT's API rejected the password. On macOS it also rejected the right one "
+                     "(measured), while PT's own dialog took it: the activity stays locked here.")
 _LOCKED = ("The activity is password protected and PT blocks its API until the password is "
            "confirmed: pt_activity_open(path, password=...) with the instructor's password.")
 _NOT_ACTIVITY = "The open file is not an activity (pt_activity_open or pt_activity_create)."
@@ -109,7 +116,7 @@ class ActivityOps:
         if not confirmed and password:
             confirmed = bool(self.call(js.confirm_password_js(password)).get("confirmed"))
             if not confirmed:
-                out["error"] = "PT rejected the password."
+                out["error"] = PASSWORD_REJECTED
         out["password_confirmed"] = confirmed
         out["locked"] = not confirmed
         return out
@@ -188,6 +195,14 @@ class ActivityOps:
                 "next": "The canvas is the answer network: build it with the normal tools."}
 
     def set_instructions(self, html: str) -> dict:
+        if not self.wizard.can_import():
+            text = html_to_text(html)
+            self.wizard.set_plain_instructions(text)
+            kept = html_to_text(self.call(js.instruction_source_js(0)).get("source", ""))
+            if not kept and text:
+                raise ActivityError("PT did not keep the instructions.")
+            return {"html_preserved": False, "identical": False, "length": len(text),
+                    "warning": PLAIN_NOTE}
         self.wizard.import_instructions(html)
         source = self.call(js.instruction_source_js(0)).get("source", "")
         out = {"html_preserved": has_markup(source) or not has_markup(html),
@@ -233,7 +248,9 @@ class ActivityOps:
         return {"closed": True, "answered": answered, "bridge": "alive"}
 
     def reset(self) -> dict:
-        return {"reset": True, "percent": self.call(js.reset_activity_js()).get("percent")}
+        self.call(js.reset_activity_js())
+        self.sleep(REFRESH_SETTLE_S)  # read at once, PT still answers the old score
+        return {"reset": True, "percent": self.call(js.status_js()).get("percent")}
 
 
 def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, force: bool,
@@ -265,6 +282,8 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
     def points() -> str:
         if not spec.points:
             return "default (1 each)"
+        if not ops.wizard.can_set_points():
+            return POINTS_UNSUPPORTED
         out = ops.set_points([p.model_dump() for p in spec.points])
         if out["not_reached"] or out["not_applied"]:
             raise ActivityError(f"Points not set: {json.dumps(out)[:800]}")
@@ -273,6 +292,8 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
     def connectivity() -> str:
         if not spec.connectivity:
             return "none"
+        if not ops.wizard.can_set_connectivity():
+            return CONNECTIVITY_UNSUPPORTED
         pairs = [[t.source, t.destination] for t in spec.connectivity]
         codes = ops.call(js.add_pdus_js(pairs)).get("codes", [])
         if any(c != 0 for c in codes):
@@ -291,7 +312,7 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
 
     def instructions() -> str:
         out = ops.set_instructions(render_exam_html(spec))
-        return f"{out['length']} chars, identical={out['identical']}"
+        return out.get("warning") or f"{out['length']} chars, identical={out['identical']}"
 
     steps = [
         ("create", lambda: str(ops.create(force).get("next"))),
@@ -305,7 +326,9 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
         ("save", lambda: str(ops.save(spec.output_path, spec.overwrite).get("saved"))),
         ("exit_wizard", lambda: str(ops.exit_wizard().get("answered"))),
     ]
-    return run_steps(steps, start_at)
+    # The whole run: between two GUI steps PT would otherwise keep the foreground.
+    with ops.wizard.keep_focus():
+        return run_steps(steps, start_at)
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -460,7 +483,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     def pt_activity_points(points: list[dict]) -> str:
         """
         Sets how many points checked items are worth, with the Activity Wizard open.
-        PT's API can only read points, so this drives the Wizard's window: Windows only.
+        PT's API can only read points, so this drives the Wizard's window: not on macOS.
 
         - points: [{"path": ["SW1", "Ports", "FastEthernet0/1", "Access VLAN"], "points": 5}].
           Every path must be checked already (pt_activity_mark).
@@ -481,9 +504,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
           requirements [{text, items, note}] (**word** = bold), language (es/en),
           items (paths for pt_activity_mark), plan or plan_path (the answer network),
           answer_commands and initial_commands ({device: [config lines]}, typed between
-          configure terminal and end), points [{path, points}] (default 1 each; Windows),
+          configure terminal and end), points [{path, points}] (default 1 each; not on macOS),
           connectivity [{source, destination, reachable}]
-          (ping tests PT grades), initial_hosts (hosts left with no address),
+          (ping tests PT grades; not on macOS), initial_hosts (hosts left with no address),
           output_path (.pka), overwrite.
         - start_at: step to resume from, after a failure.
         - force: passed to pt_activity_create.

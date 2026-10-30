@@ -26,7 +26,7 @@ To find a tool: search this file for its name, then open that file and search `d
 | `infrastructure/execution/` | live HTTP bridge, file bridge, token, console session engine |
 | `infrastructure/generator/` | PTBuilder JS and IOS CLI generators (json.dumps for every JS field) |
 | `infrastructure/persistence/` | project repository (save/load plans) |
-| `infrastructure/ui/` | UI mode: Win32 + UI Automation presenter, Activity Wizard driver (Windows, [ui] extra) |
+| `infrastructure/ui/` | UI mode: Win32 + UI Automation presenter, Activity Wizard driver (Windows; macOS through macax) |
 | `shared/` | constants, enums, ui_mode store, utils (safe paths, workdir_subdir, to_json, reply_json) |
 | `devtools/codemap.py` | this generator |
 

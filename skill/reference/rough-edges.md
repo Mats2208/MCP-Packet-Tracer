@@ -129,6 +129,21 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **Do not use `{{DeviceConfig.isInConfig:...}}` templates:** they save but grade 0/25 on a correct network.
 - **The Wizard steals the focus** when it opens; **a password** blocks almost all the API until
   `confirmPassword`. No API sets points per item (GUI only, not automated here).
+- **macOS (measured 2026-10-30, PT 9.0.1, arm64).** The Wizard is driven by Accessibility, which needs the
+  permission for the terminal or app that runs the server. AXIdentifier equals UIA's AutomationId. AXPress
+  works on plain buttons and tabs; on checkable navigation buttons it only toggles the state, so they get
+  AXFocused + Space posted to PT. Message boxes have an **empty title**: find them by AXModal, read
+  `qt_msgbox_label`. Posted mouse events are ignored, so Points cells and Test Condition combos can't be
+  reached: `pt_activity_points` refuses, and an exam skips both with a warning.
+- **macOS, password:** `pt_activity_open(password=...)` is rejected even with the right password (verified:
+  PT's own dialog rejected a wrong one and took it), so a protected `.pka` can only be reported as locked.
+  A message box's text can't always be read over AX, and it shows up before its buttons have names. Keys need the widget's window
+  raised inside PT, which `key_window` does; a commit to a Wizard field needs a real key, not just AXValue.
+- **macOS, HTML instructions:** Import Page is the only way that keeps the HTML; no API imports by path, and
+  `setNodeValue` on the tree's Instruction node doesn't reach the instructions (measured).
+- **Import Page on macOS needs PT active** for about 3 s, and what the user types meanwhile lands in the
+  panel. So it is opt-in (`PT_UI_ALLOW_FOREGROUND=1`, user idle 5 s); by default instructions are plain text.
+  ⌘⇧G must go to the `openAndSavePanelService` pid: sent to PT it opens Script Project Manager.
 - **PT has no "modified" flag:** `pt_activity_create` treats any open activity as possibly unsaved.
 
 ### ☠️ Measured PT crashes (2026-10-30)
@@ -237,7 +252,8 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
   gives the foreground back on Windows (`keyboard focus given back` in the reply's GUI steps; measured 3 of 3
   after an empty SendInput, AttachThreadInput alone failed). A few keys can still slip in the tens of ms before
   the restore, and if the person was already in PT nothing is restored. Stay headless (`show=False`) unless the
-  window is the point. macOS and Linux have no UI mode: always headless, so this cannot happen there.
+  window is the point. macOS and Linux have no UI mode, but opening a `.pka` does take the foreground on
+  macOS (measured): the activity tools guard it there too.
 - A laptop has two MACs: `Bluetooth` comes first in its port list, `Wireless0` is the one a MAC filter needs.
 - `pt_send_pdu` trace `failures` include ordinary drops (ARP broadcasts, OSPF hellos on hosts): read the ICMP
   frames, not the count.

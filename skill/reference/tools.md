@@ -140,7 +140,7 @@ when it does not match.
 API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
 `show=True/False` overrides it and `capture=True` saves a PNG (path returned). `pt_ui_open(device,
 tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the user says "show me",
-"screenshots", "use the tabs" → `pt_ui_mode("ui")`. Needs Windows + `pip install packet-tracer-mcp[ui]`.
+"screenshots", "use the tabs" → `pt_ui_mode("ui")`. Needs Windows + `pip install packet-tracer-mcp[ui]`. (The Activity Wizard also runs on macOS, with the Accessibility permission.)
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Large custom designs
