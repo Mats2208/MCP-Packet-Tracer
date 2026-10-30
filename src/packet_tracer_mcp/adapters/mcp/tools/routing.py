@@ -1,15 +1,20 @@
-"""Router features sent as IOS CLI, each line verified: HSRP, BGP and QoS (MQC)."""
+"""Router features sent as IOS CLI, each line verified: HSRP, BGP, QoS (MQC) and CME voice."""
 
 from __future__ import annotations
+
+import json
 
 from mcp.server.fastmcp import FastMCP
 from ....application.use_cases.apply_router_features import (
     apply_hsrp_uc, apply_bgp_uc, apply_qos_uc, build_bgp_config, build_qos_config,
 )
+from ....application.use_cases.apply_voice import apply_voice_uc, build_voice_config
+from ....infrastructure.generator.voice_cli_generator import restart_ip_phones_js
 from ....domain.models.router_features import HsrpConfig
 from ....infrastructure.execution.ios_verify import IosApplyCheck
 from ..bridge_context import BridgeContext
 from .switching import apply_reply, invalid_input_reply
+from ....shared.utils import reply_json
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -130,3 +135,60 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except (ValueError, TypeError) as exc:
             return invalid_input_reply("QoS", exc)
         return _apply(apply_qos_uc, cfg, f"QoS policy '{policy_name}'", dry_run)
+
+    @mcp.tool()
+    def pt_apply_voice(
+        router: str,
+        source_ip: str,
+        extensions: list,
+        max_ephones: int = 5,
+        max_dn: int = 5,
+        auto_assign: bool = True,
+        voice_vlan: int | None = None,
+        switch: str | None = None,
+        access_ports: list[str] | None = None,
+        dhcp_pool: str | None = None,
+        dhcp_network: str | None = None,
+        restart_phones: bool = True,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Cisco CME voice (IP phones) through IOS CLI, each line verified. The router MUST be
+        a 2811 (PT's 2911 rejects `telephony-service` even with the uck9 license).
+        Measured end to end on PT 9 (2811 + 3560-24PS + two 7960): CME, DHCP option 150
+        and real registration (`show ephone`: REGISTERED). Not measured: ephone + mac,
+        switchport voice vlan (the reply warns).
+
+        - source_ip: the router's IP on the phones' LAN (checked against PT).
+        - extensions: ["1001", "1002"] or [{"number": "1001", "mac"?: "0001.4321.ABCD"}].
+        - max_ephones 1-36, max_dn 1-144. auto_assign: `auto assign 1 to N`.
+        - voice_vlan + switch + access_ports: `switchport voice vlan` on those ports.
+        - dhcp_pool: `option 150 ip <source_ip>`; dhcp_network ("10.10.10.0/24") also sets
+          network + default-router.
+        - restart_phones: power-cycle every IP phone, then fast-forward (default True);
+          phones already on keep 0.0.0.0 otherwise.
+        - dry_run: validate and return the CLI/payload without sending.
+
+        Example: pt_apply_voice(router="R1", source_ip="10.10.10.1", extensions=["1001","1002"],
+          dhcp_pool="VOICE", dhcp_network="10.10.10.0/24")
+        Check: pt_cli(device="R1", commands=["show ephone"]).
+        """
+        try:
+            cfg = build_voice_config(
+                router, source_ip, extensions, max_ephones=max_ephones, max_dn=max_dn,
+                auto_assign=auto_assign, voice_vlan=voice_vlan, switch=switch,
+                access_ports=access_ports, dhcp_pool=dhcp_pool, dhcp_network=dhcp_network)
+        except (ValueError, TypeError) as exc:
+            return invalid_input_reply("CME voice", exc)
+        reply = _apply(apply_voice_uc, cfg, f"CME voice on {router}", dry_run)
+        if dry_run or not restart_phones or _pick_channel() == "":
+            return reply
+        data = json.loads(reply)
+        if not data.get("sent"):
+            return reply
+        raw = _bridge_send_and_wait(restart_ip_phones_js(), timeout=15.0)
+        try:
+            data["phones"] = json.loads(raw) if raw else {"error": "no answer from PT"}
+        except ValueError:
+            data["phones"] = {"error": f"unreadable reply: {raw[:120]}"}
+        return reply_json(data)

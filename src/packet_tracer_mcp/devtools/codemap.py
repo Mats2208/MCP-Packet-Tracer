@@ -31,7 +31,7 @@ MODULES: dict[str, str] = {
     "infrastructure/generator/": "PTBuilder JS and IOS CLI generators (json.dumps for every JS field)",
     "infrastructure/persistence/": "project repository (save/load plans)",
     "infrastructure/ui/": "UI mode: Win32 + UI Automation presenter (Windows, [ui] extra)",
-    "shared/": "constants, enums, ui_mode store, utils (safe paths, js_escape, to_json, reply_json)",
+    "shared/": "constants, enums, ui_mode store, utils (safe paths, workdir_subdir, to_json, reply_json)",
     "devtools/codemap.py": "this generator",
 }
 

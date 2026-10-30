@@ -27,7 +27,7 @@ from ....infrastructure.catalog.devices import ALL_MODELS, resolve_model
 from ....infrastructure.catalog.aliases import MODEL_ALIASES
 from ....infrastructure.catalog.templates import list_templates
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import read_plan_source, reply_json
+from ....shared.utils import read_plan_source, reply_json, workdir_subdir
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -177,7 +177,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - has_wan: Include a WAN connection (Cloud)
         - dhcp: Configure DHCP automatically
         - routing: Routing protocol (static, ospf, eigrp, rip, none)
-        - router_model: Router model (1941, 2901, 2911, ISR4321)
+        - router_model: Router model (1941, 2901, 2911, ISR4321; 2811 for CME voice)
         - switch_model: Switch model (2960-24TT, 3560-24PS)
         - template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom)
@@ -367,10 +367,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Parameters:
         - plan_json: plan JSON
         - project_name: project name
-        - output_dir: output directory
+        - output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);
+          a path that points elsewhere is reduced to a folder name there.
         """
         plan = TopologyPlan.model_validate_json(plan_json)
-        executor = ManualExecutor(output_dir=output_dir)
+        executor = ManualExecutor(output_dir=workdir_subdir(output_dir, "projects"))
         result = executor.execute(plan, project_name=project_name)
 
         lines = [
@@ -400,10 +401,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Parameters:
         - plan_json: plan JSON (output of pt_plan_topology or pt_full_build)
         - project_name: project name
-        - output_dir: output directory
+        - output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);
+          a path that points elsewhere is reduced to a folder name there.
         """
         plan = TopologyPlan.model_validate_json(plan_json)
-        executor = DeployExecutor(output_dir=output_dir)
+        executor = DeployExecutor(output_dir=workdir_subdir(output_dir, "projects"))
         result = executor.execute(plan, project_name=project_name)
 
         parts: list[str] = []
@@ -438,9 +440,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Lists the saved projects.
 
         Parameters:
-        - output_dir: base projects directory
+        - output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)
         """
-        repo = ProjectRepository(base_dir=output_dir)
+        repo = ProjectRepository(base_dir=workdir_subdir(output_dir, "projects"))
         projects = repo.list_projects()
         if not projects:
             return "There are no saved projects."
@@ -453,8 +455,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         Parameters:
         - project_name: project name
-        - output_dir: base projects directory
+        - output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)
         """
-        repo = ProjectRepository(base_dir=output_dir)
+        repo = ProjectRepository(base_dir=workdir_subdir(output_dir, "projects"))
         plan = repo.load_plan(project_name)
         return plan.model_dump_json()

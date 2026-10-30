@@ -67,7 +67,7 @@
   }
  },
  "pt_add_module": {
-  "description": "Installs an expansion module on a device in the active topology.\n\nThe runtime patch already injected in PT powers the device off, installs the\nmodule and powers it back on (with skipBoot). You do NOT need to power it off by hand.\n\nParameters:\n- device_name: exact device name in PT (e.g. \"R1\"). Use\n  pt_query_topology to list valid names.\n- slot: the slot identifier as a STRING. The format depends on the\n  device's slot type:\n    * HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n      (verified against PT 9.0.1: the 1941 has 2 slots, not 4)\n      (chassis-slot/hwic-subslot)\n    * NM on 2811/2620XM/Router-PT → \"1\"\n    * NIM on ISR4321/4331   → \"0/1\", \"0/2\"  (chassis/subslot — NOT \"0\"/\"1\")\n    * Cloud-PT/Server-PT/PCs → \"0\", \"1\", ... depending on the available slot\n  An integer is accepted too and converted to a string.\n- module_name: exact module name, e.g. \"HWIC-2T\", \"NM-4A/S\",\n  \"NIM-2T\", \"HWIC-1GE-SFP\". Use pt_list_modules to discover them.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nExample: add 2 serial ports to R1 in HWIC slot 0:\n  pt_add_module(device_name=\"R1\", slot=\"0/0\", module_name=\"HWIC-2T\")",
+  "description": "Installs an expansion module on a device in the active topology.\n\nPT powers the device off, installs the module and powers it back on (with\nskipBoot). A restart reloads the startup-config, so routers/switches are saved\nfirst (write memory); the reply says whether the device restarted and was saved.\n\nParameters:\n- device_name: exact device name in PT (e.g. \"R1\"). Use\n  pt_query_topology to list valid names.\n- slot: the slot identifier as a STRING. The format depends on the\n  device's slot type:\n    * HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n      (verified against PT 9.0.1: the 1941 has 2 slots, not 4)\n      (chassis-slot/hwic-subslot)\n    * NM on 2811/2620XM/Router-PT → \"1\"\n    * NIM on ISR4321/4331   → \"0/1\", \"0/2\"  (chassis/subslot — NOT \"0\"/\"1\")\n    * Cloud-PT/Server-PT/PCs → \"0\", \"1\", ... depending on the available slot\n  An integer is accepted too and converted to a string.\n- module_name: exact module name, e.g. \"HWIC-2T\", \"NM-4A/S\",\n  \"NIM-2T\", \"HWIC-1GE-SFP\". Use pt_list_modules to discover them.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nExample: add 2 serial ports to R1 in HWIC slot 0:\n  pt_add_module(device_name=\"R1\", slot=\"0/0\", module_name=\"HWIC-2T\")",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -721,7 +721,7 @@
   }
  },
  "pt_apply_netflow": {
-  "description": "Configures a NetFlow exporter on a PT device.\n\nUnlike the rest of the advanced features, NetFlow does NOT go through CLI: it is\nconfigured directly and read back to verify it was applied. If\nthe name already exists, it is reconfigured instead of duplicated.\n\nParameters:\n- device: router where the exporter lives.\n- name: exporter name (e.g. \"COLLECTOR-1\").\n- destination_ip: the collector's IP. Without it the exporter is inert.\n- udp_port: the collector's UDP port (default 2055).\n- version: 9 (templates, recommended) or 5 (fixed format).\n- source_port: source interface; empty = PT picks it.\n- monitors: names of the monitors to associate.\n- remove: if True, deletes the exporter `name` instead of creating it.\n- dry_run: if True, only validates and returns the payload without touching PT.\n\nExample: export to a collector at 192.168.0.50:\n  pt_apply_netflow(device=\"R1\", name=\"COLLECTOR-1\", destination_ip=\"192.168.0.50\")",
+  "description": "Configures a NetFlow exporter on a PT device.\n\nUnlike the rest of the advanced features, NetFlow does NOT go through CLI: it is\nconfigured directly and read back to verify it was applied. If\nthe name already exists, it is reconfigured instead of duplicated.\nThe exported FLOWS are not read: no way to read them was measured on PT 9\n(the exporter manager has no exporter or monitor count either).\n\nParameters:\n- device: router where the exporter lives.\n- name: exporter name (e.g. \"COLLECTOR-1\").\n- destination_ip: the collector's IP. Without it the exporter is inert.\n- udp_port: the collector's UDP port (default 2055).\n- version: 9 (templates, recommended) or 5 (fixed format).\n- source_port: source interface; empty = PT picks it.\n- monitors: names of the monitors to associate.\n- remove: if True, deletes the exporter `name` instead of creating it.\n- dry_run: if True, only validates and returns the payload without touching PT.\n\nExample: export to a collector at 192.168.0.50:\n  pt_apply_netflow(device=\"R1\", name=\"COLLECTOR-1\", destination_ip=\"192.168.0.50\")",
   "inputSchema": {
    "properties": {
     "destination_ip": {
@@ -1059,6 +1059,121 @@
    "type": "object"
   }
  },
+ "pt_apply_voice": {
+  "description": "Cisco CME voice (IP phones) through IOS CLI, each line verified. The router MUST be\na 2811 (PT's 2911 rejects `telephony-service` even with the uck9 license).\nMeasured end to end on PT 9 (2811 + 3560-24PS + two 7960): CME, DHCP option 150\nand real registration (`show ephone`: REGISTERED). Not measured: ephone + mac,\nswitchport voice vlan (the reply warns).\n\n- source_ip: the router's IP on the phones' LAN (checked against PT).\n- extensions: [\"1001\", \"1002\"] or [{\"number\": \"1001\", \"mac\"?: \"0001.4321.ABCD\"}].\n- max_ephones 1-36, max_dn 1-144. auto_assign: `auto assign 1 to N`.\n- voice_vlan + switch + access_ports: `switchport voice vlan` on those ports.\n- dhcp_pool: `option 150 ip <source_ip>`; dhcp_network (\"10.10.10.0/24\") also sets\n  network + default-router.\n- restart_phones: power-cycle every IP phone, then fast-forward (default True);\n  phones already on keep 0.0.0.0 otherwise.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_voice(router=\"R1\", source_ip=\"10.10.10.1\", extensions=[\"1001\",\"1002\"],\n  dhcp_pool=\"VOICE\", dhcp_network=\"10.10.10.0/24\")\nCheck: pt_cli(device=\"R1\", commands=[\"show ephone\"]).",
+  "inputSchema": {
+   "properties": {
+    "access_ports": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Access Ports"
+    },
+    "auto_assign": {
+     "default": true,
+     "title": "Auto Assign",
+     "type": "boolean"
+    },
+    "dhcp_network": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Dhcp Network"
+    },
+    "dhcp_pool": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Dhcp Pool"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "extensions": {
+     "items": {},
+     "title": "Extensions",
+     "type": "array"
+    },
+    "max_dn": {
+     "default": 5,
+     "title": "Max Dn",
+     "type": "integer"
+    },
+    "max_ephones": {
+     "default": 5,
+     "title": "Max Ephones",
+     "type": "integer"
+    },
+    "restart_phones": {
+     "default": true,
+     "title": "Restart Phones",
+     "type": "boolean"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "source_ip": {
+     "title": "Source Ip",
+     "type": "string"
+    },
+    "switch": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Switch"
+    },
+    "voice_vlan": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Voice Vlan"
+    }
+   },
+   "required": [
+    "router",
+    "source_ip",
+    "extensions"
+   ],
+   "title": "pt_apply_voiceArguments",
+   "type": "object"
+  }
+ },
  "pt_audit_security": {
   "description": "Audits the REAL security posture of the live devices in PT.\n\nIt does not read the plan: it reads the effective configuration of each router/switch\non the canvas and reports findings with a severity (high/medium/low). Detects\na missing `enable secret`, credentials stored reversibly\n(type 7), `service password-encryption` off, no local\nusers, a missing MOTD banner and config-register at 0x2142 (which discards\nthe startup-config on the next reboot).\n\nPasswords and hashes NEVER leave the device: only the label of the\nalgorithm they are stored with is transmitted.\n\nHosts (PC/Server/Laptop) are skipped: they have no IOS configuration.\n\nParameters:\n- device: if given, audits only that device; empty = all of them.\n\nExample: audit the whole topology:\n  pt_audit_security()",
   "inputSchema": {
@@ -1180,7 +1295,7 @@
   }
  },
  "pt_configure_dhcp_server": {
-  "description": "Creates or edits a DHCP pool on a Server-PT (GUI: Services > DHCP), validated against\nits subnet, switches the service on and reads every pool back. No CLI (a Server-PT has none).\nRouter DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions, TFTP/WLC or showing the\npage on screen: pt_server_dhcp.\n\nThe server needs a static IP inside the pool's subnet (else warning DHCP_SERVER_NO_IP). PT\nnever leases the server's own IP but DOES lease the gateway's if the range covers it.\n\n- device: the Server-PT.\n- network / mask: pool subnet (\"192.168.10.0\", \"255.255.255.0\"). No network = read-only.\n- gateway / dns: what clients receive (empty dns = left alone).\n- start_ip: first IP handed out; empty = after a .1 gateway, else the first host.\n- max_users: number of IPs; 0 = to the end of the subnet.\n- pool_name: default \"serverPool\" (the factory pool the GUI shows); another name creates or\n  edits that pool, never duplicates.\n- port: serving port (default FastEthernet0). enabled: service On/Off.\n- drop_factory_pool: with a custom pool_name, delete the factory serverPool if it was never\n  configured (it would hand out .1, the gateway).\n- remove: delete pool_name instead. dry_run: validate and return the JS only.\n\nExample: pt_configure_dhcp_server(device=\"DHCP-A\", network=\"192.168.10.0\",\ngateway=\"192.168.10.1\", dns=\"8.8.8.8\", start_ip=\"192.168.10.3\")",
+  "description": "Creates or edits a DHCP pool on a Server-PT (GUI: Services > DHCP), validated against\nits subnet, switches the service on and reads every pool back. No CLI (a Server-PT has none).\nRouter DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions or showing the page on\nscreen: pt_server_dhcp (same JS backend, server_dhcp_js).\n\nThe server needs a static IP inside the pool's subnet (else warning DHCP_SERVER_NO_IP). PT\nnever leases the server's own IP but DOES lease the gateway's if the range covers it.\n\n- device: the Server-PT.\n- network / mask: pool subnet (\"192.168.10.0\", \"255.255.255.0\"). No network = read-only.\n- gateway / dns: what clients receive (empty dns = left alone).\n- start_ip: first IP handed out; empty = after a .1 gateway, else the first host.\n- max_users: number of IPs; 0 = to the end of the subnet.\n- pool_name: default \"serverPool\" (the factory pool the GUI shows); another name creates or\n  edits that pool, never duplicates.\n- port: serving port (default FastEthernet0). enabled: service On/Off.\n- drop_factory_pool: with a custom pool_name, delete the factory serverPool if it was never\n  configured (it would hand out .1, the gateway).\n- remove: delete pool_name instead. dry_run: validate and return the JS only.\n\nExample: pt_configure_dhcp_server(device=\"DHCP-A\", network=\"192.168.10.0\",\ngateway=\"192.168.10.1\", dns=\"8.8.8.8\", start_ip=\"192.168.10.3\")",
   "inputSchema": {
    "properties": {
     "device": {
@@ -1272,7 +1387,7 @@
   }
  },
  "pt_delete_link": {
-  "description": "Delete the link connected to a specific interface on a device in PT.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
+  "description": "Delete the link connected to a specific interface on a device in PT.\nReads both ends back: `verified` is true only when this port AND the\nfar-end port no longer have a link. Reports the far end and the cable.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -1293,7 +1408,7 @@
   }
  },
  "pt_deploy": {
-  "description": "Deploys a plan to Packet Tracer: copies the script to the Windows\nclipboard, exports the configuration files, and generates\nstep-by-step instructions.\n\nUsage: after pt_full_build or pt_plan_topology, pass the plan JSON\nhere to prepare everything for Packet Tracer.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- project_name: project name\n- output_dir: output directory",
+  "description": "Deploys a plan to Packet Tracer: copies the script to the Windows\nclipboard, exports the configuration files, and generates\nstep-by-step instructions.\n\nUsage: after pt_full_build or pt_plan_topology, pass the plan JSON\nhere to prepare everything for Packet Tracer.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- project_name: project name\n- output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);\n  a path that points elsewhere is reduced to a folder name there.",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -1514,7 +1629,7 @@
   }
  },
  "pt_export": {
-  "description": "Exports the plan to files: JS script, CLI configs and JSON.\n\nParameters:\n- plan_json: plan JSON\n- project_name: project name\n- output_dir: output directory",
+  "description": "Exports the plan to files: JS script, CLI configs and JSON.\n\nParameters:\n- plan_json: plan JSON\n- project_name: project name\n- output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);\n  a path that points elsewhere is reduced to a folder name there.",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -1540,7 +1655,7 @@
   }
  },
  "pt_export_topology": {
-  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns JSON with devices (name, model, x/y position, interfaces with IPs)\nand links (endpoints, ports, cable type). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
+  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns devices (name, model, x/y position, interfaces with IPs) and links\n(endpoints, ports, and the REAL cable type PT reports for each link:\nstraight, cross, serial, fiber...). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
   "inputSchema": {
    "properties": {},
    "title": "pt_export_topologyArguments",
@@ -1965,7 +2080,7 @@
   }
  },
  "pt_inspect_ports": {
-  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied\nACLs. Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
+  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode, applied\nACLs and, on a cabled port, the real cable type (straight, cross,\nserial...) and the far end (\"SW1:FastEthernet0/1\"). Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
   "inputSchema": {
    "properties": {
     "device": {
@@ -1984,7 +2099,7 @@
   }
  },
  "pt_install_modules_batch": {
-  "description": "Installs N modules in a single runCode JS — power-off → addModule×N → power-on.\n\nUseful when several serial modules (HWIC-2T, NIM-2T, etc.) have to go into\nseveral routers at once. PREFER this tool over multiple calls to\npt_add_module: each individual power cycle can pause PT's script engine\nfor > 5s and kill the bridge bootstrap's polling.\n\nParameters:\n- modules: list of dicts with {device, slot, module}. Example for RTR-4 with\n  4 serial ports on a 2911 (which does NOT accept NM-4A/S):\n    [\n      {\"device\": \"RTR-4\", \"slot\": \"0/0\", \"module\": \"HWIC-2T\"},\n      {\"device\": \"RTR-4\", \"slot\": \"0/1\", \"module\": \"HWIC-2T\"}\n    ]\n  → gives Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nSlot rules (string):\n  HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n  NIM on ISR4321/4331    → \"0/1\", \"0/2\"   (chassis/subslot — NOT \"0\"/\"1\")\n  NM on 2811/Router-PT    → \"1\"\n  Cloud-PT / hosts        → \"0\"..\"7\"\n\nReturns JSON with summary and per-module status (installed or not).\nThe JS (js_payload) is only included with dry_run; once sent it is dropped.",
+  "description": "Installs N modules in a single runCode JS — save → power-off → addModule×N → power-on.\n\nUseful when several serial modules (HWIC-2T, NIM-2T, etc.) have to go into\nseveral routers at once. PREFER this tool over multiple calls to\npt_add_module: each individual power cycle can pause PT's script engine\nfor > 5s and kill the bridge bootstrap's polling.\n\nParameters:\n- modules: list of dicts with {device, slot, module}. Example for RTR-4 with\n  4 serial ports on a 2911 (which does NOT accept NM-4A/S):\n    [\n      {\"device\": \"RTR-4\", \"slot\": \"0/0\", \"module\": \"HWIC-2T\"},\n      {\"device\": \"RTR-4\", \"slot\": \"0/1\", \"module\": \"HWIC-2T\"}\n    ]\n  → gives Serial0/0/0..0/0/1, Serial0/1/0..0/1/1.\n- dry_run: if True, validates and returns the JS payload without sending it.\n\nSlot rules (string):\n  HWIC on 2911/2901 → \"0/0\"..\"0/3\" · on 1941 ONLY \"0/0\" and \"0/1\"\n  NIM on ISR4321/4331    → \"0/1\", \"0/2\"   (chassis/subslot — NOT \"0\"/\"1\")\n  NM on 2811/Router-PT    → \"1\"\n  Cloud-PT / hosts        → \"0\"..\"7\"\n\nReturns JSON with summary and per-module status (installed or not).\nThe JS (js_payload) is only included with dry_run; once sent it is dropped.",
   "inputSchema": {
    "properties": {
     "dry_run": {
@@ -2036,7 +2151,7 @@
   }
  },
  "pt_list_projects": {
-  "description": "Lists the saved projects.\n\nParameters:\n- output_dir: base projects directory",
+  "description": "Lists the saved projects.\n\nParameters:\n- output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -2082,7 +2197,7 @@
   }
  },
  "pt_load_project": {
-  "description": "Loads a saved project.\n\nParameters:\n- project_name: project name\n- output_dir: base projects directory",
+  "description": "Loads a saved project.\n\nParameters:\n- project_name: project name\n- output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -2103,7 +2218,7 @@
   }
  },
  "pt_move_device": {
-  "description": "Move a device to new coordinates on the Packet Tracer canvas.\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
+  "description": "Move a device to new coordinates on the Packet Tracer canvas.\nReads the position back: `verified` is true when PT reports exactly (x, y).\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -2129,7 +2244,7 @@
   }
  },
  "pt_open_project": {
-  "description": "Opens a .pkt file in Packet Tracer.\n\nWARNING: it replaces the topology currently open. If it has unsaved\nchanges, save them first with pt_save_project.\n\nParameters:\n- path: full path to the .pkt file",
+  "description": "Opens a .pkt file in Packet Tracer.\n\nWARNING: it replaces the topology currently open. If it has unsaved\nchanges, save them first with pt_save_project.\n\nParameters:\n- path: full path to an existing .pkt file (any folder: opening the\n  user's own labs is the point). A relative path is looked up inside the\n  MCP's working directory and may not leave it.",
   "inputSchema": {
    "properties": {
     "path": {
@@ -2145,7 +2260,7 @@
   }
  },
  "pt_plan_topology": {
-  "description": "Generates a complete network topology plan for Packet Tracer.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router (0-4)\n- servers: Number of servers\n- access_points: Number of Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include a WAN connection (Cloud)\n- dhcp: Configure DHCP automatically\n- routing: Routing protocol (static, ospf, eigrp, rip, none)\n- router_model: Router model (1941, 2901, 2911, ISR4321)\n- switch_model: Switch model (2960-24TT, 3560-24PS)\n- template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom)\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n  over alternative paths (needs a topology with multiple paths)\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP\n  auto-associated per LAN) instead of a cable.\n\nReturns the full plan JSON.",
+  "description": "Generates a complete network topology plan for Packet Tracer.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router (0-4)\n- servers: Number of servers\n- access_points: Number of Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include a WAN connection (Cloud)\n- dhcp: Configure DHCP automatically\n- routing: Routing protocol (static, ospf, eigrp, rip, none)\n- router_model: Router model (1941, 2901, 2911, ISR4321; 2811 for CME voice)\n- switch_model: Switch model (2960-24TT, 3560-24PS)\n- template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom)\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n  over alternative paths (needs a topology with multiple paths)\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP\n  auto-associated per LAN) instead of a cable.\n\nReturns the full plan JSON.",
   "inputSchema": {
    "properties": {
     "access_points": {
@@ -2263,7 +2378,7 @@
   }
  },
  "pt_query_topology": {
-  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology.\nRequires bridge connected (use pt_bridge_status to verify).",
+  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology,\nthen every link with its real cable type (read from the link itself).\nRequires bridge connected (use pt_bridge_status to verify).",
   "inputSchema": {
    "properties": {},
    "title": "pt_query_topologyArguments",
@@ -2313,7 +2428,7 @@
   }
  },
  "pt_read_device_panel": {
-  "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
+  "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, the host's default gateway, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2325,6 +2440,20 @@
     "device"
    ],
    "title": "pt_read_device_panelArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_dhcp_leases": {
+  "description": "Reads the REAL DHCP leases a server handed out: per pool, each lease's\nIP, MAC, port and lease time.\n\nRouter pools (`ip dhcp pool`) come from its DhcpServerProcess (measured\non a 2911); a Server-PT's from each port's DHCP process. A pool whose\nleases this PT build cannot read says `lease_api: false`: unknown, not\nzero. Use it to check that hosts got their address from the right pool.\n\nParameters:\n- device: router or server name; empty = every DHCP server.\n\nExample: pt_read_dhcp_leases(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_dhcp_leasesArguments",
    "type": "object"
   }
  },
@@ -2400,7 +2529,7 @@
   }
  },
  "pt_read_qos": {
-  "description": "Reads a device's REAL QoS configuration: class-maps and policy-maps.\n\nRead only: QoS cannot be created programmatically in PT, so to\nCONFIGURE it you send IOS CLI with pt_send_raw\n(`configureIosDevice`). This tool is for checking that it was applied.\n\nReturns, per class-map, its match type and CLI representation; per\npolicy-map, how many classes it has and which features it uses (bandwidth, priority,\nshaping, fair-queue).\n\nParameters:\n- device: router name in PT.\n\nExample: pt_read_qos(device=\"R1\")",
+  "description": "Reads a device's REAL QoS configuration: class-maps and policy-maps.\n\nRead only (PT's API cannot create class/policy-maps): to CONFIGURE QoS\nuse pt_apply_qos. This tool checks that it was applied.\n\nReturns, per class-map, its match type and CLI; per policy-map, its\nclasses in order, each with its name, priority (kbps), bandwidth (kbps),\nfair-queue and whether it is class-default. PT does not give a class\nits name, so names come from the running-config, matched by position.\n\nParameters:\n- device: router name in PT.\n\nExample: pt_read_qos(device=\"R1\")",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2547,7 +2676,7 @@
   }
  },
  "pt_remove_module": {
-  "description": "Removes the module installed in a slot (Physical tab). Powers the device\noff, removes it and powers it back on, like pt_add_module.\n- slot: STRING, same format as pt_add_module (\"0/0\", \"1\", \"0\"...).",
+  "description": "Removes the module installed in a slot (Physical tab). Powers the device\noff, removes it and powers it back on, like pt_add_module (routers/switches\nare saved first with write memory); skipped when PT reports the module as\nhot-swappable. The reply says whether it restarted and was saved.\n- slot: STRING, same format as pt_add_module (\"0/0\", \"1\", \"0\"...).",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2635,7 +2764,7 @@
   }
  },
  "pt_rename_device": {
-  "description": "Rename a device in the active Packet Tracer topology.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
+  "description": "Rename a device in the active Packet Tracer topology.\nReads the result back: `verified` is true only when the new name resolves\nto the device and the old name no longer does.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
   "inputSchema": {
    "properties": {
     "new_name": {
@@ -2656,7 +2785,7 @@
   }
  },
  "pt_save_project": {
-  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder.\n- overwrite: replace an existing file (default False: an existing file is an error).",
+  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder. An absolute\n  path must be an existing folder (the user's choice of where labs live);\n  a relative one is a folder inside the MCP's working directory.\n- overwrite: replace an existing file (default False: an existing file is an error).",
   "inputSchema": {
    "properties": {
     "directory": {
@@ -2758,7 +2887,7 @@
   }
  },
  "pt_server_dhcp": {
-  "description": "A Server-PT's Services > DHCP: creates or edits a pool and switches it on.\n\n- pool: name (\"serverPool\" is the factory one: editing it is the most\n  common case). Touched only if a pool field below is given; if it\n  doesn't exist it is created with those values.\n- gateway, dns, start_ip, mask (\"255.255.255.0\" or \"24\"), max_users,\n  tftp, wlc: empty/0 = leave alone. tftp/wlc can only be set when the\n  pool is created (PT has no setter for an existing pool's).\n  Every field is read back: any PT does not hold comes back in\n  not_applied, with ok=false.\n- enable: True = Service On (default), False = Off, None = leave alone.\n- remove_pool: deletes that pool (alone, it creates nothing).\n- exclude: ranges to exclude, [\"192.168.1.1-192.168.1.9\"]; they apply\n  to the port's DHCP server, never create or edit a pool.\n- interface: the server's port (default: the first one).\nHosts use it with pt_host_ip_config(mode=\"dhcp\").",
+  "description": "A Server-PT's Services > DHCP: creates or edits a pool and switches it on.\n\n- pool: name (\"serverPool\" is the factory one: editing it is the most\n  common case). Touched only if a pool field below is given; if it\n  doesn't exist it is created with those values.\n- gateway, dns, start_ip, mask (\"255.255.255.0\" or \"24\"), max_users,\n  tftp, wlc: empty/0 = leave alone. PT's script API has no TFTP/WLC\n  setter, so tftp/wlc always come back in not_applied (set them in the GUI).\n  Every field is read back: any PT does not hold comes back in\n  not_applied, with ok=false.\n- enable: True = Service On (default), False = Off, None = leave alone.\n- remove_pool: deletes that pool (alone, it creates nothing).\n- exclude: ranges to exclude, [\"192.168.1.1-192.168.1.9\"]; they apply\n  to the port's DHCP server, never create or edit a pool.\n- interface: the server's port (default: the first one).\nHosts use it with pt_host_ip_config(mode=\"dhcp\").",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -3032,7 +3161,7 @@
   }
  },
  "pt_server_service": {
-  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
+  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received (`entries`) and the\nnewest 200 as PT serializes them (`messages`; fields not mapped).",
   "inputSchema": {
    "properties": {
     "capture": {

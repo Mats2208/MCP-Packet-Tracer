@@ -6,20 +6,40 @@ None of this moves the cursor or types into the user's session:
 - The click is a `PostMessage(WM_LBUTTONDOWN/UP)` to PT's main window: Qt
   handles it as a click at those client coordinates, but the user's real
   pointer is unaffected (verified: the cursor position does not change).
+
+The click does cost keyboard focus: Qt activates the dialog it opens, so the
+keys the user is typing in another app would land in PT's console. That can't
+be prevented, because the dialog doesn't exist before the click and an explicit
+activation ignores WS_EX_NOACTIVATE. `keep_user_focus()` undoes it instead, as
+soon as it happens. Its limits are listed there.
 """
 
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from ctypes import wintypes as wt
+from dataclasses import dataclass
+from typing import Iterator
 
 _PW_RENDERFULLCONTENT = 2
 _WM_MOUSEMOVE, _WM_LBUTTONDOWN, _WM_LBUTTONUP = 0x0200, 0x0201, 0x0202
 _MK_LBUTTON = 0x0001
-_SW_RESTORE = 9
+_SW_SHOWNOACTIVATE, _SW_RESTORE = 4, 9
+_WPF_RESTORETOMAXIMIZED = 0x2
 _SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOACTIVATE, _SWP_SHOWWINDOW = 0x1, 0x2, 0x10, 0x40
 _HWND_TOP = 0
+
+# How often the guard looks at the foreground window, how long it keeps looking
+# after the work ends (Qt can activate a moment late) and how many refused
+# restores it tolerates before giving up.
+_FOCUS_POLL_S = 0.02
+_FOCUS_GRACE_S = 0.1
+_FOCUS_MAX_FAILURES = 3
 
 _loaded = False
 user32 = gdi32 = None  # type: ignore[assignment]
@@ -27,6 +47,14 @@ user32 = gdi32 = None  # type: ignore[assignment]
 
 def is_supported() -> bool:
     return sys.platform == "win32"
+
+
+class _WINDOWPLACEMENT(ctypes.Structure):
+    _fields_ = [
+        ("length", wt.UINT), ("flags", wt.UINT), ("showCmd", wt.UINT),
+        ("ptMinPosition", wt.POINT), ("ptMaxPosition", wt.POINT),
+        ("rcNormalPosition", wt.RECT),
+    ]
 
 
 class _BITMAPINFOHEADER(ctypes.Structure):
@@ -62,6 +90,12 @@ def _load() -> None:
         (user32, "ScreenToClient"): ([wt.HWND, ctypes.POINTER(wt.POINT)], wt.BOOL),
         (user32, "PostMessageW"): ([wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM], wt.BOOL),
         (user32, "ShowWindow"): ([wt.HWND, ctypes.c_int], wt.BOOL),
+        (user32, "GetWindowPlacement"): ([wt.HWND, ctypes.POINTER(_WINDOWPLACEMENT)], wt.BOOL),
+        (user32, "GetForegroundWindow"): ([], wt.HWND),
+        (user32, "SetForegroundWindow"): ([wt.HWND], wt.BOOL),
+        (user32, "IsWindow"): ([wt.HWND], wt.BOOL),
+        (user32, "AttachThreadInput"): ([wt.DWORD, wt.DWORD, wt.BOOL], wt.BOOL),
+        (user32, "SendInput"): ([wt.UINT, ctypes.c_void_p, ctypes.c_int], wt.UINT),
         (user32, "SetWindowPos"): ([wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                     ctypes.c_int, ctypes.c_int, wt.UINT], wt.BOOL),
         (gdi32, "CreateCompatibleDC"): ([H], H),
@@ -129,9 +163,156 @@ def raise_window(hwnd: int) -> None:
     """Restore it if minimised and bring it to the front without stealing keyboard focus."""
     _load()
     if user32.IsIconic(hwnd):
-        user32.ShowWindow(hwnd, _SW_RESTORE)
+        # SW_SHOWNOACTIVATE would un-maximise a window that was minimised while
+        # maximised. Only SW_RESTORE keeps that, and it activates, so that one
+        # case is left to keep_user_focus().
+        wp = _WINDOWPLACEMENT(length=ctypes.sizeof(_WINDOWPLACEMENT))
+        maximised = (user32.GetWindowPlacement(hwnd, ctypes.byref(wp))
+                     and wp.flags & _WPF_RESTORETOMAXIMIZED)
+        user32.ShowWindow(hwnd, _SW_RESTORE if maximised else _SW_SHOWNOACTIVATE)
     user32.SetWindowPos(hwnd, _HWND_TOP, 0, 0, 0, 0,
                         _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_SHOWWINDOW)
+
+
+def window_pid(hwnd: int) -> int:
+    """Process that owns `hwnd` (0 if the window is gone)."""
+    _load()
+    owner = wt.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+    return owner.value
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
+                ("time", wt.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _INPUT(ctypes.Structure):
+    # type + the union of MOUSEINPUT (its largest member).
+    _fields_ = [("type", wt.DWORD), ("mi", _MOUSEINPUT)]
+
+
+def _send_empty_input() -> None:
+    """A mouse event that moves nothing: this process then "received the last input event"."""
+    event = _INPUT()  # type 0 = INPUT_MOUSE, every field zero
+    user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(_INPUT))
+
+
+def _take_foreground(target: int, current: int) -> bool:
+    """Give the foreground to `target` while `current` holds it.
+
+    A background process is normally refused by SetForegroundWindow. A refusal is
+    retried after an empty SendInput (PowerToys does this): one of the documented
+    conditions is having received the last input event, and it moves nothing and
+    types nothing. Measured live on PT 9.0.1 that AttachThreadInput alone is not
+    enough, but it stays as the last resort, attached to the foreground window's
+    input queue (what Windows Terminal does to summon itself). The attachment
+    resets the key state, hence only when needed and only for this call.
+
+    A synthetic ALT would also unlock it, but it's deliberately not used: the
+    letters the user is typing at that instant would become Alt chords.
+    """
+    if user32.SetForegroundWindow(target):
+        return True
+    _send_empty_input()
+    if user32.SetForegroundWindow(target):
+        return True
+    mine = threading.get_native_id()
+    theirs = user32.GetWindowThreadProcessId(current, None)
+    attached = bool(theirs and theirs != mine and user32.AttachThreadInput(mine, theirs, True))
+    try:
+        return bool(user32.SetForegroundWindow(target))
+    finally:
+        if attached:
+            user32.AttachThreadInput(mine, theirs, False)
+
+
+@dataclass
+class FocusGuard:
+    """State of one keep_user_focus() scope. `saved == 0` means it does nothing."""
+
+    pid: int = 0
+    saved: int = 0
+    restored: int = 0
+    failures: int = 0
+
+    def check(self) -> None:
+        """If PT took the foreground, give it back to the saved window."""
+        if not self.saved or self.failures >= _FOCUS_MAX_FAILURES:
+            return
+        current = user32.GetForegroundWindow()
+        if not current or current == self.saved:
+            return  # 0: a switch is in progress
+        if window_pid(current) != self.pid:
+            self.saved = current  # the user moved to a third app: follow them
+            return
+        if user32.IsWindow(self.saved) and _take_foreground(self.saved, current):
+            self.restored += 1
+        else:
+            self.failures += 1
+
+    def notes(self) -> list[str]:
+        if self.failures >= _FOCUS_MAX_FAILURES:
+            return ["could not give keyboard focus back: PT kept it, click your window"]
+        return ["keyboard focus given back to the previous window"] if self.restored else []
+
+
+_guard_lock = threading.Lock()
+
+
+def _focus_guard_enabled() -> bool:
+    if not is_supported():
+        return False
+    return os.environ.get("PT_UI_KEEP_FOCUS", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+@contextmanager
+def keep_user_focus(pid: int) -> Iterator[FocusGuard]:
+    """Keep the user's window in the foreground while PT's GUI is driven.
+
+    Saves the foreground window and, from a background thread, gives it back each
+    time a window of process `pid` (PT) takes it, both during the block and for a
+    moment after it. It does nothing if the user is already in PT, there is no
+    foreground window, another scope is active (they nest), it isn't Windows or
+    PT_UI_KEEP_FOCUS=0.
+
+    Limits:
+    - It reacts, it doesn't prevent: keys pressed between PT's activation and the
+      restore (one poll plus the switch, tens of ms) still reach PT.
+    - Windows may refuse: SetForegroundWindow has no guarantee, a menu open in PT
+      blocks it, and the attachment can fail against an elevated PT. The guard
+      then gives up and says so in `notes()`.
+    - A user who clicks PT on purpose during the block is sent back: the guard
+      can't tell that from PT's own activation. It lasts for the block only.
+    """
+    if not _focus_guard_enabled() or not _guard_lock.acquire(blocking=False):
+        yield FocusGuard()
+        return
+    try:
+        _load()
+        saved = user32.GetForegroundWindow()
+        if not saved or window_pid(saved) == pid:
+            yield FocusGuard(pid)
+            return
+        guard = FocusGuard(pid, saved)
+        stop = threading.Event()
+
+        def watch() -> None:
+            while not stop.wait(_FOCUS_POLL_S):
+                guard.check()
+
+        watcher = threading.Thread(target=watch, name="pt-keep-focus", daemon=True)
+        watcher.start()
+        try:
+            yield guard
+        finally:
+            time.sleep(_FOCUS_GRACE_S)
+            stop.set()
+            watcher.join(1.0)
+            if not watcher.is_alive():
+                guard.check()
+    finally:
+        _guard_lock.release()
 
 
 def capture(hwnd: int) -> tuple[int, int, bytes]:

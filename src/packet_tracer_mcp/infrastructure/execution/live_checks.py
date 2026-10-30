@@ -41,6 +41,186 @@ def reconcile_commands(commands: list[str], names: set[str]) -> list[str]:
     return out
 
 
+# --- Deploy verification (one canvas read) ------------------------------------
+#
+# pt_live_deploy used to check each device and each link with its own round trip
+# (and 20 s + 40 s retries per device on a timeout): a 116-device topology meant
+# hundreds of trips. Now ONE JS checks every device and link of the plan, with the
+# same calls as before (getDevice / getPort / getLink), so the number of trips does
+# not grow with the topology.
+
+# Patience for the canvas read: PT may still be running the queued deploy, so a
+# timeout is asked again before giving up (and it is never read as "missing").
+DEPLOY_CHECK_WAITS = (5.0, 20.0, 40.0)
+
+SendAndWait = Callable[[str, float], "str | None"]
+
+
+def deploy_check_js(plan) -> str:
+    """JS reporting `{devices: [1|0 per plan device], links: [status per plan link]}`.
+
+    Link status: OK, NO_LINK, PORT_MISSING, DEV_MISSING or ERROR (checked on side A,
+    like the per-link check it replaces).
+    """
+    cfg = json.dumps({
+        "devices": [d.name for d in plan.devices],
+        "links": [[lnk.device_a, lnk.port_a] for lnk in plan.links],
+    })
+    return (
+        "(function(){"
+        f"var c={cfg};var net=ipc.network();var dv=[];var lk=[];"
+        "for(var i=0;i<c.devices.length;i++){var ok=false;"
+        "try{ok=!!net.getDevice(c.devices[i]);}catch(e){ok=false;}dv.push(ok?1:0);}"
+        "for(var j=0;j<c.links.length;j++){var s='ERROR';"
+        "try{var d=net.getDevice(c.links[j][0]);if(!d){s='DEV_MISSING';}"
+        "else{var p=d.getPort(c.links[j][1]);"
+        "s=!p?'PORT_MISSING':(p.getLink()!=null?'OK':'NO_LINK');}}catch(e){s='ERROR';}"
+        "lk.push(s);}"
+        "reportResult(JSON.stringify({devices:dv,links:lk}));"
+        "})();"
+    )
+
+
+def read_deploy_check(send: SendAndWait, plan, waits: tuple[float, ...] = DEPLOY_CHECK_WAITS) -> dict | None:
+    """Run deploy_check_js, asking again with more patience on a timeout.
+
+    None when PT never gave a readable answer: the caller must treat that as
+    "unverified", never as "everything is missing".
+    """
+    js = deploy_check_js(plan)
+    for wait in waits:
+        raw = send(js, wait)
+        if raw is None:
+            continue
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        if (isinstance(data, dict) and isinstance(data.get("devices"), list)
+                and isinstance(data.get("links"), list)
+                and len(data["devices"]) == len(plan.devices)
+                and len(data["links"]) == len(plan.links)):
+            return data
+        return None
+    return None
+
+
+def link_label(lnk) -> str:
+    return f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b}"
+
+
+def deploy_check_summary(plan, check: dict) -> tuple[list[str], list, list[str]]:
+    """(missing device names, failed LinkPlans, failed link labels with their status)."""
+    missing = [d.name for d, ok in zip(plan.devices, check["devices"]) if not ok]
+    failed = [(lnk, s) for lnk, s in zip(plan.links, check["links"]) if s != "OK"]
+    return missing, [lnk for lnk, _ in failed], [f"{link_label(lnk)} ({s})" for lnk, s in failed]
+
+
+def verify_and_reconcile(
+    send: SendAndWait,
+    queue: Callable[[str], object],
+    plan,
+    commands: list[str],
+    *,
+    delay: float = 0.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict:
+    """Verify a deploy with one canvas read, re-send what is missing, read once more.
+
+    `queue` sends one fire-and-forget command (already guarded by the caller). An
+    unreadable canvas leaves the result `verified: False` and re-sends NOTHING: a
+    late answer is not a missing device.
+    """
+    out = {"verified": False, "dev_ok": 0, "dev_fail": [], "link_ok": 0, "link_fail": [],
+           "reconciled_devices": [], "reconciled_links": []}
+    check = read_deploy_check(send, plan)
+    if check is None:
+        return out
+    dev_fail, link_fail_objs, link_fail = deploy_check_summary(plan, check)
+    if dev_fail or link_fail_objs:
+        names = set(dev_fail) | {n for lnk in link_fail_objs for n in (lnk.device_a, lnk.device_b)}
+        for cmd in reconcile_commands(commands, names):
+            queue(cmd)
+            if delay:
+                sleep(delay)
+        again = read_deploy_check(send, plan)
+        if again is not None:
+            new_dev_fail, new_link_objs, link_fail = deploy_check_summary(plan, again)
+            out["reconciled_devices"] = [n for n in dev_fail if n not in new_dev_fail]
+            out["reconciled_links"] = [f"{lnk.device_a}:{lnk.port_a}" for lnk in link_fail_objs
+                                       if lnk not in new_link_objs]
+            dev_fail = new_dev_fail
+    out.update(verified=True, dev_fail=dev_fail, link_fail=link_fail,
+               dev_ok=len(plan.devices) - len(dev_fail), link_ok=len(plan.links) - len(link_fail))
+    return out
+
+
+# --- Opening a .pkt -------------------------------------------------------------
+#
+# AppWindow.fileOpen(path) returns a FileOpenReturnValue. Cisco documents the names
+# (eFileReturnOk, eFileReturnBadSSL, ...) but not their numeric values, so a number
+# is never mapped to a name here. The open is judged by what can be read back: the
+# documented name when PT gives one, else whether the active file
+# (getActiveFile().getSavedFilename(), used by pt_project_metadata) is now the one asked.
+FILE_OPEN_RESULTS = (
+    "Ok", "BadSSL", "BadDecompress", "BadBinary", "BadMetafile", "BadConfiguration",
+    "UnableToReadFile", "BadOptions", "UserCancel",
+)
+
+
+def file_open_js(path: str) -> str:
+    """JS that opens `path` and reports {ret, before, after, file} (or ERR:does not exist)."""
+    return (
+        "(function(){var fm=ipc.systemFileManager();"
+        f"var p={json.dumps(path)};"
+        "if(!fm.fileExists(p)){reportResult('ERR:does not exist '+p);return;}"
+        "var before=-1;try{before=ipc.network().getDeviceCount();}catch(e){}"
+        "var r=ipc.appWindow().fileOpen(p);"
+        "var after=-1;try{after=ipc.network().getDeviceCount();}catch(e){}"
+        "var f='';try{var af=ipc.appWindow().getActiveFile();f=af?String(af.getSavedFilename()):'';}catch(e){}"
+        "reportResult(JSON.stringify({ret:(r===undefined||r===null)?null:String(r),"
+        "before:before,after:after,file:f}));"
+        "})();"
+    )
+
+
+DEVICE_COUNT_JS = (
+    "try{reportResult(String(ipc.network().getDeviceCount()));}catch(e){reportResult('-1');}"
+)
+
+
+def file_open_result_name(ret: str | None) -> str | None:
+    """The documented FileOpenReturnValue name in PT's reply, or None (e.g. a bare number)."""
+    if ret is None:
+        return None
+    key = str(ret).strip().replace("_", "").lower()
+    for name in FILE_OPEN_RESULTS:
+        n = name.lower()
+        if key in (n, "efilereturn" + n, "filereturn" + n):
+            return name
+    return None
+
+
+def _same_path(a: str, b: str) -> bool:
+    norm = lambda s: str(s).strip().replace("\\", "/").rstrip("/").lower()  # noqa: E731
+    return bool(a) and norm(a) == norm(b)
+
+
+def file_open_outcome(target: str, data: dict) -> tuple[bool, str]:
+    """(opened, explanation) from file_open_js's report."""
+    ret = data.get("ret")
+    name = file_open_result_name(ret)
+    active = _same_path(data.get("file", ""), target)
+    if name is not None and name != "Ok":
+        return False, f"fileOpen returned {name}"
+    if name == "Ok" or active:
+        return True, f"fileOpen returned {name or ret}"
+    return False, (
+        f"fileOpen returned {ret!r} and the active file is "
+        f"{data.get('file') or '(none)'!r}, not the requested one"
+    )
+
+
 def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> str:
     """What pt_verify_connectivity says when PT never printed the ping statistics."""
     return (

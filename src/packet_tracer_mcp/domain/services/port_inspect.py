@@ -50,9 +50,15 @@ def summarize_ports(devices: list[dict]) -> dict:
             # Cable plugged in but the port does not come up: the classic symptom of a
             # forgotten `shutdown` or of the wrong cable type.
             if p_linked and not p_up:
+                detail = "Cabled but the port is down (shutdown, or the wrong cable?)."
+                if port.get("cable"):
+                    # The real cable (Link.getConnectionType), so the "wrong
+                    # cable" half can be checked instead of guessed.
+                    detail += f" Cable: {port['cable']}" + (
+                        f" to {port['peer']}." if port.get("peer") else ".")
                 anomalies.append({
                     "device": dname, "port": pname, "issue": "linked_but_down",
-                    "detail": "Cabled but the port is down (shutdown, or the wrong cable?).",
+                    "detail": detail,
                 })
             # Layer 1 up but protocol down: encapsulation or keepalive.
             elif p_up and not port.get("protocol_up", True):

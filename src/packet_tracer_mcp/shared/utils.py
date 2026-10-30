@@ -38,28 +38,6 @@ def safe_name_component(name: str, fallback: str = "topology") -> str:
     return cleaned[:_MAX_COMPONENT_LEN]
 
 
-def js_escape(s: str) -> str:
-    """Escapes a string so it can be inserted into a JS literal.
-
-    A JS literal cannot cross a line break, and JS treats U+2028/U+2029 as line
-    breaks too. Without escaping them, a name containing a line break does not
-    "slip through" as code: it breaks parsing and the whole command is silently
-    lost inside the bridge's catch, which is worse than failing loudly.
-
-    To build an entire call, prefer `json.dumps`; this is for the cases where
-    something has to be interpolated inside an existing literal.
-    """
-    return (
-        s.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("'", "\\'")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
-
-
 def name_collisions(plan_names: list[str], live_names: list[str]) -> list[str]:
     """Plan device names that already exist on the canvas, in plan order."""
     live = set(live_names)
@@ -132,6 +110,63 @@ def resolve_within(base: Path, *parts: str) -> Path:
         raise ValueError(
             f"Path outside the base directory: {candidate} is not inside {base_resolved}"
         )
+    return candidate
+
+
+def workdir_subdir(name: str, fallback: str) -> Path:
+    """A one-level folder under the MCP's working directory, never outside it.
+
+    `server.main()` chdirs into `server.workdir()` (`PT_MCP_WORKDIR`), so the
+    current directory IS the working directory at run time. Every tool that takes
+    an `output_dir` goes through here: "../x", "C:/Windows" or "/etc" become a
+    harmless folder name inside it.
+    """
+    return resolve_within(Path.cwd(), safe_name_component(name, fallback=fallback))
+
+
+def resolve_save_dir(directory: str) -> str:
+    """The folder pt_save_project hands to PT ("" = PT's own save folder).
+
+    An absolute path is the user's choice of where the lab lives (Documents, a
+    course folder), so it is allowed, but it must be an existing directory: nothing
+    is created outside the working directory. A relative path is a folder inside
+    the MCP's working directory (PT_MCP_WORKDIR), sanitised and created there.
+    Raises ValueError when the folder is unusable.
+    """
+    raw = directory.strip()
+    if not raw:
+        return ""
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        path = path.resolve()
+        if not path.is_dir():
+            raise ValueError(f"directory does not exist: {path}")
+        return str(path)
+    target = workdir_subdir(raw, "projects")
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
+
+
+def resolve_open_path(path: str) -> Path:
+    """The .pkt file pt_open_project opens, checked on this machine's disk first.
+
+    Opening a lab the user already has is the point of the tool, so an absolute
+    path anywhere is allowed; it must end in .pkt and be an existing file. A
+    relative path is resolved inside the MCP's working directory and may not
+    leave it. Raises ValueError otherwise.
+    """
+    raw = path.strip()
+    if not raw:
+        raise ValueError("path is empty")
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        candidate = candidate.resolve()
+    else:
+        candidate = resolve_within(Path.cwd(), raw)
+    if candidate.suffix.lower() != ".pkt":
+        raise ValueError("The file must end in .pkt")
+    if not candidate.is_file():
+        raise ValueError(f"file not found: {candidate}")
     return candidate
 
 

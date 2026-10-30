@@ -11,7 +11,7 @@ from ...domain.rules.console_rules import validate_console_commands
 from ...infrastructure.execution.console_session import format_run, run_commands
 from ...infrastructure.ui.presenter import Presenter, PresenterError
 from ...shared.ui_mode import UiModeStore
-from ...shared.utils import resolve_within, safe_name_component
+from ...shared.utils import resolve_within, safe_name_component, workdir_subdir
 from ...shared.utils import reply_json
 
 SendAndWait = Callable[[str, float], Optional[str]]
@@ -64,7 +64,7 @@ def errors_text(result) -> str:
 
 def screenshot_path(filename: str, output_dir: str = "screenshots") -> Path:
     """Safe path for a capture (same scheme as pt_screenshot)."""
-    base = Path(safe_name_component(output_dir, fallback="screenshots"))
+    base = workdir_subdir(output_dir, fallback="screenshots")
     base.mkdir(parents=True, exist_ok=True)
     return resolve_within(base, safe_name_component(filename, fallback="capture") + ".png")
 

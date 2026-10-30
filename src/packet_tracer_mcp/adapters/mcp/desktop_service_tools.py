@@ -10,6 +10,7 @@ their own).
 from __future__ import annotations
 
 import html
+import json
 import re
 import time
 
@@ -105,6 +106,24 @@ def http_both_off_warning(device: str) -> str:
 def email_account_names(raw: str) -> list[str]:
     """Usernames out of PT's getAllEmailAcctAsStrings() ("user:password,..."), passwords dropped."""
     return [a.split(":", 1)[0].strip() for a in (raw or "").split(",") if a.strip()]
+
+
+def syslog_messages(raw) -> list:
+    """SYSLOG entries as PT serialized them: parsed when JSON, the text otherwise.
+
+    getAllEntries()'s element fields were never measured, so nothing is renamed
+    or dropped here; a JSON entry becomes its object, anything else stays a string.
+    """
+    out: list = []
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, str):
+            try:
+                out.append(json.loads(item))
+                continue
+            except ValueError:
+                pass
+        out.append(item)
+    return out
 
 
 def email_not_applied(data: dict, *, domain: str = "", smtp: bool | None = None,
@@ -251,8 +270,8 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
           common case). Touched only if a pool field below is given; if it
           doesn't exist it is created with those values.
         - gateway, dns, start_ip, mask ("255.255.255.0" or "24"), max_users,
-          tftp, wlc: empty/0 = leave alone. tftp/wlc can only be set when the
-          pool is created (PT has no setter for an existing pool's).
+          tftp, wlc: empty/0 = leave alone. PT's script API has no TFTP/WLC
+          setter, so tftp/wlc always come back in not_applied (set them in the GUI).
           Every field is read back: any PT does not hold comes back in
           not_applied, with ok=false.
         - enable: True = Service On (default), False = Off, None = leave alone.
@@ -414,7 +433,8 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         - users: accounts for ftp/email:
           [{"username": "alice", "password": "secret", "permissions": "RWDNL"}]
           (permissions FTP only: Read Write Delete reName List).
-        SYSLOG also returns how many messages it received.
+        SYSLOG also returns how many messages it received (`entries`) and the
+        newest 200 as PT serializes them (`messages`; fields not mapped).
         """
         svc = (service or "").strip().lower()
         us = [dict(u) for u in (users or [])]
@@ -441,6 +461,8 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         # PT hands back "user:password" pairs; credentials never leave the device.
         if "accounts" in data:
             data["accounts"] = email_account_names(str(data["accounts"]))
+        if "messages" in data:
+            data["messages"] = syslog_messages(data["messages"])
         notes = ps.show_after(device, show, capture, output_dir, svc,
                               tab="Services", section=svc.upper())
         return with_notes(data, notes)

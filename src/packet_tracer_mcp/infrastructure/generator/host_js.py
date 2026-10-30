@@ -28,6 +28,15 @@ _PORT_READ_JS = (
     "full_duplex:b('isFullDuplex')};}"
 )
 
+# The host's IPv4 default gateway. Measured on PT 9 (2026-10-30): it lives on
+# getProcess("HostIpProcess").getDefaultGateway(); Device and Port have no such
+# getter, and getProcess("HostIp") throws. Null on a device without that process.
+_GATEWAY_JS = (
+    "function __gw(d){try{var hp=d.getProcess('HostIpProcess');"
+    "if(hp&&typeof hp.getDefaultGateway==='function'){return String(hp.getDefaultGateway());}}"
+    "catch(e){}return null;}"
+)
+
 _DEVICE_JS = (
     "var d=ipc.network().getDevice(c.device);"
     "if(!d){reportResult(JSON.stringify({ok:false,error:'device_not_found'}));return;}"
@@ -69,7 +78,7 @@ def host_ip_config_js(
     return (
         "(function(){"
         f"var c={cfg};"
-        + _DEVICE_JS + _PORT_READ_JS +
+        + _DEVICE_JS + _PORT_READ_JS + _GATEWAY_JS +
         "var names=d.getPorts();var pn=c.port;"
         "if(!pn){for(var i=0;i<names.length;i++){var n=String(names[i]);"
         "if(n.indexOf('Ethernet')>=0||n==='Wireless0'){pn=n;break;}}}"
@@ -108,19 +117,19 @@ def host_ip_config_js(
         "applied.push('ipv6 '+c.ipv6_address+'/'+c.ipv6_prefix);}"
         "reportResult(JSON.stringify({ok:true,port:pn,applied:applied,ipv6_added:added6,"
         "dhcp_flag:(typeof d.getDhcpFlag==='function')?!!d.getDhcpFlag():null,before:before,"
-        "state:__port(d,pn)}));"
+        "gateway:__gw(d),state:__port(d,pn)}));"
         "})();"
     )
 
 
 def port_state_js(device: str, port: str) -> str:
-    """Re-read a port (to wait for the DHCP lease)."""
+    """Re-read a port (to wait for the DHCP lease) and the host's default gateway."""
     cfg = json.dumps({"device": device, "port": port})
     return (
         "(function(){"
         f"var c={cfg};"
-        + _DEVICE_JS + _PORT_READ_JS +
-        "reportResult(JSON.stringify({ok:true,state:__port(d,c.port)}));"
+        + _DEVICE_JS + _PORT_READ_JS + _GATEWAY_JS +
+        "reportResult(JSON.stringify({ok:true,gateway:__gw(d),state:__port(d,c.port)}));"
         "})();"
     )
 
@@ -139,14 +148,14 @@ def read_device_panel_js(device: str) -> str:
     return (
         "(function(){"
         f"var c={cfg};"
-        + _DEVICE_JS + _PORT_READ_JS +
+        + _DEVICE_JS + _PORT_READ_JS + _GATEWAY_JS +
         "function has(m){return typeof d[m]==='function';}"
         "var out={ok:true,name:String(d.getName()),model:String(d.getModel()),type:d.getType(),"
         "power:has('getPower')?!!d.getPower():null,"
         "host:has('getCommandPrompt'),"
         "desktop:has('isDesktopAvailable')?!!d.isDesktopAvailable():null,"
         "dhcp_flag:has('getDhcpFlag')?!!d.getDhcpFlag():null,"
-        "hostname:has('getHostName')?String(d.getHostName()):null,"
+        "hostname:has('getHostName')?String(d.getHostName()):null,gateway:__gw(d),"
         "ports:[],services:{}};"
         "var names=d.getPorts();"
         "for(var i=0;i<names.length;i++){try{var s=__port(d,names[i]);if(s){out.ports.push(s);}}catch(e){}}"

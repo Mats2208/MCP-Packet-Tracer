@@ -13,7 +13,7 @@ fully cabled, configured and running topology.
 
 - :material-rocket-launch: **[Get started](installation.md)** — install the server and connect your MCP client in one command.
 - :material-lightning-bolt: **[Live deploy](live-deploy.md)** — stream commands straight into a running Packet Tracer.
-- :material-tools: **[Tool reference](tools.md)** — all 94 MCP tools, grouped and documented.
+- :material-tools: **[Tool reference](tools.md)** — all 96 MCP tools, grouped and documented.
 - :material-sitemap: **[Architecture](architecture.md)** — how the planner, generators and HTTP bridge fit together.
 
 </div>
@@ -30,6 +30,7 @@ fully cabled, configured and running topology.
 | **IPv6** | Dual-stack addressing | Routers via CLI, hosts via SLAAC |
 | **Wireless** | WiFi laptops + auto-associated Access Points | NIC swap → `Wireless0` |
 | **Validation** | Typed error codes + auto-fixer | Wrong cables, missing ports, model upgrades |
+| **Voice** | Cisco CME on a 2811 | IP phones get DHCP option 150 and register |
 | **ACL** | Standard, extended & named | Apply, bind and remove on live routers |
 | **NAT / PAT** | Static, dynamic, overload | Translate addresses on live routers via the bridge |
 | **Hardening** | SSH, local users, enable-secret, banner | Device hardening on live routers/switches |

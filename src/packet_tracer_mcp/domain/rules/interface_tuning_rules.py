@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..models.interface_tuning import InterfaceTuning
 from ..models.errors import PlanError, ErrorCode, ValidationResult
+from .text_rules import has_control_chars
 
 # Valid clock rates (bps) accepted by IOS on serial interfaces.
 _VALID_CLOCK_RATES = {
@@ -19,6 +20,14 @@ OSPF_NETWORK_TYPES = {"point-to-point"}
 def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
+
+    if has_control_chars(cfg.router) or has_control_chars(cfg.interface):
+        # Both are interpolated into the single-string IOS payload.
+        errors.append(PlanError(
+            code=ErrorCode.VALIDATION_ERROR, device=cfg.router,
+            message="The router or interface name contains a line break.",
+            suggestion="Use the exact names from pt_query_topology.",
+        ))
 
     if cfg.clock_rate is not None:
         if not cfg.is_serial():
@@ -54,7 +63,7 @@ def validate_interface_tuning(cfg: InterfaceTuning) -> ValidationResult:
                 message=f"{label} is empty.",
                 suggestion="Pass a key or remove the parameter.",
             ))
-        elif any(ch in value for ch in ("\n", "\r", " ")):
+        elif " " in value or has_control_chars(value):
             # The key ends up inside a single-line IOS payload; a line break would
             # turn into an unrequested command.
             errors.append(PlanError(

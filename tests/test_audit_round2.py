@@ -128,9 +128,14 @@ class TestRenameRejectsDuplicates:
         return registry_source()
 
     def test_rename_checks_the_target_name_is_free(self):
+        # The JS moved to topology_js.rename_device_js; the free-name check must
+        # come before setName (it is also run under Node in test_topology_verified).
+        from src.packet_tracer_mcp.infrastructure.generator.topology_js import rename_device_js
+        js = rename_device_js("SW1", "R1")
+        assert js.index("if(net.getDevice(c.new))") < js.index("d.setName(c.new)")
+        assert "error:'duplicate'" in js
         block = self._src().split("def pt_rename_device", 1)[1][:2000]
-        assert 'getDevice("{safe_new}")' in block, "no se comprueba si el nombre ya existe"
-        assert "ERROR:DUPLICATE" in block
+        assert "rename_device_js(old_name, new_name)" in block
 
     def test_duplicate_is_reported_with_a_reason(self):
         block = self._src().split("def pt_rename_device", 1)[1][:3000]

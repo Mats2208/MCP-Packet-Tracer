@@ -25,8 +25,9 @@ from ...domain.rules.panel_rules import (
     normalize_mask, parse_ipv6_interface, validate_host_ip_config,
 )
 from ...infrastructure.generator.host_js import (
-    host_ip_config_js, port_state_js, read_device_panel_js, remove_module_js,
+    host_ip_config_js, port_state_js, read_device_panel_js,
 )
+from ...infrastructure.generator.module_js import module_change_js, power_cycle_notes
 from ...infrastructure.ui.presenter import Presenter, PresenterError, is_available
 from ...shared.ui_mode import UI, UiModeStore
 from .desktop_service_tools import register_desktop_service_tools
@@ -329,6 +330,7 @@ def register_device_panel_tools(
             return error
         notes: list[str] = []
         state = data.get("state") or {}
+        gw_now = data.get("gateway")
         lease: bool | None = None
         if mode == "dhcp" and wait_dhcp_s > 0:
             stale = stale_dhcp_ip(data.get("before"))
@@ -338,6 +340,7 @@ def register_device_panel_tools(
                 again, _ = ps.call(port_state_js(device, data["port"]), device, 8.0)
                 if again:
                     state = again.get("state") or state
+                    gw_now = again.get("gateway", gw_now)
             lease = is_new_lease(state, stale)
             if not lease and stale and state.get("ip") == stale:
                 notes.append(
@@ -366,12 +369,17 @@ def register_device_panel_tools(
             "ipv6": state.get("ipv6"),
             "link_local": state.get("link_local"),
             "ipv6_addresses": state.get("ipv6_addresses"),
+            "gateway": gw_now,
             "summary": f"{device}/{data.get('port')}: {', '.join(data.get('applied', []))} → "
                        f"{state.get('ip')}/{state.get('mask')}"
                        + (" (DHCP requested, no lease yet)" if lease is False
                           else " (DHCP)" if state.get("dhcp") else ""),
-            "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the gateway and DNS.",
+            "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the DNS too.",
         }
+        # The gateway is read back from HostIpProcess (measured on PT 9).
+        want_gw = gateway.strip()
+        if want_gw and mode != "dhcp" and gw_now is not None and gw_now != want_gw:
+            notes.append(f"Gateway: asked for {want_gw} but the host reads {gw_now}.")
         if lease is not None:
             out["lease"] = lease
         if v6:
@@ -387,7 +395,7 @@ def register_device_panel_tools(
     def pt_read_device_panel(device: str) -> str:
         """
         Reads what a device's tabs show, in one go (read-only): model, power,
-        whether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/
+        whether it is a host, DHCP, the host's default gateway, per port IP/mask/MAC/state/IPv6/firewall/
         bandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,
         SYSLOG, EMAIL, NTP) are on.
         """
@@ -407,13 +415,15 @@ def register_device_panel_tools(
     def pt_remove_module(device: str, slot: str, dry_run: bool = False) -> str:
         """
         Removes the module installed in a slot (Physical tab). Powers the device
-        off, removes it and powers it back on, like pt_add_module.
+        off, removes it and powers it back on, like pt_add_module (routers/switches
+        are saved first with write memory); skipped when PT reports the module as
+        hot-swappable. The reply says whether it restarted and was saved.
         - slot: STRING, same format as pt_add_module ("0/0", "1", "0"...).
         """
         slot_s = str(slot).strip()
         if not slot_s:
             return "Error: empty slot."
-        js = remove_module_js(device, slot_s)
+        js = module_change_js("remove", [{"device": device, "slot": slot_s}])
         if dry_run:
             return reply_json({"js_payload": js, "sent": False, "dry_run": True})
         err = check_bridge()
@@ -421,11 +431,18 @@ def register_device_panel_tools(
             return err
         data, error = ps.call(js, device, 15.0)
         if error:
-            return error if error != "PT answered: unsupported" else f"'{device}' does not support removing modules."
-        if not data.get("removed"):
-            return f"PT removed nothing from slot '{slot_s}' of {device} (empty, or no such slot?)."
-        gone = sorted(set(data["before"].split(",")) - set(data["after"].split(",")))
+            return error
+        result = (data.get("results") or [{}])[0]
+        dev = (data.get("devices") or [{}])[0]
+        notes = "".join(f"\n{n}" for n in power_cycle_notes(data.get("devices", [])))
+        if result.get("error") == "device_not_found":
+            return f"Device '{device}' not found."
+        if result.get("error") == "unsupported":
+            return f"'{device}' does not support removing modules."
+        if not result.get("ok"):
+            return f"PT removed nothing from slot '{slot_s}' of {device} (empty, or no such slot?)." + notes
+        gone = sorted(set(dev.get("ports_before", "").split(",")) - set(dev.get("ports_after", "").split(",")))
         return (f"Module removed from {device} slot {slot_s}. Ports that disappeared: "
-                f"{', '.join(gone) or '(none)'}.")
+                f"{', '.join(gone) or '(none)'}." + notes)
 
     register_desktop_service_tools(mcp, ps)

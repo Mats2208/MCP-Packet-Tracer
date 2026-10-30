@@ -36,6 +36,13 @@ def _carries_ip(model_name: str) -> bool:
     return model.category not in _L2_CATEGORIES
 
 
+def _is_ip_phone(model_name: str) -> bool:
+    """IP phones keep their address on Vlan1; the Switch and PC jacks are layer 2."""
+    from ...infrastructure.catalog.devices import resolve_model
+    model = resolve_model(model_name or "")
+    return model is not None and model.category == "ip_phone"
+
+
 def _is_power_distribution(model_name: str) -> bool:
     from ...infrastructure.catalog.devices import resolve_model
     model = resolve_model(model_name or "")
@@ -88,7 +95,12 @@ def health_check(live: list[dict]) -> dict:
 
     for d in live:
         name = d.get("name", "?")
-        expects_ip = _carries_ip(d.get("model", ""))
+        phone = _is_ip_phone(d.get("model", ""))
+        expects_ip = _carries_ip(d.get("model", "")) and not phone
+        if phone and any(p.get("linked") for p in d.get("ports", [])):
+            vlan1 = next((p for p in d.get("ports", []) if p.get("name") == "Vlan1"), {})
+            if (vlan1.get("ip") or "") in ("", "0.0.0.0"):
+                unconfigured.append({"device": name, "port": "Vlan1"})
         for p in d.get("ports", []):
             pname = p.get("name", "?")
             ip = p.get("ip") or ""

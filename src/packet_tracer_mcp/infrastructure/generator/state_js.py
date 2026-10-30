@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 
+from .walk_js import WALK_JS
+
 # Shared helpers. `__proc` turns a missing or throwing getProcess into null;
 # `__call` is a guarded getter for methods that are documented but not probed live.
 _HELPERS_JS = (
@@ -45,11 +47,10 @@ def _sweep_js(reader_js: str, cfg: dict) -> str:
     return (
         "(function(){try{"
         f"var c={json.dumps(cfg)};"
-        + _HELPERS_JS + reader_js +
+        + _HELPERS_JS + reader_js + WALK_JS +
         "var net=ipc.network();var names=[];"
-        "if(c.device){names=[c.device];}else{var n=net.getDeviceCount();"
-        "for(var i=0;i<n;i++){try{var dd=net.getDeviceAt(i);if(dd){names.push(String(dd.getName()));}}"
-        "catch(e){}}}"
+        "if(c.device){names=[c.device];}else{"
+        "__eachDevice(function(dd){names.push(String(dd.getName()));});}"
         "var out=[];"
         "for(var k=0;k<names.length;k++){var d=null;try{d=net.getDevice(names[k]);}catch(e){}"
         "if(!d){if(c.device){reportResult(JSON.stringify({found:false}));return;}continue;}"
@@ -195,6 +196,42 @@ _VLANS_JS = (
     "port_security:ps?{enabled:!!__call(ps,'isEnabled'),max_mac:__call(ps,'getMaxMacNumber'),"
     "violations:__call(ps,'getViolationCount')}:null});}catch(e){}}}"
 )
+
+
+# DHCP leases. Router (2911, measured): getProcess("DhcpServerProcess") ->
+# getPoolCount/getPoolAt(i) -> pool.getDhcpPoolName(), pool.getLeaseAt(i) ->
+# {ipAddress, leaseTime, macAddress, port}. There is no lease count: getLeaseAt
+# throws "invalid vector subscript" past the end, so it is walked until it throws
+# (or answers null), capped at DHCP_MAX_LEASES per pool.
+# Server-PT: getProcess("DhcpServerMain").getDhcpServerProcessByPortName(port) per
+# port (as pt_server_dhcp uses it); whether ITS pools have getLeaseAt was not
+# measured, so it sits behind a typeof and the pool says lease_api false otherwise.
+DHCP_MAX_LEASES = 1024
+
+_DHCP_LEASES_JS = (
+    "function __pool(p,port){var r={name:__str(__call(p,'getDhcpPoolName')),port:port,"
+    "lease_api:typeof p.getLeaseAt==='function',leases:[],truncated:false};"
+    "if(!r.lease_api){return r;}"
+    f"for(var i=0;i<{DHCP_MAX_LEASES};i++){{var l=null;try{{l=p.getLeaseAt(i);}}catch(e){{break;}}"
+    "if(!l){break;}r.leases.push(l);}"
+    f"r.truncated=r.leases.length>={DHCP_MAX_LEASES};return r;}}"
+    "function __walk(dp,port,rec){var n=0;try{n=dp.getPoolCount();}catch(e){return;}"
+    "for(var i=0;i<n;i++){try{var p=dp.getPoolAt(i);if(p){rec.pools.push(__pool(p,port));}}catch(e){}}}"
+    "function __read(d,rec,c){rec.pools=[];var sp=__proc(d,'DhcpServerProcess');"
+    "if(sp&&typeof sp.getPoolCount==='function'){rec.supported=true;rec.source='router';"
+    "__walk(sp,null,rec);if(rec.pools.length){return;}}"
+    "var dm=__proc(d,'DhcpServerMain');"
+    "if(!dm||typeof dm.getDhcpServerProcessByPortName!=='function'){return;}"
+    "rec.supported=true;rec.source='server';var ports=__ports(d);"
+    "for(var k=0;k<ports.length;k++){var dp=null;"
+    "try{dp=dm.getDhcpServerProcessByPortName(String(ports[k]));}catch(e){}"
+    "if(dp){__walk(dp,String(ports[k]),rec);}}}"
+)
+
+
+def dhcp_leases_js(device: str = "") -> str:
+    """DHCP pools and their leases on `device` (empty = every DHCP server)."""
+    return _sweep_js(_DHCP_LEASES_JS, {"device": device})
 
 
 def routes_js(device: str = "") -> str:

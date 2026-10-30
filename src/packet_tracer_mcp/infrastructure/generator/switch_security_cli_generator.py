@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from ...domain.models.switch_security import STPConfig, PortSecurityConfig
 
 
@@ -51,8 +53,6 @@ def build_port_security_payload(cfg: PortSecurityConfig) -> str:
 
 
 def build_switch_js_call(device: str, ios_payload: str) -> str:
-    safe_dev = device.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_dev}", "{safe_payload}");'
+    # json.dumps per value: it also escapes \r, U+2028/2029 and control
+    # characters, which the old hand-written escaping let through.
+    return f"configureIosDevice({json.dumps(device)}, {json.dumps(ios_payload)});"

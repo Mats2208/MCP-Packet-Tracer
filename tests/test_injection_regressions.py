@@ -9,7 +9,6 @@ import json
 import pytest
 
 from src.packet_tracer_mcp.shared.utils import (
-    js_escape,
     safe_name_component,
     resolve_within,
     interpret_ping,
@@ -53,18 +52,6 @@ HOSTILE_NAMES = [
 
 
 # --- Escapado JS -----------------------------------------------------------
-
-
-@pytest.mark.parametrize("name", HOSTILE_NAMES)
-def test_js_escape_leaves_no_literal_terminator(name):
-    """Ni comillas sin escapar ni fines de línea, que JS no permite en literales."""
-    out = js_escape(name)
-    # Toda comilla del resultado debe venir precedida de un backslash.
-    for i, ch in enumerate(out):
-        if ch in "\"'":
-            assert i > 0 and out[i - 1] == "\\", f"comilla sin escapar en {out!r}"
-    for terminator in ("\n", "\r", "\u2028", "\u2029"):
-        assert terminator not in out
 
 
 @pytest.mark.parametrize("name", HOSTILE_NAMES)

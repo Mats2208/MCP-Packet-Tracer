@@ -6,8 +6,21 @@ import json
 from mcp.server.fastmcp import FastMCP
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....infrastructure.catalog.devices import resolve_model, category_of_model
-from ....infrastructure.catalog.cables import CABLE_TYPES, infer_cable
-from ....shared.utils import js_escape
+from ....infrastructure.catalog.cables import CABLE_TYPES, cable_type_name, infer_cable
+from ....infrastructure.generator.topology_js import (
+    delete_link_js, move_device_js, rename_device_js, topology_snapshot_js,
+)
+from ....domain.services.topology_view import format_export, format_query
+from ....domain.rules.text_rules import bad_device_name, has_control_chars
+from ....infrastructure.generator.ptbuilder_generator import add_device_call, add_link_call
+from ....infrastructure.generator.walk_js import WALK_JS
+from ....shared.utils import reply_json
+
+# Reader error codes -> the words a caller sees.
+_EDIT_ERRORS = {
+    "device_not_found": "Device not found", "port_not_found": "Interface not found",
+    "no_link": "No link on this interface",
+}
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -17,7 +30,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _js_guard = BridgeContext.js_guard
-    _js_escape = js_escape
 
 
 
@@ -25,180 +37,43 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     # QUERY / INTERACT with existing topology in PT
     # ------------------------------------------------------------------
 
+    def _snapshot() -> dict | str:
+        """Devices and links (with the real cable type) in one read, or the error text."""
+        err = _check_bridge()
+        if err:
+            return err
+        raw = _bridge_send_and_wait(topology_snapshot_js(), timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        if raw.startswith("ERROR:"):
+            return f"PT error: {raw}"
+        try:
+            return json.loads(raw)
+        except Exception as exc:
+            return f"Unreadable reply from PT: {exc}"
+
     @mcp.tool()
     def pt_query_topology() -> str:
         """
         Query current devices in Packet Tracer.
-        Returns name, model, and port/IP info for each device in the active topology.
+        Returns name, model, and port/IP info for each device in the active topology,
+        then every link with its real cable type (read from the link itself).
         Requires bridge connected (use pt_bridge_status to verify).
         """
-        err = _check_bridge()
-        if err:
-            return err
-
-        js = (
-            "try {"
-            "  var net = ipc.network();"
-            "  var n = net.getDeviceCount();"
-            "  var lc = net.getLinkCount();"
-            "  var parts = [];"
-            "  for (var i = 0; i < n; i++) {"
-            "    var d = net.getDeviceAt(i);"
-            "    var pc = d.getPortCount();"
-            "    var portNames = [];"
-            "    for (var j = 0; j < pc; j++) {"
-            "      var p = d.getPortAt(j);"
-            "      try {"
-            "        var ip = p.getIpAddress();"
-            "        if (ip && ip !== '0.0.0.0') {"
-            "          portNames.push(p.getName() + '=' + ip + '/' + p.getSubnetMask());"
-            "        } else {"
-            "          portNames.push(p.getName());"
-            "        }"
-            "      } catch(pe) { portNames.push(p.getName()); }"
-            "    }"
-            "    parts.push(d.getName() + '|' + d.getModel() + '|' + portNames.join(','));"
-            "  }"
-            "  reportResult('DEVICES:' + n + '|LINKS:' + lc + '\\n' + parts.join('\\n'));"
-            "} catch(e) { reportResult('ERROR:' + e); }"
-        )
-        result = _bridge_send_and_wait(js, timeout=10.0)
-        if result is None:
-            return _TIMEOUT_MSG
-        if result.startswith("ERROR:"):
-            return f"PT error: {result}"
-
-        lines_raw = result.split("\n")
-        header = lines_raw[0] if lines_raw else ""
-        device_lines = lines_raw[1:] if len(lines_raw) > 1 else []
-
-        output = [header, ""]
-        for line in device_lines:
-            if not line.strip():
-                continue
-            parts = line.split("|", 2)
-            name = parts[0] if len(parts) > 0 else "?"
-            model = parts[1] if len(parts) > 1 else "?"
-            ports = parts[2] if len(parts) > 2 else ""
-            port_info = f"  ({ports})" if ports else ""
-            output.append(f"  {name:20} [{model}]{port_info}")
-        return "\n".join(output)
+        data = _snapshot()
+        return data if isinstance(data, str) else format_query(data)
 
     @mcp.tool()
     def pt_export_topology() -> str:
         """
         Export a detailed snapshot of the full topology currently in Packet Tracer.
-        Returns JSON with devices (name, model, x/y position, interfaces with IPs)
-        and links (endpoints, ports, cable type). This gives a complete picture of
+        Returns devices (name, model, x/y position, interfaces with IPs) and links
+        (endpoints, ports, and the REAL cable type PT reports for each link:
+        straight, cross, serial, fiber...). This gives a complete picture of
         what is deployed so the LLM can reason about the topology.
         """
-        err = _check_bridge()
-        if err:
-            return err
-
-        js = (
-            "try {"
-            "  var net = ipc.network();"
-            "  var devCount = net.getDeviceCount();"
-            "  var linkCount = net.getLinkCount();"
-            "  var devices = [];"
-            "  for (var i = 0; i < devCount; i++) {"
-            "    var d = net.getDeviceAt(i);"
-            "    var ports = [];"
-            "    var pc = d.getPortCount();"
-            "    for (var j = 0; j < pc; j++) {"
-            "      var p = d.getPortAt(j);"
-            "      var pInfo = p.getName();"
-            "      try {"
-            "        var ip = p.getIpAddress();"
-            "        var mask = p.getSubnetMask();"
-            "        if (ip && ip !== '0.0.0.0') pInfo += ':' + ip + '/' + mask;"
-            "      } catch(e) {}"
-            "      var hasLink = (p.getLink() != null) ? '1' : '0';"
-            "      pInfo += ':' + hasLink;"
-            "      ports.push(pInfo);"
-            "    }"
-            "    var x = 0; var y = 0;"
-            "    try { x = d.getXCoordinate(); y = d.getYCoordinate(); } catch(e) {}"
-            "    devices.push(d.getName() + '|' + d.getModel() + '|' + x + '|' + y + '|' + ports.join(','));"
-            "  }"
-            "  var links = [];"
-            "  for (var k = 0; k < linkCount; k++) {"
-            "    var l = net.getLinkAt(k);"
-            "    var cls = l.getClassName();"
-            "    try {"
-            "      if (cls === 'Antenna') {"
-            "        var ap = l.getPort().getOwnerDevice().getName();"
-            "        var apPort = l.getPort().getName();"
-            "        links.push(ap + ':' + apPort + '|[wireless-signal]');"
-            "      } else {"
-            "        var p1 = l.getPort1();"
-            "        var p2 = l.getPort2();"
-            "        var d1 = p1.getOwnerDevice().getName();"
-            "        var d2 = p2.getOwnerDevice().getName();"
-            "        links.push(d1 + ':' + p1.getName() + '|' + d2 + ':' + p2.getName());"
-            "      }"
-            "    } catch(le) { links.push('UNKNOWN:' + cls); }"
-            "  }"
-            "  reportResult('TOPO|' + devCount + '|' + linkCount + '\\n' + devices.join('\\n') + '\\nLINKS\\n' + links.join('\\n'));"
-            "} catch(e) { reportResult('ERROR:' + e); }"
-        )
-        result = _bridge_send_and_wait(js, timeout=15.0)
-        if result is None:
-            return _TIMEOUT_MSG
-        if result.startswith("ERROR:"):
-            return f"PT error: {result}"
-
-        lines = result.split("\n")
-        header = lines[0] if lines else ""
-        header_parts = header.split("|")
-        dev_count = header_parts[1] if len(header_parts) > 1 else "?"
-        link_count = header_parts[2] if len(header_parts) > 2 else "?"
-
-        output = [f"=== Topology Export: {dev_count} devices, {link_count} links ===", ""]
-        in_links = False
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            if line == "LINKS":
-                output.append("")
-                output.append("--- Links ---")
-                in_links = True
-                continue
-            if in_links:
-                parts = line.split("|")
-                if len(parts) == 2:
-                    if parts[1] == "[wireless-signal]":
-                        output.append(f"  {parts[0]}  )))  [wireless signal]")
-                    else:
-                        output.append(f"  {parts[0]}  <-->  {parts[1]}")
-                else:
-                    output.append(f"  {line}")
-            else:
-                parts = line.split("|")
-                name = parts[0] if len(parts) > 0 else "?"
-                model = parts[1] if len(parts) > 1 else "?"
-                x = parts[2] if len(parts) > 2 else "?"
-                y = parts[3] if len(parts) > 3 else "?"
-                ports_raw = parts[4] if len(parts) > 4 else ""
-
-                output.append(f"  {name} [{model}] @ ({x}, {y})")
-                if ports_raw:
-                    for pstr in ports_raw.split(","):
-                        pparts = pstr.split(":")
-                        pname = pparts[0]
-                        ip_info = ""
-                        linked = ""
-                        if len(pparts) >= 3:
-                            if pparts[1] and "/" in pparts[1]:
-                                ip_info = f" IP={pparts[1]}"
-                            linked = " [linked]" if pparts[-1] == "1" else ""
-                        elif len(pparts) == 2:
-                            linked = " [linked]" if pparts[1] == "1" else ""
-                        if ip_info or linked:
-                            output.append(f"    {pname}{ip_info}{linked}")
-
-        return "\n".join(output)
+        data = _snapshot()
+        return data if isinstance(data, str) else format_export(data)
 
     @mcp.tool()
     def pt_delete_device(device_name: str) -> str:
@@ -213,10 +88,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        safe_name = _js_escape(device_name)
         js = (
             "try {"
-            f'  var dev = ipc.network().getDevice("{safe_name}");'
+            f"  var N = {json.dumps(device_name)};"
+            "  var dev = ipc.network().getDevice(N);"
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
             "  else {"
             "    var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
@@ -224,7 +99,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "      reportResult('ERROR:removeDevice API not available in this PT build');"
             "    } else {"
             "      lw.removeDevice(dev.getName());"
-            f'      var still = ipc.network().getDevice("{safe_name}");'
+            "      var still = ipc.network().getDevice(N);"
             "      reportResult(still ? 'ERROR:device still present after removeDevice' : 'OK:deleted');"
             "    }"
             "  }"
@@ -237,125 +112,102 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return f"Error: {result[6:]}"
         return f"Device '{device_name}' deleted from the topology."
 
+    def _edit(js: str) -> dict | str:
+        """Send one canvas edit that reads itself back; the reply, or the error text."""
+        err = _check_bridge()
+        if err:
+            return err
+        raw = _bridge_send_and_wait(js, timeout=8.0)
+        if raw is None:
+            return "No response from PT."
+        if raw.startswith("ERROR:"):
+            return f"Error: {raw[6:]}"
+        try:
+            data = json.loads(raw)
+        except Exception as exc:
+            return f"Unreadable reply from PT: {exc}"
+        if not data.get("ok"):
+            return f"Error: {_EDIT_ERRORS.get(data.get('error'), data.get('error'))}"
+        data.pop("ok", None)
+        return data
+
     @mcp.tool()
     def pt_rename_device(old_name: str, new_name: str) -> str:
         """
         Rename a device in the active Packet Tracer topology.
+        Reads the result back: `verified` is true only when the new name resolves
+        to the device and the old name no longer does.
 
         Parameters:
         - old_name: current device name
         - new_name: new name to assign
         """
-        err = _check_bridge()
-        if err:
-            return err
-
-        if not new_name.strip():
-            return "Error: new_name cannot be empty."
+        why = bad_device_name(new_name)
+        if why:
+            return f"Error: new_name refused: {why}."
         if old_name == new_name:
             return f"Device '{old_name}' already has that name — no changes."
-
-        safe_old = _js_escape(old_name)
-        safe_new = _js_escape(new_name)
-        js = (
-            "try {"
-            f'  var dev = ipc.network().getDevice("{safe_old}");'
-            "  if (!dev) { reportResult('ERROR:Device not found'); }"
-            # PT lets you set a duplicate name without complaint, and then getDevice()
-            # can only return one of the two: the other stays on the canvas
-            # but unreachable by name, and every tool that references it
-            # silently works on the wrong one.
-            f'  else if (ipc.network().getDevice("{safe_new}")) {{'
-            f"    reportResult('ERROR:DUPLICATE'); }}"
-            "  else {"
-            f'    dev.setName("{safe_new}");'
-            f'    reportResult("OK:renamed to {safe_new}");'
-            "  }"
-            "} catch(e) { reportResult('ERROR:' + e); }"
-        )
-        result = _bridge_send_and_wait(js, timeout=8.0)
-        if result is None:
-            return "No response from PT."
-        if result == "ERROR:DUPLICATE":
+        data = _edit(rename_device_js(old_name, new_name))
+        if data == "Error: duplicate":
             return (
                 f"Error: a device named '{new_name}' already exists. "
                 "Two devices with the same name make PT always resolve "
                 "to the same one, and the other becomes unreachable by name — "
                 "pick another name or rename the one that holds it first."
             )
-        if result.startswith("ERROR:"):
-            return f"Error: {result[6:]}"
-        return f"Device renamed: '{old_name}' → '{new_name}'"
+        if isinstance(data, str):
+            return data
+        data["summary"] = (
+            f"✅ Device renamed: '{old_name}' → '{new_name}' (verified)." if data["verified"]
+            else f"⚠ setName ran but the read-back does not match: new name present="
+                 f"{data.get('new_present')}, old name gone={data.get('old_absent')}."
+        )
+        return reply_json(data)
 
     @mcp.tool()
     def pt_move_device(device_name: str, x: int, y: int) -> str:
         """
         Move a device to new coordinates on the Packet Tracer canvas.
+        Reads the position back: `verified` is true when PT reports exactly (x, y).
 
         Parameters:
         - device_name: device name
         - x: X coordinate (logical view, e.g. 100-800)
         - y: Y coordinate (logical view, e.g. 100-600)
         """
-        err = _check_bridge()
-        if err:
-            return err
-
-        safe_name = _js_escape(device_name)
-        js = (
-            "try {"
-            f'  var dev = ipc.network().getDevice("{safe_name}");'
-            "  if (!dev) { reportResult('ERROR:Device not found'); }"
-            "  else {"
-            f"    dev.moveToLocation({int(x)}, {int(y)});"
-            f'    reportResult("OK:moved to {int(x)},{int(y)}");'
-            "  }"
-            "} catch(e) { reportResult('ERROR:' + e); }"
+        data = _edit(move_device_js(device_name, x, y))
+        if isinstance(data, str):
+            return data
+        data["summary"] = (
+            f"✅ Device '{device_name}' moved to ({x}, {y}) (verified)." if data["verified"]
+            else f"⚠ Asked for ({x}, {y}) but PT reads ({data.get('x')}, {data.get('y')})."
         )
-        result = _bridge_send_and_wait(js, timeout=8.0)
-        if result is None:
-            return "No response from PT."
-        if result.startswith("ERROR:"):
-            return f"Error: {result[6:]}"
-        return f"Device '{device_name}' moved to ({x}, {y})."
+        return reply_json(data)
 
     @mcp.tool()
     def pt_delete_link(device_name: str, interface_name: str) -> str:
         """
         Delete the link connected to a specific interface on a device in PT.
+        Reads both ends back: `verified` is true only when this port AND the
+        far-end port no longer have a link. Reports the far end and the cable.
 
         Parameters:
         - device_name: device name (e.g. "R1")
         - interface_name: interface name (e.g. "GigabitEthernet0/0", "FastEthernet0/1")
         """
-        err = _check_bridge()
-        if err:
-            return err
-
-        safe_dev = _js_escape(device_name)
-        safe_iface = _js_escape(interface_name)
-        js = (
-            "try {"
-            f'  var dev = ipc.network().getDevice("{safe_dev}");'
-            "  if (!dev) { reportResult('ERROR:Device not found'); }"
-            "  else {"
-            f'    var port = dev.getPort("{safe_iface}");'
-            "    if (!port) { reportResult('ERROR:Interface not found'); }"
-            "    else if (port.getLink() == null) {"
-            "      reportResult('ERROR:No link on this interface');"
-            "    } else {"
-            "      port.deleteLink();"
-            f'      reportResult("OK:link removed from {safe_iface}");'
-            "    }"
-            "  }"
-            "} catch(e) { reportResult('ERROR:' + e); }"
+        data = _edit(delete_link_js(device_name, interface_name))
+        if isinstance(data, str):
+            return data
+        data["cable"] = cable_type_name(data.pop("cable_raw", None))
+        peer = data.get("peer") or {}
+        far = f"{peer.get('device')}/{peer.get('port')}" if peer else "the far end (unreadable)"
+        data["summary"] = (
+            f"✅ Link {device_name}/{interface_name} <-> {far} deleted (verified on both ends)."
+            if data["verified"]
+            else f"⚠ deleteLink ran but the read-back is not clean: this port free="
+                 f"{data.get('local_free')}, {far} free={data.get('peer_free')}."
         )
-        result = _bridge_send_and_wait(js, timeout=8.0)
-        if result is None:
-            return "No response from PT."
-        if result.startswith("ERROR:"):
-            return f"Error: {result[6:]}"
-        return f"Link on {device_name}/{interface_name} deleted."
+        return reply_json(data)
 
     # ------------------------------------------------------------------
     # VALIDATED BUILDERS — pt_add_device, pt_add_link (MEJORA-01)
@@ -389,8 +241,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - x: X coordinate on canvas (default 200)
         - y: Y coordinate on canvas (default 200)
         """
-        if not name or not name.strip():
-            return "ERROR: Device name cannot be empty."
+        why = bad_device_name(name)
+        if why:
+            return f"ERROR: Device name refused: {why}."
 
         device_model = resolve_model(model)
         if device_model is None:
@@ -403,19 +256,22 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        safe_name = _js_escape(name.strip())
         js = (
-            "try {"
-            "  var net = ipc.network();"
-            "  var n = net.getDeviceCount();"
-            "  for (var i = 0; i < n; i++) {"
-            "    if (net.getDeviceAt(i).getName() === '" + safe_name + "') {"
-            "      reportResult('ERROR:DUPLICATE:Device \\'" + safe_name + "\\' already exists');"
-            "      throw 'dup';"
-            "    }"
+            "try {" + WALK_JS +
+            f"  var N = {json.dumps(name.strip())};"
+            "  var dup = false;"
+            "  __eachDevice(function(d) { if (d.getName() === N) { dup = true; } });"
+            "  if (dup) {"
+            "    reportResult('ERROR:DUPLICATE:Device \\'' + N + '\\' already exists');"
+            "    throw 'dup';"
             "  }"
-            f'  addDevice("{safe_name}", "{_js_escape(device_model.pt_type)}", {int(x)}, {int(y)});'
-            "  var check = ipc.network().getDevice('" + safe_name + "');"
+            # The deploy's creation path (lwAddDevice, with its addDevice fallback),
+            # then the IOS boot skip core.js's addDevice used to do.
+            f"  {add_device_call(name.strip(), device_model.pt_type, device_model.category, x, y)};"
+            "  var check = ipc.network().getDevice(N);"
+            "  if (check && typeof check.skipBoot === 'function') {"
+            "    var t = check.getType(); if (t === 0 || t === 1 || t === 16) { check.skipBoot(); }"
+            "  }"
             "  if (check) {"
             "    reportResult('OK:' + check.getName() + '|' + check.getModel());"
             "  } else {"
@@ -469,26 +325,27 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        sd1 = _js_escape(device1)
-        sp1 = _js_escape(port1)
-        sd2 = _js_escape(device2)
-        sp2 = _js_escape(port2)
-
+        # Each name reaches JS once, through json.dumps, as a variable; the
+        # messages below concatenate the variables, never the raw text.
+        names = (
+            f"var D1={json.dumps(device1)},P1={json.dumps(port1)},"
+            f"D2={json.dumps(device2)},P2={json.dumps(port2)};"
+        )
         js = (
-            "try {"
-            f"  var d1 = ipc.network().getDevice('{sd1}');"
-            f"  var d2 = ipc.network().getDevice('{sd2}');"
-            f"  if (!d1) {{ reportResult('ERROR:Device \\'{sd1}\\' not found'); throw 'stop'; }}"
-            f"  if (!d2) {{ reportResult('ERROR:Device \\'{sd2}\\' not found'); throw 'stop'; }}"
-            f"  var p1 = d1.getPort('{sp1}');"
-            f"  var p2 = d2.getPort('{sp2}');"
-            f"  if (!p1) {{ reportResult('ERROR:Port \\'{sp1}\\' not found on \\'{sd1}\\''); throw 'stop'; }}"
-            f"  if (!p2) {{ reportResult('ERROR:Port \\'{sp2}\\' not found on \\'{sd2}\\''); throw 'stop'; }}"
+            "try {" + names +
+            "  var d1 = ipc.network().getDevice(D1);"
+            "  var d2 = ipc.network().getDevice(D2);"
+            "  if (!d1) { reportResult('ERROR:Device \\'' + D1 + '\\' not found'); throw 'stop'; }"
+            "  if (!d2) { reportResult('ERROR:Device \\'' + D2 + '\\' not found'); throw 'stop'; }"
+            "  var p1 = d1.getPort(P1);"
+            "  var p2 = d2.getPort(P2);"
+            "  if (!p1) { reportResult('ERROR:Port \\'' + P1 + '\\' not found on \\'' + D1 + '\\''); throw 'stop'; }"
+            "  if (!p2) { reportResult('ERROR:Port \\'' + P2 + '\\' not found on \\'' + D2 + '\\''); throw 'stop'; }"
             "  if (p1.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp1}\\' on \\'{sd1}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port \\'' + P1 + '\\' on \\'' + D1 + '\\' already has a link'); throw 'stop';"
             "  }"
             "  if (p2.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port \\'' + P2 + '\\' on \\'' + D2 + '\\' already has a link'); throw 'stop';"
             "  }"
             # getModel() and NOT getClassName(): PT's class does not tell a
             # switch from a router (a 3560 says "Router" because it is multilayer, and
@@ -514,13 +371,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             )
 
         js_link = (
-            "try {"
-            f'  addLink("{sd1}", "{sp1}", "{sd2}", "{sp2}", "{resolved_cable}");'
-            f"  var pCheck = ipc.network().getDevice('{sd1}').getPort('{sp1}');"
+            "try {" + names +
+            f"  {add_link_call(device1, port1, device2, port2, resolved_cable)};"
+            "  var pCheck = ipc.network().getDevice(D1).getPort(P1);"
             "  if (pCheck && pCheck.getLink() != null) {"
             "    reportResult('OK:link created');"
             "  } else {"
-            f"    reportResult('ERROR:addLink returned but link not found on {sp1}');"
+            "    reportResult('ERROR:addLink returned but link not found on ' + P1);"
             "  }"
             "} catch(e) { reportResult('ERROR:' + e); }"
         )
@@ -579,15 +436,20 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         the port's API). If some `setXxx` does not exist on the device's model,
         it is silently ignored and only what took effect is reported.
         """
+        bad = [k for k, v in (("device", device), ("interface", interface),
+                              ("description", description), ("mac_address", mac_address),
+                              ("zone_member", zone_member)) if has_control_chars(v)]
+        if bad:
+            return f"ERROR: {', '.join(bad)} contains a line break; use single-line values."
         err = _check_bridge()
         if err:
             return err
 
         parts = [
             'var d=ipc.network().getDevice(' + json.dumps(device) + ');',
-            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: ' + _js_escape(device) + '"}));return;}',
+            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: "+' + json.dumps(device) + '}));return;}',
             'var p=d.getPort(' + json.dumps(interface) + ');',
-            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: ' + _js_escape(interface) + '"}));return;}',
+            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: "+' + json.dumps(interface) + '}));return;}',
             'var applied=[];',
         ]
 

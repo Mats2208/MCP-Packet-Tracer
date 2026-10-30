@@ -22,8 +22,10 @@ If a method is not here, do **not** assume it exists.
 - `d.getPorts()` → **Array of port-name strings** — use `.length`, `[i]`, `.join(",")`.
   ❌ never `.size()`, `.at(i)`, `.getName()` on it (TypeError → modal → freeze).
 - `d.getPort(name)` → Port | null · `d.getPower()/setPower(bool)/skipBoot()/setName(name)`
-- `d.moveToLocation(x, y)` → repositions on the logical canvas. It is what `pt_move_device` uses;
-  in a single `pt_send_raw` you can rearrange dozens of devices without one call per device.
+- `d.moveToLocation(x, y)` → `true`, and `d.getXCoordinate()` / `getYCoordinate()` then read back exactly
+  (x, y) (measured). It is what `pt_move_device` uses; in a single `pt_send_raw` you can rearrange dozens
+  of devices. The position read right after creation differs from the one asked: PT adjusts it.
+- `d.getType()` → numeric type: 0 router, 1 switch, 16 multilayer switch (3560), 12 IP phone (7960, measured); full map in the repo's `src/packet_tracer_mcp/shared/constants.py`.
 - `d.addModule(slot, allModuleTypes[model], modelName)` → bool  (**slot is a STRING**)
 - `d.getProcess("AclProcess")` → AclProcess | null (routers) · `d.enterCommand(cmd, mode)`
 - `d.getCommandLine()` → console handle with `getOutput()`, `enterCommand(cmd)`, `getPrompt()`.
@@ -34,6 +36,16 @@ If a method is not here, do **not** assume it exists.
   there is eaten as the yes/no answer. Prime it first: answer `no`, then send an empty
   command to clear `Press RETURN to get started.`
 - `d.setDhcpFlag(bool)`, `d.setDefaultGateway(ip)`
+
+**Link** — `var l = p.getLink();`
+- `l.getClassName()` → `"Cable"`; `l.getConnectionType()` → the cable enum **as a string**: `"8100"`
+  straight, `"8101"` cross (measured; same numbers as the table at the end).
+
+**Host gateway** — not on the device nor the port (`getDefaultGateway` is undefined there):
+- `d.getProcess("HostIpProcess").getDefaultGateway()` (measured). `getProcess("HostIp")` **throws**,
+  `getProcess("IpProcess")` is null.
+
+**IP phone (7960)** — `getType()` 12; ports `Switch` (uplink) and `PC`; its IP lives on port `Vlan1`.
 
 **Port** — `var p = d.getPort("GigabitEthernet0/0");`
 - `p.getLink()` → link | null (null = free) · `p.setIpSubnetMask(ip, mask)` · `p.setDefaultGateway(ip)`
@@ -50,12 +62,24 @@ If a method is not here, do **not** assume it exists.
   that is why issue #23 concluded it was impossible. They live one level down, on `s`.
 - `s.addPool(name)` (a repeated name does not duplicate) · `s.getPool(name)` → pool|null ·
   `s.removePool(name)` · `s.getPoolCount()` / `s.getPoolAt(i)` · `s.setEnable(bool)` / `s.isEnable()` ·
-  `s.addExcludedAddress(ip, ip)`. Avoid `addNewPool(...)`: 8 unnamed arguments in the reference.
+  `s.addExcludedAddress(ip, ip)`. `s.addNewPool(name, gateway, dns, start, mask, maxUsers, tftp, wlc)`
+  — **eight** arguments, measured: the only way to store TFTP and WLC (`pt_server_dhcp(tftp=…)` uses it).
 - Pool: `setNetworkAddress(ip)` · **`setNetworkMask(network, mask)` — TWO args**, one arg throws
   `Invalid arguments for IPC call` · `setDefaultRouter(ip)` · `setDnsServerIp(ip)` · `setStartIp(ip)` ·
   `setMaxUsers(n)` (recomputes the end from the start, so set start first) · `setEndIp(ip)`.
   Getters: `getDhcpPoolName/getNetworkAddress/getSubnetMask/getDefaultRouter/getDnsServerIp/
-  getStartIp/getEndIp/getMaxUsers`. There is **no** setter for TFTP, WLC or domain name.
+  getStartIp/getEndIp/getMaxUsers`. There is **no** pool setter for TFTP, WLC or domain name (use
+  `addNewPool` for the first two).
+- Whether a Server-PT pool has `getLeaseAt` was not measured: `pt_read_dhcp_leases` says
+  `lease_api: false` when it does not.
+
+**DHCP server on a router** (`ip dhcp pool`) — measured on a 2911 and a 2811
+- `var ds = d.getProcess("DhcpServerProcess");` (`DhcpServerMainProcess` is null).
+  `ds.getPoolCount()`, `ds.getPoolAt(i)` → `pool.getDhcpPoolName()`, `pool.getLeaseAt(k)` →
+  `{ipAddress, leaseTime, macAddress, port}`. There is **no** `getLeaseCount`: walk `k` until it throws
+  `invalid vector subscript` (caught, no modal) and cap the loop.
+
+**Syslog** — `getProcess("SyslogServer").getAllEntries()` → Array (entries as PT serializes them).
 - Behaviour measured live: PT never leases the server's own IP, but **does** lease the gateway's
   if the range covers it. The factory `serverPool` re-fits itself to the server's subnet with
   start = network address and no gateway, so next to a named pool it hands out `.1`.
@@ -87,6 +111,47 @@ If a method is not here, do **not** assume it exists.
 - `VlanManager`: `getVlanCount()` / `getVlanAt(i)` → `getVlanNumber()`, `getName()`, `getMacTable()` →
   `{entries:[{isDynamic, macAddress, port}]}`. Switch port: `isAccessPort()`, `getAccessVlan()`,
   `getNativeVlanId()`; `getPortSecurity()` is null when port security is not configured.
+
+**Modules (read)** — `d.getRootModule().getSlotCount()` / `getModuleAt(i)`;
+`module.getDescriptor().isHotSwappable()` → false on a 2911. Before a power-cycle,
+`d.enterCommand("write memory", "enable")` → `{first: 0}` saves the running-config (measured).
+
+**QoS (read only)** — `d.getPolicyMapManager()` is a **device** method (the processes `PolicyMapManager`,
+`QosProcess`, `ClassMapManager`, `ServicePolicyManager` are null):
+- `getPolicyMapCount()` (includes `?default-policy-map?`), `getPolicyMapAt(i)` → `getMapName()`,
+  `getClassCnt()`, `isPriorityConfigured()`, `isFairQueueConfigured()`, `getClassAt(k)` →
+  `getPriority()` (512 measured), `isBandwidthConfigured()`, `getBandwidth()`, `isFairQueueConfigured()`,
+  `isClassDefault()`.
+- A class has **no name** through the API (`getClassName()` → `"PolicyMapQosClass"`, the C++ class);
+  the order matches `show running-config`, so names come from the CLI.
+- ☠️ `PolicyMap.toString()` throws `Invalid arguments for IPC call` (a modal without try/catch).
+
+**NetFlow** — `d.getNetflowExporterManager()` exists but has no `getExporterCount` /
+`getFlowMonitorCount`: no measured way to read exporters' flows.
+
+**Opening a file** — `ipc.systemFileManager().fileExists(path)`; `ipc.appWindow().fileOpen(path)` →
+**0** when the file opened (measured on PT 9.0.1); confirm with
+`ipc.appWindow().getActiveFile().getSavedFilename()`.
+
+**Voice (CME)** — on a **2811**, `telephony-service`, `max-ephones`, `max-dn`, `ip source-address`,
+`auto assign`, `ephone-dn`, `number` all return status 0 (measured). On a 2911 `telephony-service`
+returns 2, also after `license boot module c2900 technology-package uck9` + `write` + `reload`.
+Phones already on stay at 0.0.0.0 until power-cycled (`setPower(false)` / `setPower(true)` + fast forward).
+
+**Wireless client (broken)** — `getProcess("WirelessClientProcess")` exists on a laptop:
+`getProfileCount()` 1, `getCurrentProfile()` returns the struct (ssid "Default"),
+`getCurrentNetworkCount()` 0. `addProfile(...)` and every `setCurrentProfile*` variant throw
+`invalid vector subscript`: WPA/WEP on the client is GUI only.
+
+**IoT (SBC-PT / MCU-PT)**
+- `getProcess("FileManager")` exists but is unusable: `getFileSystem(x)` → "File not exist: x" for every
+  path tried, `getDirectory("/")` has only a broken `getFile`. Programs cannot be written as files.
+- On an SBC, `runProject("Blink (Python)", "")` → true, and `runCodeInProject("Blink (Python)", code)` →
+  true and runs that Python (output in `getProgrammingSerialOutputs()`); it is not saved as a project.
+  No tool wraps it.
+- ☠️ One call with `digitalWrite(0, 1023)` on an MCU pin with no component +
+  `getEnvironment().getEnvironmentKeys()` + `setManualAdjustment("Temperature", 15)` hung and then
+  **crashed PT**. Never call those on an empty pin or the environment until isolated.
 
 **IOS config with a status per line**
 - `d.enterCommand(cmd, mode)` returns `{first: status, second: output}`. Status: 0 ok, 1 ambiguous,

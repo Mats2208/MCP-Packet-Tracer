@@ -58,7 +58,7 @@ def _fix_cables(plan: TopologyPlan) -> list[str]:
 
 
 def _fix_insufficient_ports(plan: TopologyPlan) -> list[str]:
-    """If a router does not have enough GigE ports, upgrade it to 2911."""
+    """If a router does not have enough Ethernet ports, upgrade it to 2911."""
     fixes = []
     port_usage: dict[str, int] = {}
 
@@ -72,15 +72,17 @@ def _fix_insufficient_ports(plan: TopologyPlan) -> list[str]:
         model = resolve_model(dev.model)
         if not model:
             continue
-        gig_count = len(get_ports_by_speed(model, PortSpeed.GIGABIT_ETHERNET))
+        # The planner falls back to FastEthernet on a router without Gigabit (2811).
+        port_count = (len(get_ports_by_speed(model, PortSpeed.GIGABIT_ETHERNET))
+                      + len(get_ports_by_speed(model, PortSpeed.FAST_ETHERNET)))
         needed = port_usage.get(dev.name, 0)
 
-        if needed > gig_count and dev.model != "2911":
+        if needed > port_count and dev.model != "2911":
             old_model = dev.model
             dev.model = "2911"
             fixes.append(
                 f"Router {dev.name} upgraded from {old_model} to 2911 "
-                f"(needs {needed} GigE ports, {old_model} only has {gig_count})"
+                f"(needs {needed} Ethernet ports, {old_model} only has {port_count})"
             )
 
     return fixes

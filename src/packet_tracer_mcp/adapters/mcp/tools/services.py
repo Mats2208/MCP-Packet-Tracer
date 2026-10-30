@@ -8,6 +8,7 @@ from ....domain.models.netflow import NetflowExporter
 from ....domain.models.errors import ErrorCode, PlanError
 from ....domain.rules.netflow_rules import validate_netflow, validate_netflow_against_topology
 from ....domain.models.dhcp_server import DEFAULT_SERVER_POOL, DhcpServerPool
+from ....domain.services.qos import qos_policy_maps
 from ....domain.rules.text_rules import has_control_chars
 from ....domain.rules.dhcp_server_rules import (
     resolve_range,
@@ -15,6 +16,7 @@ from ....domain.rules.dhcp_server_rules import (
     validate_dhcp_server_against_topology,
 )
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....infrastructure.generator.service_js import server_dhcp_js
 from ....shared.utils import reply_json
 
 
@@ -48,6 +50,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Unlike the rest of the advanced features, NetFlow does NOT go through CLI: it is
         configured directly and read back to verify it was applied. If
         the name already exists, it is reconfigured instead of duplicated.
+        The exported FLOWS are not read: no way to read them was measured on PT 9
+        (the exporter manager has no exporter or monitor count either).
 
         Parameters:
         - device: router where the exporter lives.
@@ -210,8 +214,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Creates or edits a DHCP pool on a Server-PT (GUI: Services > DHCP), validated against
         its subnet, switches the service on and reads every pool back. No CLI (a Server-PT has none).
-        Router DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions, TFTP/WLC or showing the
-        page on screen: pt_server_dhcp.
+        Router DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions or showing the page on
+        screen: pt_server_dhcp (same JS backend, server_dhcp_js).
 
         The server needs a static IP inside the pool's subnet (else warning DHCP_SERVER_NO_IP). PT
         never leases the server's own IP but DOES lease the gateway's if the range covers it.
@@ -271,87 +275,27 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 ))
 
         expected: dict = {}
-        if read_only:
-            body = ""
-        elif remove:
-            body = f"    __s.removePool({json.dumps(cfg.pool_name)});"
-        elif errors:
-            body = ""
-        else:
+        # The JS is server_dhcp_js, the same backend pt_server_dhcp uses: one
+        # implementation of the measured DHCP API for both tools.
+        js_kwargs: dict = {"port": cfg.port, "enable": None}
+        if remove:
+            js_kwargs["remove_pool"] = cfg.pool_name
+        elif not read_only and not errors:
             start, users = resolve_range(cfg)
             expected = {
                 "network": cfg.network, "mask": cfg.mask, "start": start,
                 "max_users": users,
             }
-            sets = [
-                f"    __p.setNetworkAddress({json.dumps(cfg.network)});",
-                # setNetworkMask takes (network, mask): with a single argument PT
-                # answers "Invalid arguments for IPC call".
-                f"    __p.setNetworkMask({json.dumps(cfg.network)}, {json.dumps(cfg.mask)});",
-            ]
             if cfg.gateway:
                 expected["gateway"] = cfg.gateway
-                sets.append(f"    __p.setDefaultRouter({json.dumps(cfg.gateway)});")
             if cfg.dns:
                 expected["dns"] = cfg.dns
-                sets.append(f"    __p.setDnsServerIp({json.dumps(cfg.dns)});")
-            # Order matters: setMaxUsers recomputes the end from the start.
-            sets.append(f"    __p.setStartIp({json.dumps(start)});")
-            sets.append(f"    __p.setMaxUsers({int(users)});")
-            name = json.dumps(cfg.pool_name)
-            drop = ""
-            if drop_factory_pool and cfg.pool_name != DEFAULT_SERVER_POOL:
-                factory = json.dumps(DEFAULT_SERVER_POOL)
-                drop = (
-                    f"    var __f = __s.getPool({factory});"
-                    "    if (__f && String(__f.getDefaultRouter()) === '0.0.0.0'"
-                    "        && (String(__f.getStartIp()) === String(__f.getNetworkAddress())"
-                    "            || String(__f.getStartIp()) === '0.0.0.0')) {"
-                    f"      __s.removePool({factory}); __dropped = true;"
-                    "    }"
-                )
-            body = (
-                f"    var __p = __s.getPool({name});"
-                f"    if (!__p) {{ __s.addPool({name}); __p = __s.getPool({name}); __created = true; }}"
-                "    if (!__p) { __fail = 'PT did not create the pool'; } else {"
-                + "".join(sets) +
-                f"    __s.setEnable({'true' if enabled else 'false'});"
-                + drop +
-                "    }"
+            js_kwargs.update(
+                pool=cfg.pool_name, network=cfg.network, mask=cfg.mask,
+                gateway=cfg.gateway, dns=cfg.dns, start_ip=start, max_users=users,
+                enable=enabled, drop_factory_pool=drop_factory_pool,
             )
-
-        js = (
-            "try {"
-            f"  var __d = ipc.network().getDevice({json.dumps(cfg.device)});"
-            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
-            "  else {"
-            "    var __m = (typeof __d.getProcess === 'function') ? __d.getProcess('DhcpServerMain') : null;"
-            "    if (!__m) { reportResult(JSON.stringify({ found: true, supported: false })); }"
-            "    else {"
-            f"    var __s = __m.getDhcpServerProcessByPortName({json.dumps(cfg.port)});"
-            "    if (!__s) { reportResult(JSON.stringify({ found: true, supported: true, port_ok: false })); }"
-            "    else {"
-            "    var __created = false; var __dropped = false; var __fail = '';"
-            + body +
-            "    var __pools = [];"
-            "    for (var __i = 0; __i < __s.getPoolCount(); __i++) {"
-            "      var __q = __s.getPoolAt(__i);"
-            "      __pools.push({ name: String(__q.getDhcpPoolName()),"
-            "        network: String(__q.getNetworkAddress()), mask: String(__q.getSubnetMask()),"
-            "        gateway: String(__q.getDefaultRouter()), dns: String(__q.getDnsServerIp()),"
-            "        start: String(__q.getStartIp()), end: String(__q.getEndIp()),"
-            "        max_users: __q.getMaxUsers() });"
-            "    }"
-            "    var __ip = '';"
-            f"    try {{ __ip = String(__d.getPort({json.dumps(cfg.port)}).getIpAddress()); }} catch (__x) {{}}"
-            "    reportResult(JSON.stringify({ found: true, supported: true, port_ok: true,"
-            "      enabled: !!__s.isEnable(), server_ip: __ip, created: __created,"
-            "      dropped_factory_pool: __dropped, error: __fail, pools: __pools }));"
-            "    }"
-            "    }"
-            "  }"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
+        js = server_dhcp_js(cfg.device, **js_kwargs)
 
         payload: dict = {
             "valid": not errors,
@@ -383,18 +327,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception as exc:
             return f"Unreadable reply from PT: {exc}"
 
-        if not data.get("found"):
-            return (
-                f"'{device}' does not exist in the active topology. "
-                "Use pt_query_topology to see the real names."
-            )
-        if not data.get("supported"):
-            return (
-                f"'{device}' has no Server-PT DHCP server. If it is a router, "
-                "DHCP goes through the CLI (`ip dhcp pool`) or the plan with dhcp=True."
-            )
-        if not data.get("port_ok"):
-            return f"'{device}' has no DHCP server on port '{port}'."
+        if data.get("ok") is False:
+            return {
+                "device_not_found": (f"'{device}' does not exist in the active topology. "
+                                     "Use pt_query_topology to see the real names."),
+                "no_DhcpServerMain": (f"'{device}' has no Server-PT DHCP server. If it is a "
+                                      "router, DHCP goes through the CLI (`ip dhcp pool`) or "
+                                      "the plan with dhcp=True."),
+                "port_not_found": f"'{device}' has no DHCP server on port '{port}'.",
+            }.get(data.get("error"), f"PT error: {data.get('error')}")
 
         payload.update(data)
         payload["sent"] = True
@@ -448,13 +389,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Reads a device's REAL QoS configuration: class-maps and policy-maps.
 
-        Read only: QoS cannot be created programmatically in PT, so to
-        CONFIGURE it you send IOS CLI with pt_send_raw
-        (`configureIosDevice`). This tool is for checking that it was applied.
+        Read only (PT's API cannot create class/policy-maps): to CONFIGURE QoS
+        use pt_apply_qos. This tool checks that it was applied.
 
-        Returns, per class-map, its match type and CLI representation; per
-        policy-map, how many classes it has and which features it uses (bandwidth, priority,
-        shaping, fair-queue).
+        Returns, per class-map, its match type and CLI; per policy-map, its
+        classes in order, each with its name, priority (kbps), bandwidth (kbps),
+        fair-queue and whether it is class-default. PT does not give a class
+        its name, so names come from the running-config, matched by position.
 
         Parameters:
         - device: router name in PT.
@@ -466,9 +407,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         dev = json.dumps(device.strip())
+        # __call: a guarded getter (missing or throwing -> null). PolicyMap.toString()
+        # THROWS on PT 9 (measured), so it is never called; the CLI comes from the
+        # running-config instead.
         js = (
             "try {"
             f"  var __d = ipc.network().getDevice({dev});"
+            "  function __call(o, m) { try { return (o && typeof o[m] === 'function') ? o[m]() : null; }"
+            "    catch (__x) { return null; } }"
             "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
             "  else if (typeof __d.getClassMapManager !== 'function') {"
             "    reportResult(JSON.stringify({ found: true, supported: false }));"
@@ -482,29 +428,47 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "      try {"
             "        var __c = __cm.getClassMapAt(__i);"
             "        if (!__c) continue;"
-            "        __cs.push({ name: __c.getMapName(), description: __c.getDescription(),"
-            "          match: __c.getMatchTypeString(), statements: __c.getStatementCnt(),"
-            "          is_default: !!__c.isClassDefault(), cli: __c.toString() });"
+            "        __cs.push({ name: __c.getMapName(), description: __call(__c, 'getDescription'),"
+            "          match: __call(__c, 'getMatchTypeString'), statements: __call(__c, 'getStatementCnt'),"
+            "          is_default: !!__call(__c, 'isClassDefault'), cli: __call(__c, 'toString') });"
             "      } catch (__ce) {}"
             "    }"
-            "    if (__pm) {"
-            "      var __pn = __pm.getPolicyMapCount();"
-            "      for (var __j = 0; __j < __pn; __j++) {"
-            "        try {"
-            "          var __p = __pm.getPolicyMapAt(__j);"
-            "          if (!__p) continue;"
-            "          __ps.push({ name: __p.getMapName(), classes: __p.getClassCnt(),"
-            "            total_bandwidth: __p.getTotalBandwidth(),"
-            "            bandwidth: !!__p.isBandwidthConfigured(),"
-            "            priority: !!__p.isPriorityConfigured(),"
-            "            shaping: !!__p.isShapeConfigured(),"
-            "            fair_queue: !!__p.isFairQueueConfigured(),"
-            "            cli: __p.toString(true) });"
-            "        } catch (__pe) {}"
-            "      }"
+            "    var __pn = 0;"
+            "    try { __pn = __pm ? __pm.getPolicyMapCount() : 0; } catch (__x) {}"
+            "    for (var __j = 0; __j < __pn; __j++) {"
+            "      try {"
+            "        var __p = __pm.getPolicyMapAt(__j);"
+            "        if (!__p) continue;"
+            "        var __name = String(__p.getMapName());"
+            "        if (__name.indexOf('default-policy-map') >= 0) continue;"
+            "        var __k = 0, __cls = [];"
+            "        try { __k = __p.getClassCnt(); } catch (__x) {}"
+            "        for (var __q = 0; __q < __k; __q++) {"
+            "          try {"
+            "            var __pc = __p.getClassAt(__q);"
+            "            if (!__pc) continue;"
+            "            __cls.push({ priority_kbps: __call(__pc, 'getPriority'),"
+            "              bandwidth_configured: !!__call(__pc, 'isBandwidthConfigured'),"
+            "              bandwidth: __call(__pc, 'getBandwidth'),"
+            "              fair_queue: !!__call(__pc, 'isFairQueueConfigured'),"
+            "              class_default: !!__call(__pc, 'isClassDefault') });"
+            "          } catch (__x) {}"
+            "        }"
+            "        __ps.push({ name: __name, class_count: __k,"
+            "          priority: !!__call(__p, 'isPriorityConfigured'),"
+            "          fair_queue: !!__call(__p, 'isFairQueueConfigured'),"
+            "          bandwidth: __call(__p, 'isBandwidthConfigured'),"
+            "          shaping: __call(__p, 'isShapeConfigured'),"
+            "          total_bandwidth: __call(__p, 'getTotalBandwidth'), classes: __cls });"
+            "      } catch (__pe) {}"
+            "    }"
+            "    var __rc = null;"
+            "    if (__ps.length && typeof __d.enterCommand === 'function') {"
+            "      try { var __r = __d.enterCommand('show running-config', 'enable');"
+            "        __rc = { first: String(__r.first), second: String(__r.second) }; } catch (__x) {}"
             "    }"
             "    reportResult(JSON.stringify({ found: true, supported: true,"
-            "      class_maps: __cs, policy_maps: __ps }));"
+            "      class_maps: __cs, policy_maps: __ps, running_config: __rc }));"
             "  }"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
@@ -528,11 +492,21 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return f"'{device}' does not expose QoS (PT's hosts don't have it)."
 
         cmaps = data.get("class_maps", [])
-        pmaps = data.get("policy_maps", [])
+        pmaps, warnings = qos_policy_maps(data.get("policy_maps", []),
+                                          data.pop("running_config", None))
+        data["policy_maps"] = pmaps
+        if warnings:
+            data["warnings"] = warnings
         custom = [c for c in cmaps if not c.get("is_default")]
         data["summary"] = (
             f"{len(cmaps)} class-map(s) ({len(custom)} custom), "
-            f"{len(pmaps)} policy-map(s). QoS is read-only through the API: "
-            "to configure it use IOS CLI."
+            f"{len(pmaps)} policy-map(s)"
+            + "".join(f"; {p['name']}: " + ", ".join(
+                f"{c['name'] or '?'}" + (f" priority {c['priority_kbps']} kbps"
+                                         if c["priority_kbps"] else "")
+                + (f" bandwidth {c['bandwidth_kbps']} kbps" if c["bandwidth_kbps"] else "")
+                + (" fair-queue" if c["fair_queue"] else "")
+                for c in p["classes"]) for p in pmaps)
+            + ". To configure QoS use pt_apply_qos."
         )
         return reply_json(data)

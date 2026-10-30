@@ -18,6 +18,7 @@ from ...infrastructure.execution.live_bridge import (
     DEFAULT_PORT, PTCommandBridge, next_rid, report_result_js,
 )
 from ...infrastructure.generator.simulation_js import FAST_FORWARD_JS, parse_fast_forward
+from ...infrastructure.generator.walk_js import WALK_JS
 
 # Commands per POST. Bounded so large topologies stay well below the bridge's
 # body limit, and so progress is visible in PT.
@@ -37,19 +38,18 @@ TIMEOUT_MSG = (
 # feed the health check and the diff. Each port is stored with its name as is
 # (including subinterfaces "Gig0/0.10" if any).
 LIVE_DEVICES_JS = (
-    "var net=ipc.network();var n=net.getDeviceCount();var arr=[];"
-    "for(var i=0;i<n;i++){"
-    "var d=net.getDeviceAt(i);var pc=d.getPortCount();var ports=[];"
-    "for(var j=0;j<pc;j++){"
-    "var p=d.getPortAt(j);var ip='';var mask='';var up=false;var linked=false;"
+    WALK_JS +
+    "var net=ipc.network();var arr=[];"
+    "__eachDevice(function(d){var ports=[];"
+    "__eachPort(d,function(p){var ip='';var mask='';var up=false;var linked=false;"
     "try{ip=p.getIpAddress()||'';}catch(pe){}"
     "try{mask=p.getSubnetMask()||'';}catch(pe){}"
     "try{up=(typeof p.isPortUp==='function')?p.isPortUp():false;}catch(pe){}"
     "try{linked=(p.getLink()!=null);}catch(pe){}"
     "ports.push({name:p.getName(),ip:ip,mask:mask,up:up,linked:linked});"
-    "}"
+    "});"
     "arr.push({name:d.getName(),model:d.getModel(),ports:ports});"
-    "}"
+    "});"
     "reportResult(JSON.stringify({devices:arr,links:net.getLinkCount()}));"
 )
 

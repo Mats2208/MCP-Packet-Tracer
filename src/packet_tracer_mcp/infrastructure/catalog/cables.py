@@ -44,6 +44,30 @@ ALL_LINK_TYPES: dict[str, int] = {
     "custom_io": 8114,
 }
 
+# Link.getConnectionType() answers this enum as a string ("8100" straight,
+# "8101" cross: measured on PT 9, 2026-10-30); the rest follow the same table.
+CABLE_ENUM_NAMES: dict[int, str] = {
+    v: k for k, v in ALL_LINK_TYPES.items() if not k.startswith("ethernet-")
+}
+
+
+def cable_type_name(raw) -> str | None:
+    """"straight", "cross"... for a getConnectionType() value; None when PT gave none.
+
+    An enum value outside the table comes back as "unknown:<raw>" instead of
+    being guessed.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return CABLE_ENUM_NAMES.get(int(float(text)), f"unknown:{text}")
+    except ValueError:
+        return f"unknown:{text}"
+
+
 # Rules: (category_a, category_b) → cable type
 CABLE_RULES: dict[tuple[str, str], str] = {
     ("router", "switch"):       "straight",

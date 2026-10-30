@@ -15,6 +15,29 @@ from ...shared.constants import (
 )
 
 
+# ONE way to create devices and links, for the deploy script and the live tools
+# alike: the extension's lwAddDevice (logical workspace, with a fallback to the
+# global addDevice for models lw.addDevice silently refuses, e.g. Laptop-PT) and
+# lwAddLink (numeric CONNECT_TYPE). core.js's addDevice/addLink stay in the
+# extension for pt_send_raw users; nothing in Python calls them directly.
+
+def add_device_call(name: str, model: str, category: str, x: int, y: int) -> str:
+    """`lwAddDevice(...)` for one device, every text field through json.dumps."""
+    return (
+        f"lwAddDevice({json.dumps(name)}, {pt_device_type(model, category)}, "
+        f"{json.dumps(model)}, {int(x)}, {int(y)})"
+    )
+
+
+def add_link_call(device_a: str, port_a: str, device_b: str, port_b: str, cable: str) -> str:
+    """`lwAddLink(...)` for one link, with PT's numeric CONNECT_TYPE for `cable`."""
+    connect_type = PT_CONNECT_TYPE.get(cable, PT_CONNECT_TYPE_DEFAULT)
+    return (
+        f"lwAddLink({json.dumps(device_a)}, {json.dumps(port_a)}, "
+        f"{json.dumps(device_b)}, {json.dumps(port_b)}, {connect_type})"
+    )
+
+
 def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     """Generates a PTBuilder JS script from a validated plan.
 
@@ -28,11 +51,7 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
     # JS literal and the rest was executed as code in the Script Engine.
     # It is the same pattern that generate_executable_script() below already uses.
     for dev in plan.devices:
-        device_type = pt_device_type(dev.model, dev.category)
-        lines.append(
-            f'lwAddDevice({json.dumps(dev.name)}, {device_type}, '
-            f'{json.dumps(dev.model)}, {int(dev.x)}, {int(dev.y)});'
-        )
+        lines.append(add_device_call(dev.name, dev.model, dev.category, dev.x, dev.y) + ";")
 
     # WiFi laptops: swap the ethernet NIC for a wireless one (→ Wireless0). It must go
     # before the links/config; auto-association to the AP is over RF (default SSID).
@@ -47,11 +66,8 @@ def generate_ptbuilder_script(plan: TopologyPlan) -> str:
         )
 
     for link in plan.links:
-        connect_type = PT_CONNECT_TYPE.get(link.cable, PT_CONNECT_TYPE_DEFAULT)
-        lines.append(
-            f'lwAddLink({json.dumps(link.device_a)}, {json.dumps(link.port_a)}, '
-            f'{json.dumps(link.device_b)}, {json.dumps(link.port_b)}, {connect_type});'
-        )
+        lines.append(add_link_call(link.device_a, link.port_a, link.device_b, link.port_b,
+                                   link.cable) + ";")
 
     return "\n".join(lines)
 
@@ -75,6 +91,15 @@ def generate_executable_script(plan: TopologyPlan) -> str:
 
     from .cli_config_generator import static_host_ips
 
+    # Hosts keep the extension's configurePcIp here instead of host_js.host_ip_config_js
+    # (what pt_host_ip_config sends), on purpose:
+    # - host_ip_config_js runs dhcpRun at once. In the deploy the routers' DHCP pools
+    #   are still being configured, so the request would fail; configurePcIp only sets
+    #   the DHCP flag and the lease is renewed after the deploy (renew_dhcp_leases).
+    # - it reports through reportResult, and the deploy lines are queued
+    #   fire-and-forget: every host would push an unread result onto the bridge.
+    # - it is ~3.5 KB per host against ~60 bytes, on a script that can hold
+    #   a hundred hosts.
     pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
 
     # Servers and the last host of each subnet keep their planned IP (Fix F17);

@@ -73,7 +73,8 @@ Ports are named `<type><chassis>/<subslot>/<port>`:
 ### To install several modules at once
 USE `pt_install_modules_batch` instead of N calls to `pt_add_module`. The batch powers all of them
 off → addModule on all → powers all on, in ONE SINGLE runCode JS. Individual calls power-cycle the
-device once each.
+device once each. A power-cycle reloads the startup-config, so routers/switches are saved first
+(write memory) and the reply says which devices restarted and whether the save worked.
 
 ## Live Deploy (PT in real time)
 1. Check the channel: `pt_bridge_status`
@@ -114,15 +115,36 @@ device once each.
 - HSRP, BGP and QoS (class-map/policy-map/service-policy) on a router: `pt_apply_hsrp`,
   `pt_apply_bgp`, `pt_apply_qos`. EtherChannel (LACP/PAgP/on, optional trunk) on a switch:
   `pt_apply_etherchannel`. Each IOS line is verified; measured on a 2911 / 2960-24TT in PT 9.
-- NOT supported: CME voice (`telephony-service`, `ephone-dn`). A 2911 without the UC
-  license answers status 2 (invalid input), so there is no tool for it.
-- IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers via CLI, hosts via SLAAC).
+- CME voice (IP phones): `pt_apply_voice` — ONLY on a 2811 (`pt_full_build(router_model="2811")`
+  or pt_add_device "2811"). Measured end to end: 2811 + 3560-24PS (PoE) + two 7960 (cabled on
+  their `Switch` port) → DHCP `option 150`, leases, and `show ephone` REGISTERED. The tool
+  power-cycles the phones afterwards (`restart_phones=True`); a phone's IP lives on `Vlan1`.
+  A 2911 answers status 2 (invalid input) to `telephony-service`, even after `license boot
+  module c2900 technology-package uck9` + reload. Not measured: `ephone` + `mac-address`,
+  `switchport voice vlan`.
+- IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers via CLI, hosts via SLAAC); a
+  static host IPv6 with `pt_host_ip_config(ipv6_address="2001:db8:0:1::10/64")`.
 - WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC
-  + AP auto-associated on the default SSID). NOTE: the AP's custom SSID/WPA2 is NOT configurable
-  through PT's API (GUI only) — the default SSID is used.
+  + AP auto-associated on the default SSID). The AP's SSID, broadcast and MAC filter are set with
+  `pt_wireless_ap`; WPA/WEP is NOT settable (the client profile API throws), so laptops only join
+  "Default".
 - Verification: `pt_diff` (plan vs live PT), `pt_health_check` (down links, duplicate
   IPs) and `pt_verify_connectivity(from_device, to_ip)` — a REAL ping from the
   device's console, with the result parsed (reached / did not reach).
+
+## Verify every change, then read it back
+- Every config tool (ACL, NAT, VLAN, STP, port-security, hardening, interface tuning, HSRP, BGP,
+  QoS, EtherChannel, voice) replies `verified`, `verification` (verified / rejected / error /
+  unverified = PT never answered) and `rejected_lines` (line, command, IOS reason). Only
+  `verified: true` means it landed; fix a rejected line instead of resending blind.
+- `pt_move_device`, `pt_rename_device` and `pt_delete_link` read the canvas back and reply `verified`.
+- Read back with the matching reader: pt_read_vlans (VLAN, port-security), pt_read_acl, pt_read_nat,
+  pt_read_stp, pt_read_qos, pt_read_routes + pt_read_ospf (routing), pt_read_dhcp_leases (DHCP,
+  voice), pt_read_device_panel (host IP and gateway), pt_inspect_ports (real cable and far end).
+- Diagnose: pt_health_check → pt_inspect_ports → pt_read_routes/ospf/arp/mac_table →
+  pt_send_pdu(source, destination, steps=10) for PT's own reason per layer → pt_verify_connectivity.
+  The first ping/PDU can die on ARP: repeat once.
+- After cabling, `pt_fast_forward()` instead of waiting ~30 s for STP.
 
 ## Inspecting the LIVE state (they read the device, not the plan)
 - `pt_audit_security(device="")`: real security posture with severity. Detects a
@@ -155,8 +177,10 @@ device once each.
   pool_name="serverPool", enabled=True)`: creates or edits the pool (the GUI's
   Services > DHCP) after validating it against the subnet, switches the service on and
   reads it back. Without `network` it only reads. `remove=True` deletes the pool;
-  accepts `dry_run=True`. `pt_server_dhcp` does the same panel-style and also handles
-  exclusion ranges, TFTP/WLC and showing the Services page (UI mode).
+  accepts `dry_run=True`. `pt_server_dhcp` runs the same JS backend panel-style and also
+  handles exclusion ranges, TFTP/WLC options (stored through `addNewPool`'s eight arguments,
+  measured) and showing the Services page (UI mode).
+- `pt_read_dhcp_leases(device)`: the leases a router pool (measured) or a Server-PT handed out.
 - A ROUTER's DHCP is a different thing: it goes through the CLI (`ip dhcp pool`), which is
   what the plan emits with `dhcp=True`.
 - The server needs a static IP inside the pool's subnet. PT never hands out the server's
@@ -171,7 +195,9 @@ device once each.
   reconfigures it instead of duplicating it. Accepts `remove=True` and `dry_run=True`.
 - `pt_read_qos(device)`: READ ONLY. QoS cannot be created through PT's object API;
   configure it with `pt_apply_qos` (IOS CLI, verified line by line) and use this
-  tool to read back what landed.
+  tool to read back what landed: each class with its priority/bandwidth, names taken from
+  the running-config (PT gives a class no name).
+- NetFlow exported flows cannot be read through the API.
 
 ## Step-by-step simulation
 Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_send_pdu` or `pt_verify_connectivity`)
@@ -219,7 +245,8 @@ PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 94 tools. Use `pt_full_build` for the general case (new topology with configs).
+- Name devices with letters, digits, `-` and `_` only (no quotes or slashes).
+- The MCP has 96 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.
@@ -347,8 +374,8 @@ subnet, and switches the service on.
 The equivalent of Services > DHCP in the GUI. Not via CLI (a Server-PT
 has none): configured through the native API and read back to confirm.
 For DHCP on a ROUTER use the plan (`dhcp=True`) or the CLI `ip dhcp pool`.
-For exclusion ranges, TFTP/WLC options or showing the Services page on
-screen, use pt_server_dhcp.
+For exclusion ranges or showing the Services page on screen, use
+pt_server_dhcp (same JS backend).
 
 The server needs a static IP inside the pool's subnet; if it doesn't
 have one the tool warns (DHCP_SERVER_NO_IP). PT never hands out the
@@ -431,7 +458,7 @@ Parameters:
 - has_wan: Include WAN
 - dhcp: Configure DHCP
 - routing: static, ospf, eigrp, rip, none
-- router_model: 1941, 2901, 2911, ISR4321
+- router_model: 1941, 2901, 2911, ISR4321, 2811 (FastEthernet only; the CME voice router)
 - switch_model: 2960-24TT, 3560-24PS
 - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
   branch_office, router_on_a_stick, three_router_triangle, custom
@@ -465,8 +492,10 @@ Rules that fail silently:
 "usb". Never "crossover": use "cross". Prefer pt_add_link (it validates).
 - Ports: 2911 GigabitEthernet0/0-0/2; 2960 FastEthernet0/1-24 + GigabitEthernet0/1; hosts FastEthernet0.
 - Router DHCP is CLI (dhcp=True in plans); Server-PT DHCP is pt_configure_dhcp_server / pt_server_dhcp.
-- Config tools accept dry_run=True. Read live state with pt_query_topology, pt_inspect_ports, \
-pt_read_vlans, pt_health_check.
+- Config tools accept dry_run=True. Only `verified: true` means IOS took every line; read \
+`rejected_lines`, then read back (pt_read_routes/ospf/vlans/acl/nat/qos/dhcp_leases).
+- Diagnose with pt_health_check, pt_inspect_ports, the pt_read_* tools and \
+pt_send_pdu(steps=N) (the trace says why), not by parsing `show`. pt_fast_forward after cabling.
 
 Device windows (CLI, Command Prompt, Desktop apps, Services): pt_cli, pt_host_command, pt_server_* and \
 friends work headless; pt_ui_mode("ui") or show=True opens PT's window, capture=True saves a PNG.
