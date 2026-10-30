@@ -1335,6 +1335,14 @@
    "type": "object"
   }
  },
+ "pt_fast_forward": {
+  "description": "Realtime's \"Fast Forward Time\" button: moves PT's clock ahead at once.\n\nUse it after cabling or changing switch links: STP needs ~30 s to put a\nnew port in forwarding, and fast-forwarding gets there immediately, so a\nping right after it works (measured on PT 9.0). Realtime only (in\nSimulation use pt_simulation_step). The network is not reset.\npt_live_deploy and pt_verify_connectivity already do this themselves.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_fast_forwardArguments",
+   "type": "object"
+  }
+ },
  "pt_fix_plan": {
   "description": "Tries to fix the plan's errors automatically.\nFixes cables, upgrades routers that lack ports, reassigns ports.\n\nParameters:\n- plan_json: JSON of the plan to fix",
   "inputSchema": {
@@ -2340,6 +2348,37 @@
     }
    },
    "title": "pt_screenshotArguments",
+   "type": "object"
+  }
+ },
+ "pt_send_pdu": {
+  "description": "The GUI's \"Add Simple PDU\": an ICMP echo from one device to another.\n\nParameters:\n- source, destination: device names (pt_query_topology).\n- simulation: True (default) switches PT to Simulation first, so the\n  PDU waits in the event list; False switches to Realtime, where PT\n  delivers it at once.\n- steps: in Simulation, how many events to step forward right away\n  (0-100). With steps > 0 the reply includes the packet trace (path,\n  drops and PT's per-layer reason), like pt_read_packet_trace.\n\nThe first PDU between two devices can die at a router waiting on ARP,\nexactly like the first ping: send it again.\n\nExample: pt_send_pdu(\"PC1\", \"PC4\", steps=10)",
+  "inputSchema": {
+   "properties": {
+    "destination": {
+     "title": "Destination",
+     "type": "string"
+    },
+    "simulation": {
+     "default": true,
+     "title": "Simulation",
+     "type": "boolean"
+    },
+    "source": {
+     "title": "Source",
+     "type": "string"
+    },
+    "steps": {
+     "default": 0,
+     "title": "Steps",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "title": "pt_send_pduArguments",
    "type": "object"
   }
  },

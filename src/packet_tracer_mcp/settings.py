@@ -169,14 +169,16 @@ device once each.
   checking that it was applied.
 
 ## Step-by-step simulation
-Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`)
+Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_send_pdu` or `pt_verify_connectivity`)
 → `pt_read_packet_trace()` → `pt_simulation_step(action="forward")` to advance.
 - `pt_read_packet_trace` returns, per frame, the path AND PT's decision log per
   OSI layer — the same text as the GUI's "PDU Details" panel. That is where the
   real cause of a failing ping is ("The next-hop IP address is not in the ARP
   table..."), not just the symptom.
-- `pt_send_pdu` does NOT exist: PT does not let an extension originate a packet
-  the way the GUI's "Add Simple PDU" button does. Generate traffic with a real ping.
+- `pt_send_pdu(source, destination, simulation=True, steps=0)` is the GUI's "Add
+  Simple PDU" (ICMP echo); with steps > 0 it steps and returns the trace.
+- `pt_fast_forward()`: Realtime's "Fast Forward Time"; STP converges at once, so a
+  link cabled moments ago answers a ping right away. Never reset the network.
 
 ## Device panel (CLI, Desktop, Services) — headless or UI
 Everything in a device's window is driven through the API, without taking the mouse or keyboard:

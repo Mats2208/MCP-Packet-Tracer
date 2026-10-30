@@ -252,6 +252,8 @@ them in real time, which is what makes a step-by-step trace possible.
 | `pt_simulation_mode` | Switch between Realtime and Simulation. |
 | `pt_simulation_step` | Advance, rewind or reset the simulation (`forward` / `back` / `reset`). |
 | `pt_read_packet_trace` | Read the event list: per frame the device, ingress/egress port, source, destination, traffic type and outcome — **plus PT's own per-OSI-layer explanation** of what the device decided and why. |
+| `pt_send_pdu` | The GUI's *Add Simple PDU*: an ICMP echo between two devices. In Simulation it waits in the event list; with `steps > 0` it is stepped and the trace comes back in the same reply. |
+| `pt_fast_forward` | Realtime's *Fast Forward Time*: STP converges at once, so a link cabled moments ago answers a ping right away. The deploy and `pt_verify_connectivity` already use it. |
 
 !!! tip "`pt_read_packet_trace` answers *why*, not just *what*"
     The decision log is the same text Packet Tracer shows in its **PDU Details**
@@ -263,10 +265,12 @@ them in real time, which is what makes a step-by-step trace possible.
           send an ARP request for that IP address and buffers this packet.
     ```
 
-!!! warning "There is no `pt_send_pdu`"
-    Packet Tracer does not let an extension originate a packet the way the GUI's
-    *Add Simple PDU* button does. Generate traffic the way a user would —
-    `pt_verify_connectivity` runs a real ping — and then read the trace.
+!!! tip "`pt_send_pdu` is the GUI's *Add Simple PDU*"
+    It calls the same `addSimplePdu(source, destination)` the button does (0 = added,
+    30 = the destination does not exist; any other code is returned as is). The
+    first PDU between two devices can die at a router waiting on ARP, exactly like
+    the first ping: send it again. `pt_verify_connectivity` remains the way to run a
+    real ping from a device's console.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

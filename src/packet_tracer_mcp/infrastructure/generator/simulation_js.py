@@ -7,7 +7,7 @@ can check the JS without a bridge. Measured against PT 9.0 (2026-10-30):
   were not measured and are returned as they come.
 - `ipc.appWindow().getRealtimeToolbar().fastForwardTime()` takes ~30 ms and
   lets STP converge at once (a link cabled moments ago answers a ping right
-  after it). `resetNetwork()` sits next to it and must never be exposed: it
+  after it). `resetNetwork` sits next to it and must never be exposed: it
   wipes the network's dynamic state.
 - Never call `colorPDU`, `editPDU` or `scenarioInfoBtn_clicked`: they open
   modal dialogs that freeze the bridge.

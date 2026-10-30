@@ -60,8 +60,10 @@ class-maps and policy-maps with IOS CLI and use this to verify.
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
-There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
-*Add Simple PDU* button does. Generate traffic with a real ping instead.
+`pt_send_pdu(source, destination, simulation=True, steps=0)` is the GUI's *Add Simple PDU*
+(`getUserCreatedPDU().addSimplePdu`: 0 added, 30 destination missing, other codes raw); with
+`steps > 0` it steps the simulation and returns the trace. `pt_fast_forward()` is Realtime's
+*Fast Forward Time*: STP converges at once (the deploy and `pt_verify_connectivity` use it).
 **Device panel (CLI / Desktop / Services, live):** `pt_cli(device, commands)` types IOS commands
 in the router's real CLI tab one at a time, waiting for the prompt, and marks each `ok` / `ERROR` /
 `UNKNOWN COMMAND` / `WAITING FOR ANSWER` / `TIMEOUT`; `pt_host_command(host, command, inputs)` is the
