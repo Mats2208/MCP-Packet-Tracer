@@ -13,6 +13,7 @@ import pytest
 
 from src.packet_tracer_mcp.domain.services.packet_trace import (
     FAILURE_STATUSES,
+    MEASURED_TRAFFIC_TYPES,
     TRAFFIC_TYPES,
     frame_status,
     summarize_trace,
@@ -44,15 +45,22 @@ def _frame(**overrides) -> dict:
 
 
 class TestTrafficTypeLabel:
-    @pytest.mark.parametrize("raw,label", [(0, "ICMP"), (5, "ARP")])
+    @pytest.mark.parametrize("raw,label", [(0, "ICMP"), (5, "ARP"), (11, "STP"), (12, "OSPF")])
     def test_measured_types(self, raw, label):
-        """Solo 0 y 5 fueron observados contra PT real."""
+        """Observed against a live PT 9 (STP and OSPF used to read as type11/type12)."""
         assert traffic_type_label(raw) == label
         assert TRAFFIC_TYPES[raw] == label
+        assert raw in MEASURED_TRAFFIC_TYPES
 
-    def test_unobserved_type_is_not_invented(self):
-        """Inventar un nombre para un valor no observado sería una claim falsa."""
-        assert traffic_type_label(9) == "type9"
+    @pytest.mark.parametrize("raw,label", [(7, "DHCP"), (19, "DNS"), (17, "HTTP"),
+                                           (9, "EIGRP"), (49, "LLDP"), (1000, "Custom")])
+    def test_documented_types(self, raw, label):
+        """From Cisco's eTrafficType_* enum, which matched every measured value."""
+        assert traffic_type_label(raw) == label
+
+    def test_value_outside_the_enum_is_not_invented(self):
+        assert traffic_type_label(54) == "type54"
+        assert traffic_type_label(None) == "typeNone"
 
 
 class TestFrameStatus:

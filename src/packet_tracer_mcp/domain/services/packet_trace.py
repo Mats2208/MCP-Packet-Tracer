@@ -19,10 +19,26 @@ from __future__ import annotations
 
 import ipaddress
 
-# getUserTrafficType() returns an integer. 0 is ICMP and 5 is ARP, MEASURED (ping
-# from PC1 to its gateway: the ICMP stays buffered and the ARP broadcast goes out first).
-# Anything else has not been observed, so the raw value is returned instead of inventing names.
-TRAFFIC_TYPES = {0: "ICMP", 5: "ARP"}
+# getUserTrafficType() returns the TrafficType enum as an integer. The names come from
+# Cisco's IPC reference (FrameInstance.getUserTrafficType / Simulation.newFrameInstanceAdded,
+# eTrafficType_*). MEASURED against PT 9: 0 ICMP and 5 ARP (ping from PC1 to its gateway),
+# 11 STP and 12 OSPF (BPDUs and hellos in the event list). Every measured value matched the
+# documented enum, which is why the rest is taken from it. A value outside the enum is
+# passed through as `type<N>` instead of inventing a name.
+TRAFFIC_TYPES = {
+    0: "ICMP", 1: "TCP", 2: "UDP", 3: "RIPv1", 4: "RIPv2", 5: "ARP", 6: "CDP",
+    7: "DHCP", 8: "NAT", 9: "EIGRP", 10: "VTP", 11: "STP", 12: "OSPF", 13: "DTP",
+    14: "Telnet", 15: "SSH", 16: "TFTP", 17: "HTTP", 18: "HTTPS", 19: "DNS",
+    20: "ICMPv6", 21: "LACP", 22: "PAgP", 23: "IPsec", 24: "IKE", 25: "Syslog",
+    26: "TACACS", 27: "RADIUS", 28: "SNMP", 29: "NTP", 30: "FTP", 31: "SMTP",
+    32: "POP3", 33: "SCCP", 34: "RTP", 35: "H.323", 36: "BGP", 37: "HSRP",
+    38: "HSRPv6", 39: "NetFlow", 40: "NDv6", 41: "RIPng", 42: "DHCPv6",
+    43: "EIGRPv6", 44: "OSPFv6", 45: "IoE", 46: "PTP", 47: "REP", 48: "CAPWAP-UDP",
+    49: "LLDP", 50: "SPAN", 51: "IoE-TCP", 52: "USB", 53: "Bluetooth", 1000: "Custom",
+}
+
+# The values seen on a live PT, as opposed to read from the reference.
+MEASURED_TRAFFIC_TYPES = frozenset({0, 5, 11, 12})
 
 # Precedence order when deriving ONE state per frame. Whatever blocks goes first:
 # a dropped frame matters more than a "sent" one in the same tick.
@@ -72,7 +88,7 @@ def _is_expected_drop(reason: str, destination: str) -> bool:
 
 
 def traffic_type_label(raw) -> str:
-    """Label for the traffic type; passes the raw value through if it was not observed."""
+    """Label for the traffic type; passes the raw value through if it is not in the enum."""
     return TRAFFIC_TYPES.get(raw, f"type{raw}")
 
 
