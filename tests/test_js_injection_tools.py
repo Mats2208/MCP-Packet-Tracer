@@ -110,7 +110,7 @@ def test_add_link_keeps_names_as_data(name, tmp_path):
 
 
 @requires_node
-@pytest.mark.parametrize("name", HOSTILE)
+@pytest.mark.parametrize("name", [n for n in HOSTILE if n.isprintable()])
 def test_set_port_keeps_names_as_data(name, tmp_path):
     js = _tool_js("pt_set_port", tmp_path, device=name, interface=name, description=name)[0]
     reports = run_pt_js(js + REPORT_SEEN, FAKE_PT, tmp_path)
@@ -119,8 +119,9 @@ def test_set_port_keeps_names_as_data(name, tmp_path):
 
 
 @requires_node
-@pytest.mark.parametrize("name", [n for n in HOSTILE if n.strip() == n])
+@pytest.mark.parametrize("name", [n for n in HOSTILE if n.isprintable()])
 def test_add_device_keeps_the_name_as_data(name, tmp_path):
+    # Names with line breaks never reach JS: pt_add_device refuses them first.
     js = _tool_js("pt_add_device", tmp_path, name=name, model="2911")
-    seen = _seen(js[0], tmp_path) if js else []
+    seen = _seen(js[0], tmp_path)
     assert "INJECTED" not in seen and name in seen

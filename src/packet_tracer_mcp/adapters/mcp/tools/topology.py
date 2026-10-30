@@ -11,6 +11,7 @@ from ....infrastructure.generator.topology_js import (
     delete_link_js, move_device_js, rename_device_js, topology_snapshot_js,
 )
 from ....domain.services.topology_view import format_export, format_query
+from ....domain.rules.text_rules import has_control_chars
 from ....shared.utils import reply_json
 
 # Reader error codes -> the words a caller sees.
@@ -141,6 +142,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         if not new_name.strip():
             return "Error: new_name cannot be empty."
+        if has_control_chars(new_name):
+            return "Error: new_name contains a line break; use a single-line name."
         if old_name == new_name:
             return f"Device '{old_name}' already has that name — no changes."
         data = _edit(rename_device_js(old_name, new_name))
@@ -239,6 +242,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         if not name or not name.strip():
             return "ERROR: Device name cannot be empty."
+        if has_control_chars(name):
+            return "ERROR: Device name contains a line break; use a single-line name."
 
         device_model = resolve_model(model)
         if device_model is None:
@@ -428,6 +433,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         the port's API). If some `setXxx` does not exist on the device's model,
         it is silently ignored and only what took effect is reported.
         """
+        bad = [k for k, v in (("device", device), ("interface", interface),
+                              ("description", description), ("mac_address", mac_address),
+                              ("zone_member", zone_member)) if has_control_chars(v)]
+        if bad:
+            return f"ERROR: {', '.join(bad)} contains a line break; use single-line values."
         err = _check_bridge()
         if err:
             return err
