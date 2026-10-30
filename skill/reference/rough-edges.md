@@ -116,6 +116,21 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **CDP is empty for about a minute after a deploy** (it announces every 60 s): an empty `pt_read_cdp`
   right after building is not a cabling fault.
 
+### Activities — verified against PT 9.0.1 (2026-10-30)
+
+- **While a modal is open nothing may reach the bridge.** A `fileOpen` queued behind a Wizard dialog hung
+  PT. The MCP finds modals by window title and refuses to send (`pt_send_raw` included).
+- **Marks count after save + reopen.** `setCheck` writes `getComparatorTree()`; the assessed tree is fixed
+  at load. After opening, counters are stale until a network change: `pt_activity_check(refresh=True)`.
+- **Chains.** `setCheck(true)` must run from the root; unchecking a leaf leaves empty parents that grade
+  as wrong (`clear_others=True` clears all). `getChildNodeBy("VLAN 10")` is null: scan by index.
+- **Instructions keep their HTML only through Import Page** (native file dialog). SetValue on
+  `m_txtInstruction` stores plain text, even with a BOM.
+- **Do not use `{{DeviceConfig.isInConfig:...}}` templates:** they save but grade 0/25 on a correct network.
+- **The Wizard steals the focus** when it opens; **a password** blocks almost all the API until
+  `confirmPassword`. No API sets points per item (GUI only, not automated here).
+- **PT has no "modified" flag:** `pt_activity_create` treats any open activity as possibly unsaved.
+
 ### ☠️ Measured PT crashes (2026-10-30)
 
 - **IoT environment / empty MCU pin.** One call doing `digitalWrite(0, 1023)` on an MCU-PT pin with no

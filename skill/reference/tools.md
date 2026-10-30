@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (96)
+## Tool catalog (108)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -20,6 +20,11 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 PT 9.0.1) and by the active file; a relative path is confined to the MCP working directory, a missing file
 is refused before PT is touched. `pt_export`/`pt_deploy`/`pt_list_projects`/`pt_load_project` take an
 `output_dir` that must stay inside the working directory.
+**Activities (.pka):** `pt_activity_open(path, password="")`, `pt_activity_status`,
+`pt_activity_check(only_incorrect=True, refresh=False)`, `pt_activity_create(force=False)`,
+`pt_activity_set_instructions(html)`, `pt_activity_tree(path)`, `pt_activity_mark(items, clear_others=False)`,
+`pt_activity_build_initial(reset_config=True)`, `pt_activity_save(path, overwrite=False)`,
+`pt_activity_exit_wizard`, `pt_activity_reset`, `pt_activity_create_exam(spec, start_at="", force=False, dry_run=False)`.
 **Live deploy & edit:** `pt_live_deploy(plan_json | plan_path)` refuses an invalid plan, checks the whole
 plan with **one** canvas read, reconciles dropped devices and re-reads once. `pt_add_device(name, model, x, y)`,
 `pt_add_link(device1, port1, device2, port2, cable_type="")`, `pt_delete_link(device_name, interface_name)`,
