@@ -27,11 +27,12 @@ from ....infrastructure.execution.bridge_token import token_was_rotated, token_i
 from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
+    verify_and_reconcile, file_open_js, file_open_outcome, DEVICE_COUNT_JS,
     dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
     console_ping_arm_js, console_ping_poll_js,
 )
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import js_escape, safe_name_component, resolve_within, classify_ping as _classify_ping, name_collisions, read_plan_source
+from ....shared.utils import safe_name_component, resolve_within, classify_ping as _classify_ping, name_collisions, read_plan_source
 
 
 # Names of the devices on the canvas, as a JSON array.
@@ -64,7 +65,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _js_guard = BridgeContext.js_guard
-    _js_escape = js_escape
 
     # ------------------------------------------------------------------
     # FULL BUILD
@@ -383,97 +383,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if command_delay:
                 time.sleep(command_delay)
 
-        dev_ok = 0
-        dev_fail = []
-        for dev in plan.devices:
-            safe = _js_escape(dev.name)
-            js = (
-                "try {"
-                f"  var d = ipc.network().getDevice('{safe}');"
-                "  reportResult(d ? 'OK' : 'MISSING');"
-                "} catch(e) { reportResult('MISSING'); }"
-            )
-            status = device_check_status(_bridge_send_and_wait(js, timeout=5.0))
-            # PT may still be running the queued deploy: a timeout is asked again with
-            # more patience instead of being counted as a missing device.
-            for wait in (20.0, 40.0):
-                if status != "unknown":
-                    break
-                status = device_check_status(_bridge_send_and_wait(js, timeout=wait))
-            if status == "ok":
-                dev_ok += 1
-            else:
-                dev_fail.append(dev.name)
-
-        def _verify_link(lnk) -> str | None:
-            sd = _js_escape(lnk.device_a)
-            sp = _js_escape(lnk.port_a)
-            js = (
-                "try {"
-                f"  var d = ipc.network().getDevice('{sd}');"
-                f"  if (!d) {{ reportResult('DEV_MISSING'); throw 's'; }}"
-                f"  var p = d.getPort('{sp}');"
-                f"  if (!p) {{ reportResult('PORT_MISSING'); throw 's'; }}"
-                "  reportResult(p.getLink() != null ? 'OK' : 'NO_LINK');"
-                "} catch(e) { if (e !== 's') reportResult('ERROR'); }"
-            )
-            return _bridge_send_and_wait(js, timeout=5.0)
-
-        link_ok = 0
-        link_fail = []
-        link_fail_objs = []
-        for lnk in plan.links:
-            r = _verify_link(lnk)
-            if r == "OK":
-                link_ok += 1
-            else:
-                link_fail.append(f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b} ({r or 'timeout'})")
-                link_fail_objs.append(lnk)
-
-        # --- Reconcile (fix F16): re-queue the commands of the missing items and re-verify.
-        # pt_live_deploy sometimes silently drops some devices (typically
-        # Laptop-PT). We reuse the already generated `commands`, keeping those that reference
-        # the failed devices/links (their name appears in quotes in lwAddDevice,
-        # lwAddLink and configurePcIp/configureIosDevice).
-        reconciled = {"devices": [], "links": []}
-        if dev_fail or link_fail_objs:
-            names = set(dev_fail)
-            for lnk in link_fail_objs:
-                names.add(lnk.device_a)
-                names.add(lnk.device_b)
-            retry_cmds = reconcile_commands(commands, names)
-            for cmd in retry_cmds:
-                _channel_send(_js_guard(cmd))
-                time.sleep(command_delay)
-
-            # Re-verify the failed devices
-            still_missing_dev = []
-            for name in dev_fail:
-                safe = _js_escape(name)
-                js = (
-                    "try {"
-                    f"  var d = ipc.network().getDevice('{safe}');"
-                    "  reportResult(d ? 'OK' : 'MISSING');"
-                    "} catch(e) { reportResult('MISSING'); }"
-                )
-                if _bridge_send_and_wait(js, timeout=5.0) == "OK":
-                    dev_ok += 1
-                    reconciled["devices"].append(name)
-                else:
-                    still_missing_dev.append(name)
-            dev_fail = still_missing_dev
-
-            # Re-verify the failed links
-            still_failed_links = []
-            for lnk in link_fail_objs:
-                if _verify_link(lnk) == "OK":
-                    link_ok += 1
-                    reconciled["links"].append(f"{lnk.device_a}:{lnk.port_a}")
-                else:
-                    still_failed_links.append(
-                        f"{lnk.device_a}:{lnk.port_a} <-> {lnk.device_b}:{lnk.port_b}"
-                    )
-            link_fail = still_failed_links
+        # --- Verify with ONE canvas read + Reconcile (fix F16): re-queue the commands of
+        # the missing items (some devices, typically Laptop-PT, are silently dropped) and
+        # read once more. The trips no longer grow with the topology, and an unreadable
+        # canvas re-sends nothing (a late answer is not a missing device).
+        chk = verify_and_reconcile(lambda js, t: _bridge_send_and_wait(js, timeout=t),
+                                   lambda c: _channel_send(_js_guard(c)), plan, commands,
+                                   delay=command_delay)
 
         # DHCP requests lost while STP was settling: ask again.
         dhcp_lines: list[str] = []
@@ -483,23 +399,23 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(
                 lambda js, t: _bridge_send_and_wait(js, timeout=t), dhcp_hosts))
 
-        report = [
-            "Topology deployed to Packet Tracer!",
-            f"  Commands sent: {sent}",
-            f"  Devices: {dev_ok}/{len(plan.devices)} verified",
-        ]
-        if reconciled["devices"] or reconciled["links"]:
-            report.append(
-                f"  ♻ Reconciled: {len(reconciled['devices'])} device(s), "
-                f"{len(reconciled['links'])} link(s) re-added after being dropped."
-            )
-        if dev_fail:
-            report.append(f"  FAILED devices: {', '.join(dev_fail)}")
-        report.append(f"  Links: {link_ok}/{len(plan.links)} verified")
-        if link_fail:
-            report.append("  FAILED links:")
-            for f in link_fail:
-                report.append(f"    - {f}")
+        report = ["Topology deployed to Packet Tracer!", f"  Commands sent: {sent}"]
+        if not chk["verified"]:
+            report.append("  ⚠ Could not read the canvas to verify it (PT busy?). Nothing "
+                          "was re-sent; check with pt_query_topology.")
+        else:
+            report.append(f"  Devices: {chk['dev_ok']}/{len(plan.devices)} verified")
+            if chk["reconciled_devices"] or chk["reconciled_links"]:
+                report.append(
+                    f"  ♻ Reconciled: {len(chk['reconciled_devices'])} device(s), "
+                    f"{len(chk['reconciled_links'])} link(s) re-added after being dropped."
+                )
+            if chk["dev_fail"]:
+                report.append(f"  FAILED devices: {', '.join(chk['dev_fail'])}")
+            report.append(f"  Links: {chk['link_ok']}/{len(plan.links)} verified")
+            if chk["link_fail"]:
+                report.append("  FAILED links:")
+                report += [f"    - {f}" for f in chk["link_fail"]]
         report += dhcp_lines
 
         return "\n".join(report)
@@ -714,16 +630,20 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if not target.lower().endswith(".pkt"):
             return "The file must end in .pkt"
 
-        js = (
-            "var fm=ipc.systemFileManager();"
-            f"var p={json.dumps(target)};"
-            "if(!fm.fileExists(p)){reportResult('ERR:does not exist '+p);}"
-            "else{ipc.appWindow().fileOpen(p);"
-            "reportResult('OK:'+ipc.network().getDeviceCount());}"
-        )
-        result = _bridge_send_and_wait(js, timeout=30.0)
+        result = _bridge_send_and_wait(file_open_js(target), timeout=30.0)
         if result is None:
             return "No answer from PT (timeout) while opening."
-        if result.startswith("OK:"):
-            return f"Project opened: {target} ({result[3:]} devices)."
-        return f"PT error while opening: {result}"
+        if result.startswith("ERR:"):
+            return f"PT error while opening: {result}"
+        try:
+            data = json.loads(result)
+        except ValueError:
+            return f"PT error while opening: {result}"
+        opened, why = file_open_outcome(target, data)
+        if not opened:
+            return f"Not opened: {target} ({why})."
+        # Re-read the canvas in a separate call, after the open settled.
+        count = _bridge_send_and_wait(DEVICE_COUNT_JS, timeout=10.0)
+        count = count if count and count.lstrip("-").isdigit() and int(count) >= 0 else None
+        return (f"Project opened: {target} ({why}). Devices on the canvas: "
+                f"{data.get('before')} before → {count if count is not None else data.get('after')} now.")

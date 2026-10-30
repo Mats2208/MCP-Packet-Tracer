@@ -45,10 +45,14 @@ class TestDHCPFallback:
 
 class TestReconcileWiring:
     def test_pt_live_deploy_has_reconcile(self):
+        # The verify + reconcile loop moved to live_checks.verify_and_reconcile
+        # (one canvas read instead of one trip per element); its behaviour is
+        # tested in test_deploy_verify_trips.py.
         src = registry_source()
-        assert "Reconcile (fix F16)" in src
-        assert "reconciled" in src
-        assert "link_fail_objs" in src
+        body = src[src.index("def pt_live_deploy("):]
+        assert "Reconcile (fix F16)" in body
+        assert "verify_and_reconcile(" in body
+        assert "reconciled_devices" in body
 
     def test_lwadddevice_has_global_fallback(self):
         """F16 root cause: lw.addDevice falla para Laptop-PT (type 17) → devuelve "" y no

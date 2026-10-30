@@ -25,8 +25,9 @@ from ...domain.rules.panel_rules import (
     normalize_mask, parse_ipv6_interface, validate_host_ip_config,
 )
 from ...infrastructure.generator.host_js import (
-    host_ip_config_js, port_state_js, read_device_panel_js, remove_module_js,
+    host_ip_config_js, port_state_js, read_device_panel_js,
 )
+from ...infrastructure.generator.module_js import module_change_js, power_cycle_notes
 from ...infrastructure.ui.presenter import Presenter, PresenterError, is_available
 from ...shared.ui_mode import UI, UiModeStore
 from .desktop_service_tools import register_desktop_service_tools
@@ -407,13 +408,15 @@ def register_device_panel_tools(
     def pt_remove_module(device: str, slot: str, dry_run: bool = False) -> str:
         """
         Removes the module installed in a slot (Physical tab). Powers the device
-        off, removes it and powers it back on, like pt_add_module.
+        off, removes it and powers it back on, like pt_add_module (routers/switches
+        are saved first with write memory); skipped when PT reports the module as
+        hot-swappable. The reply says whether it restarted and was saved.
         - slot: STRING, same format as pt_add_module ("0/0", "1", "0"...).
         """
         slot_s = str(slot).strip()
         if not slot_s:
             return "Error: empty slot."
-        js = remove_module_js(device, slot_s)
+        js = module_change_js("remove", [{"device": device, "slot": slot_s}])
         if dry_run:
             return reply_json({"js_payload": js, "sent": False, "dry_run": True})
         err = check_bridge()
@@ -421,11 +424,18 @@ def register_device_panel_tools(
             return err
         data, error = ps.call(js, device, 15.0)
         if error:
-            return error if error != "PT answered: unsupported" else f"'{device}' does not support removing modules."
-        if not data.get("removed"):
-            return f"PT removed nothing from slot '{slot_s}' of {device} (empty, or no such slot?)."
-        gone = sorted(set(data["before"].split(",")) - set(data["after"].split(",")))
+            return error
+        result = (data.get("results") or [{}])[0]
+        dev = (data.get("devices") or [{}])[0]
+        notes = "".join(f"\n{n}" for n in power_cycle_notes(data.get("devices", [])))
+        if result.get("error") == "device_not_found":
+            return f"Device '{device}' not found."
+        if result.get("error") == "unsupported":
+            return f"'{device}' does not support removing modules."
+        if not result.get("ok"):
+            return f"PT removed nothing from slot '{slot_s}' of {device} (empty, or no such slot?)." + notes
+        gone = sorted(set(dev.get("ports_before", "").split(",")) - set(dev.get("ports_after", "").split(",")))
         return (f"Module removed from {device} slot {slot_s}. Ports that disappeared: "
-                f"{', '.join(gone) or '(none)'}.")
+                f"{', '.join(gone) or '(none)'}." + notes)
 
     register_desktop_service_tools(mcp, ps)

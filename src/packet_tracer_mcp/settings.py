@@ -73,7 +73,8 @@ Ports are named `<type><chassis>/<subslot>/<port>`:
 ### To install several modules at once
 USE `pt_install_modules_batch` instead of N calls to `pt_add_module`. The batch powers all of them
 off → addModule on all → powers all on, in ONE SINGLE runCode JS. Individual calls power-cycle the
-device once each.
+device once each. A power-cycle reloads the startup-config, so routers/switches are saved first
+(write memory) and the reply says which devices restarted and whether the save worked.
 
 ## Live Deploy (PT in real time)
 1. Check the channel: `pt_bridge_status`
