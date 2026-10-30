@@ -217,3 +217,10 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **Consoles update live; state panels don't.** IP Configuration and Services pages read their values
   when shown, so the tools re-open them after applying a change.
 
+- **An open device window takes the user's keyboard.** With `show=True` / `pt_ui_mode("ui")`, what a person types
+  elsewhere lands in the CLI tab and corrupts commands sent through it (seen: `Translating "intenable"`,
+  `configure terminal` rejected). With `show=False` the same commands were clean. Stay headless unless the
+  window is the point.
+- A laptop has two MACs: `Bluetooth` comes first in its port list, `Wireless0` is the one a MAC filter needs.
+- `pt_send_pdu` trace `failures` include ordinary drops (ARP broadcasts, OSPF hellos on hosts): read the ICMP
+  frames, not the count.

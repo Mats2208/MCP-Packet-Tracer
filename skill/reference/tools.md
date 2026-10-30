@@ -39,7 +39,7 @@ devices restarted and whether the save worked.
 `pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs),
 `pt_apply_etherchannel` (switch), `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` (router) —
 each IOS line verified (HSRP/BGP/QoS lines measured on a 2911, QoS also on a 2811, EtherChannel on a
-2960-24TT; an HSRP failover or a BGP session between two AS was not measured). These and the ACL/NAT tools send the config line by line and reply with
+2960-24TT; HSRP failover, a BGP session between two AS and a two-switch LACP bundle were measured too). These and the ACL/NAT tools send the config line by line and reply with
 `verified`, `verification` (`verified` / `rejected` / `error` / `unverified` = PT never answered) and
 `rejected_lines` (device, line, command, IOS reason). Only `verified: true` means it landed.
 **CME voice:** `pt_apply_voice(router, source_ip, extensions, max_ephones=5, max_dn=5, auto_assign=True,

@@ -69,13 +69,14 @@ The first ping/PDU can die on ARP: repeat once. `pt_read_cdp` is empty ~60 s aft
 
 Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
 
-- **HSRP** (lines measured on a 2911; failover not measured):
-  `pt_apply_hsrp(router="R1", interface="GigabitEthernet0/0", group=1, virtual_ip="192.168.1.254", priority=110)`,
-  same on R2 with `priority=100`; hosts `pt_host_ip_config(device="PC1", gateway="192.168.1.254")`.
-- **EtherChannel** (measured on a 2960-24TT), on both switches:
+- **HSRP** (measured, with failover): both routers need an interface on the SAME LAN; `pt_full_build` does not
+  give that, so cable and address the second one first. `pt_apply_hsrp(router="R1", interface="GigabitEthernet0/1", group=1, virtual_ip="192.168.0.254", priority=110)`,
+  same on R2 with `priority=100`, then `pt_host_ip_config(device="PC1", gateway="192.168.0.254")`. Check: `show standby brief`
+  (Active/Standby); shutting R1's interface makes R2 Active and the VIP keeps answering.
+- **EtherChannel** (measured on two 2960-24TT: `Po1(SU)`), cable the links, then on both switches:
   `pt_apply_etherchannel(switch="SW1", ports=["FastEthernet0/10","FastEthernet0/11"], group=1, mode="active", trunk=True)`
   → `pt_fast_forward()` → `pt_cli(device="SW1", commands=["show etherchannel summary"])`.
-- **BGP, two AS** (lines measured; session not measured):
+- **BGP, two AS** (measured: session up, routes learned as `B`):
   `pt_apply_bgp(router="R1", asn=65001, neighbors=[{"ip":"10.0.0.2","remote_as":65002}], networks=["192.168.1.0/24"])`,
   mirror on R2 → `pt_cli(device="R1", commands=["show ip bgp summary"])`.
 - **QoS for voice** (measured, 2911 and 2811):
@@ -90,10 +91,10 @@ Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
   (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
   (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
 - **2811 network** (measured: OSPF FULL, leases): `pt_full_build(router_model="2811", routing="ospf")`.
-- **Wi-Fi AP** (SSID measured; MAC filter not measured): `pt_wireless_ap(device="AP1", ssid="LAB-A")`
-  (laptops only join "Default", so its clients drop);
-  `pt_wireless_ap(device="AP1", mac_filter=True, allow_listed=True, mac_list=["0001.63BE.8468"])`.
-  Judge association by `pt_host_command(device="LT1", command="ping 192.168.1.1")`, not the port.
+- **Wi-Fi AP** (measured): `pt_wireless_ap(device="AP1", ssid="LAB-A")` (laptops only join "Default", so its
+  clients drop); `pt_wireless_ap(device="AP1", mac_filter=True, allow_listed=True, mac_list=["00D0.BC56.D4CD"])`
+  keeps only the listed clients. List each client's **Wireless0** MAC (`pt_read_device_panel`), not its
+  Bluetooth one. Judge association by `pt_host_command(device="LT1", command="ping 192.168.0.1")`, not the port.
 - **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
   routers via `pt_plan_topology(dual_stack=True)`.
 - **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
