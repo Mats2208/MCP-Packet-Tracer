@@ -92,6 +92,30 @@ def traffic_type_label(raw) -> str:
     return TRAFFIC_TYPES.get(raw, f"type{raw}")
 
 
+def normalize_frame(frame: dict) -> dict:
+    """Labels the traffic type and fills empty endpoints from the user PDU, in place.
+
+    getSourceString()/getDestinationString() came back empty on the ICMP frames of a
+    PDU fired with addSimplePdu. When the frame carries its PDU's endpoints
+    (`pdu_source`/`pdu_destination`, device names from UserTraffic), they stand in
+    for the missing strings; `endpoints_from` says so, because a device name is
+    not the IP address those fields normally hold.
+    """
+    frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+    pdu_src = frame.pop("pdu_source", None) or ""
+    pdu_dst = frame.pop("pdu_destination", None) or ""
+    filled = False
+    if not frame.get("source") and pdu_src:
+        frame["source"] = pdu_src
+        filled = True
+    if not frame.get("destination") and pdu_dst:
+        frame["destination"] = pdu_dst
+        filled = True
+    if filled:
+        frame["endpoints_from"] = "pdu"
+    return frame
+
+
 def frame_status(frame: dict) -> str:
     """A single state per frame, derived from PT's boolean flags."""
     for flag, status in _STATUS_ORDER:
