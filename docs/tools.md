@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **82 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"

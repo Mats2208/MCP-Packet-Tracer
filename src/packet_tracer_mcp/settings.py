@@ -214,7 +214,7 @@ PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 79 tools. Use `pt_full_build` for the general case (new topology with configs).
+- The MCP has 82 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.
