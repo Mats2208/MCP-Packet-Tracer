@@ -139,11 +139,13 @@ class TestSummarizeTrace:
 
 
 class TestSimulationReaders:
-    """Guards sobre el JS. Son closures en register_tools, así que se verifican
-    por texto, igual que TestReconcileWiring en test_live_reconcile.py."""
+    """Guards sobre el JS. Se verifican por texto, igual que TestReconcileWiring en
+    test_live_reconcile.py; el JS vive en simulation_js.py, compartido con pt_send_pdu."""
 
     def _src(self) -> str:
-        return registry_source()
+        from pathlib import Path
+        gen = Path("src/packet_tracer_mcp/infrastructure/generator/simulation_js.py")
+        return registry_source() + gen.read_text(encoding="utf-8")
 
     def test_uses_pts_misspelled_decision_getter(self):
         """PT expone `getFrameDecsionAt`, con el typo. Corregirlo rompe la lectura."""
