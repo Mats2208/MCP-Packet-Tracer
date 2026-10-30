@@ -22,7 +22,7 @@ from ....infrastructure.generator.cli_config_generator import (
 from ....infrastructure.execution.manual_executor import ManualExecutor
 from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
-from ..bridge_context import BridgeContext, DEPLOY_BATCH, stp_wait_seconds
+from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
     dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
@@ -520,7 +520,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dhcp_lines: list[str] = []
         dhcp_hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
         if dhcp_hosts:
-            time.sleep(stp_wait_seconds(ctx.last_link_change, time.monotonic()))
+            ctx.settle_stp()
             dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(
                 lambda js, t: _bridge_send_and_wait(js, timeout=t), dhcp_hosts))
 
@@ -653,10 +653,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         # Links created moments ago are still in STP listening/learning: a ping now
-        # is lost and reads as a fault. Wait out the rest of that window first.
-        stp_wait = stp_wait_seconds(ctx.last_link_change, time.monotonic())
-        if stp_wait > 0:
-            time.sleep(stp_wait)
+        # is lost and reads as a fault. Fast-forward past it (or sleep it out).
+        stp_wait = ctx.settle_stp()
         waited = f"\n(waited {stp_wait:.0f}s for STP on links created moments ago)" if stp_wait > 0 else ""
 
         # The JS lives in `console_ping_arm_js` / `console_ping_poll_js` (module
