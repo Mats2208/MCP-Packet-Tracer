@@ -11,6 +11,9 @@ Order of preference, from most native to least (verified against PT 9.0.1):
 3. Tab, section (Config > FastEthernet0, Services > DHCP) and Desktop app are
    chosen through UI Automation (SelectionItem / Invoke), no keyboard or mouse.
 4. Capture is `PrintWindow`: it works even when the window is covered.
+
+Whatever touches the GUI runs inside `win32.keep_user_focus`: Qt activates the
+dialog it opens, and the user's keystrokes must not follow it into PT's console.
 """
 
 from __future__ import annotations
@@ -172,11 +175,21 @@ class Presenter:
         if not ok:
             raise PresenterError(why)
         from . import win32
+
+        st = self._state(device)
+        pid = int(st["pid"])
+        with win32.keep_user_focus(pid) as guard:
+            result = self._open(device, st, pid, tab=tab, app=app, section=section,
+                                scroll_bottom=scroll_bottom, reopen=reopen)
+        result["steps"].extend(guard.notes())
+        return result
+
+    def _open(self, device: str, st: dict, pid: int, *, tab: str, app: str, section: str,
+              scroll_bottom: bool, reopen: bool) -> dict:
+        from . import win32
         from .uia import Uia
 
         steps: list[str] = []
-        st = self._state(device)
-        pid = int(st["pid"])
         hwnd = win32.find_window(pid, device)
         if hwnd is None and st.get("open"):
             self._js(show_dialog_js(device, True))
@@ -375,6 +388,7 @@ class Presenter:
     def fill_and_go(self, hwnd: int, edit_suffix: str, text: str, button_suffix: str) -> bool:
         """Write `text` into the field whose AutomationId ends in `edit_suffix`
         and press the `button_suffix` button (e.g. the Web Browser's URL + Go)."""
+        from . import win32
         from .uia import Uia
         u = Uia()
         els = [e for e in u.descendants(hwnd) if not e.offscreen]
@@ -382,18 +396,21 @@ class Presenter:
         btn = next((e for e in els if e.automation_id.endswith(button_suffix)), None)
         if edit is None or btn is None:
             return False
-        u.set_value(edit, text)
-        u.invoke(btn)
+        with win32.keep_user_focus(win32.window_pid(hwnd)):
+            u.set_value(edit, text)
+            u.invoke(btn)
         return True
 
     def invoke_button(self, hwnd: int, name: str) -> bool:
         """Press (Invoke) a visible button of the dialog by its text, e.g. the OK
         of "Terminal Configuration". False if it isn't there."""
+        from . import win32
         from .uia import Uia
         u = Uia()
         for e in u.descendants(hwnd, "Button"):
             if not e.offscreen and e.name.strip().lower() == name.strip().lower():
-                u.invoke(e)
+                with win32.keep_user_focus(win32.window_pid(hwnd)):
+                    u.invoke(e)
                 return True
         return False
 
@@ -431,9 +448,10 @@ class Presenter:
                 f"The dialog for '{device}' is not open. Open it with pt_ui_open "
                 "(or use show=True on the tool you ran)."
             )
-        win32.raise_window(hwnd)
-        self._sleep(0.15)
-        w, h, bgra = win32.capture(hwnd)
+        with win32.keep_user_focus(pid):
+            win32.raise_window(hwnd)
+            self._sleep(0.15)
+            w, h, bgra = win32.capture(hwnd)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(bgra_to_png(w, h, bgra))
         return {"path": str(target), "width": w, "height": h, "blank": looks_blank(bgra)}
