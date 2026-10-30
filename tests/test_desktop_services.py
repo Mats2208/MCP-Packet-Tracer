@@ -187,9 +187,10 @@ class TestServiceJs:
     def test_dhcp_uses_documented_methods(self):
         js = server_dhcp_js("S0", pool="p", gateway="1.1.1.1", remove_pool="old",
                             exclude=[("1.1.1.1", "1.1.1.9")], enable=True)
-        for m in ("getDhcpServerProcessByPortName", "addNewPool", "setDefaultRouter",
+        for m in ("getDhcpServerProcessByPortName", "addPool", "setDefaultRouter",
                   "setDnsServerIp", "setStartIp", "removePool", "addExcludedAddress", "setEnable"):
             assert m in js
+        assert "addNewPool" not in js  # eight unnamed arguments: the reference says avoid it
         assert '"exclude": [["1.1.1.1", "1.1.1.9"]]' in js
         assert '"enable": true' in js
 
@@ -591,7 +592,7 @@ class TestWebBrowser:
 # ---------------------------------------------------------------------------
 
 # A DhcpServerProcess with PT's factory "serverPool". Only the methods the
-# generated JS calls are faked; addNewPool takes PT's 8 positional arguments.
+# generated JS calls are faked; addPool(name) creates an empty pool, as PT does.
 _DHCP_FAKE = r"""
 function __Pool(name, gw, dns, start, mask, max, tftp, wlc) {
   var p = {n: name, net: '0.0.0.0', gw: gw, dns: dns, start: start, mask: mask, max: max,
@@ -619,9 +620,9 @@ var __on = false;
 var dp = {
   getPool: function (n) { for (var i = 0; i < __pools.length; i++) {
     if (__pools[i].getDhcpPoolName() === n) { return __pools[i]; } } return null; },
-  addNewPool: function (n, gw, dns, start, mask, max, tftp, wlc) {
-    if (arguments.length !== 8) { throw new Error('Invalid arguments for IPC call'); }
-    __pools.push(__Pool(n, gw, dns, start, mask, max, tftp, wlc)); },
+  addPool: function (n) { if (arguments.length !== 1) { throw new Error('Invalid arguments'); }
+    if (!dp.getPool(n)) { __pools.push(__Pool(n, '0.0.0.0', '0.0.0.0', '0.0.0.0', '0.0.0.0', 256,
+                                              '0.0.0.0', '0.0.0.0')); } },
   removePool: function (n) { __pools = __pools.filter(function (p) {
     return p.getDhcpPoolName() !== n; }); },
   getPoolCount: function () { return __pools.length; },
@@ -670,8 +671,11 @@ class TestDhcpTouchesOnlyWhatWasAsked:
         out = _run_dhcp(tmp_path, pool="LAN10", gateway="10.0.10.1", start_ip="10.0.10.10",
                         mask="255.255.255.0", tftp="10.0.10.5")
         lan = {p["name"]: p for p in out["pools"]}["LAN10"]
-        assert (lan["gateway"], lan["start"], lan["tftp"]) == ("10.0.10.1", "10.0.10.10",
-                                                               "10.0.10.5")
+        assert out["created"] is True
+        assert (lan["gateway"], lan["start"], lan["mask"], lan["network"]) == \
+            ("10.0.10.1", "10.0.10.10", "255.255.255.0", "10.0.10.0")
+        # addPool + setters: PT has no TFTP setter, so it is reported, not faked.
+        assert out["not_applied"] == ["tftp"]
 
     def test_existing_pool_applies_mask_without_start(self, tmp_path):
         out = _run_dhcp(tmp_path, mask="255.255.0.0")

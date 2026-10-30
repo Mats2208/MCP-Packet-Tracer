@@ -160,8 +160,9 @@ device once each. A power-cycle reloads the startup-config, so routers/switches 
   pool_name="serverPool", enabled=True)`: creates or edits the pool (the GUI's
   Services > DHCP) after validating it against the subnet, switches the service on and
   reads it back. Without `network` it only reads. `remove=True` deletes the pool;
-  accepts `dry_run=True`. `pt_server_dhcp` does the same panel-style and also handles
-  exclusion ranges, TFTP/WLC and showing the Services page (UI mode).
+  accepts `dry_run=True`. `pt_server_dhcp` runs the same JS backend panel-style and also
+  handles exclusion ranges and showing the Services page (UI mode). TFTP/WLC options have
+  no setter in PT's script API: pt_server_dhcp reports them in `not_applied`.
 - A ROUTER's DHCP is a different thing: it goes through the CLI (`ip dhcp pool`), which is
   what the plan emits with `dhcp=True`.
 - The server needs a static IP inside the pool's subnet. PT never hands out the server's
@@ -352,8 +353,8 @@ subnet, and switches the service on.
 The equivalent of Services > DHCP in the GUI. Not via CLI (a Server-PT
 has none): configured through the native API and read back to confirm.
 For DHCP on a ROUTER use the plan (`dhcp=True`) or the CLI `ip dhcp pool`.
-For exclusion ranges, TFTP/WLC options or showing the Services page on
-screen, use pt_server_dhcp.
+For exclusion ranges or showing the Services page on screen, use
+pt_server_dhcp (same JS backend).
 
 The server needs a static IP inside the pool's subnet; if it doesn't
 have one the tool warns (DHCP_SERVER_NO_IP). PT never hands out the

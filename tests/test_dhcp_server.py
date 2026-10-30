@@ -7,7 +7,11 @@ itself has no pool methods: you have to go down to
 `getDhcpServerProcessByPortName(port)`.
 """
 
+import json
+
 from tests._registry_src import registry_source
+from tests._pt_js import requires_node, run_pt_js
+from src.packet_tracer_mcp.infrastructure.generator.service_js import server_dhcp_js
 from pathlib import Path
 
 import pytest
@@ -169,59 +173,114 @@ class TestAgainstTopology:
 
 
 class TestToolPayload:
-    """Guards on the JS. Closures inside register_tools → checked as text.
+    """pt_configure_dhcp_server sends server_dhcp_js, the backend pt_server_dhcp uses.
 
-    The JS is built with f-strings, so in the SOURCE the braces are doubled.
+    The JS used to be its own f-string copy of the DHCP API; the two tools had
+    drifted (one created pools with addPool, the other with addNewPool). Now the
+    tool only maps its arguments and PT's answer, and the JS is run under Node
+    against a fake DhcpServerProcess that enforces the measured signatures.
     """
 
-    def _src(self) -> str:
-        return registry_source()
+    def _send(self, reply: dict | None = None, **kw) -> tuple[str, list[str]]:
+        from src.packet_tracer_mcp.adapters.mcp.tools import services
+        from tests._fake_ctx import FakeCtx, tools
 
-    def test_goes_through_the_per_port_process(self):
-        """The issue's bug: the pool methods are NOT on DhcpServerMain."""
-        src = self._src()
-        assert "getProcess('DhcpServerMain')" in src
-        assert "__m.getDhcpServerProcessByPortName(" in src
+        ctx = FakeCtx(replies=[json.dumps(reply or {"ok": True, "pools": [], "enabled": True,
+                                                    "created": True, "error": ""})])
+        ctx.pick_channel = lambda: ""  # skip the live-topology validation
+        args = {"device": "DHCP-A", "network": "192.168.10.0", "gateway": "192.168.10.1",
+                "dns": "8.8.8.8", "start_ip": "192.168.10.3", **kw}
+        return tools(services, ctx)["pt_configure_dhcp_server"](**args), ctx.sent
 
-    def test_network_mask_takes_network_and_mask(self):
-        """With a single argument PT answers 'Invalid arguments for IPC call'."""
-        assert (
-            "__p.setNetworkMask({json.dumps(cfg.network)}, {json.dumps(cfg.mask)})"
-            in self._src()
-        )
+    def test_sends_the_shared_backend(self):
+        _, sent = self._send()
+        assert sent[0] == server_dhcp_js(
+            "DHCP-A", port="FastEthernet0", pool="serverPool", network="192.168.10.0",
+            mask="255.255.255.0", gateway="192.168.10.1", dns="8.8.8.8",
+            start_ip="192.168.10.3", max_users=252, enable=True, drop_factory_pool=True)
 
-    def test_start_is_set_before_max_users(self):
-        """setMaxUsers recomputes the end from the start."""
-        src = self._src()
-        assert src.index("__p.setStartIp(") < src.index("__p.setMaxUsers(")
+    def test_read_only_and_remove_touch_nothing_else(self):
+        _, sent = self._send(network="")
+        assert '"pool": ""' in sent[0] and '"enable": null' in sent[0]
+        _, sent = self._send(network="", remove=True, pool_name="LAN")
+        assert '"remove": "LAN"' in sent[0] and '"enable": null' in sent[0]
 
-    def test_existing_pool_is_reused_not_duplicated(self):
-        assert (
-            "if (!__p) {{ __s.addPool({name}); __p = __s.getPool({name}); __created = true; }}"
-            in self._src()
-        )
-
-    def test_turns_the_service_on(self):
-        assert "__s.setEnable(" in self._src()
-
-    def test_factory_pool_dropped_only_when_unconfigured(self):
-        src = self._src()
-        assert "String(__f.getDefaultRouter()) === '0.0.0.0'" in src
-        assert "String(__f.getStartIp()) === String(__f.getNetworkAddress())" in src
-
-    def test_reads_back_after_writing(self):
-        src = self._src()
-        assert "enabled: !!__s.isEnable()" in src
-        assert "max_users: __q.getMaxUsers()" in src
-
-    def test_feature_detected_for_non_servers(self):
-        assert "if (!__m) { reportResult(JSON.stringify({ found: true, supported: false })); }" \
-            in self._src()
+    def test_pt_errors_are_named(self):
+        out, _ = self._send(reply={"ok": False, "error": "no_DhcpServerMain"})
+        assert "has no Server-PT DHCP server" in out
 
     def test_sent_response_drops_the_js(self):
-        """The JS is only useful before sending it (dry_run); afterwards it is noise."""
-        assert 'payload.pop("js_payload", None)' in self._src()
+        out = json.loads(self._send()[0])
+        assert "js_payload" not in out and out["sent"] is True
 
     def test_does_not_use_the_undocumented_add_new_pool(self):
         """addNewPool has 8 unnamed arguments in the reference: don't guess."""
-        assert "addNewPool(" not in self._src()
+        assert "addNewPool(" not in self._js()
+        assert "addNewPool(" not in registry_source()
+
+    def _js(self, **kw) -> str:
+        args = dict(port="FastEthernet0", pool="LAN", network="192.168.10.0",
+                    mask="255.255.255.0", gateway="192.168.10.1", start_ip="192.168.10.3",
+                    max_users=50, enable=True, drop_factory_pool=True)
+        args.update(kw)
+        return server_dhcp_js("DHCP-A", **args)
+
+    @requires_node
+    def test_creates_fills_and_reads_back_under_node(self, tmp_path):
+        out = json.loads(run_pt_js(self._js(), _FAKE_DHCP, tmp_path)[-1])
+        lan = {p["name"]: p for p in out["pools"]}["LAN"]
+        assert out["created"] is True and out["enabled"] is True
+        assert (lan["network"], lan["mask"], lan["gateway"], lan["start"], lan["max_users"]) ==             ("192.168.10.0", "255.255.255.0", "192.168.10.1", "192.168.10.3", 50)
+        # The unconfigured factory pool (start = network, no gateway) is dropped.
+        assert out["dropped_factory_pool"] is True and "serverPool" not in             {p["name"] for p in out["pools"]}
+
+    @requires_node
+    def test_existing_pool_is_reused_not_duplicated(self, tmp_path):
+        out = json.loads(run_pt_js(self._js(pool="serverPool"), _FAKE_DHCP, tmp_path)[-1])
+        assert out["created"] is False
+        assert [p["name"] for p in out["pools"]] == ["serverPool"]
+
+
+# A DhcpServerProcess that throws on the signatures PT rejects: setNetworkMask with
+# one argument, and setMaxUsers before setStartIp is checked by the read-back.
+_FAKE_DHCP = r"""
+function __Pool(name) {
+  var p = {n: name, net: '0.0.0.0', mask: '0.0.0.0', gw: '0.0.0.0', dns: '0.0.0.0',
+           start: '0.0.0.0', max: 0};
+  return {
+    getDhcpPoolName: function () { return p.n; },
+    getNetworkAddress: function () { return p.net; }, setNetworkAddress: function (x) { p.net = x; },
+    getSubnetMask: function () { return p.mask; },
+    setNetworkMask: function (net, m) {
+      if (arguments.length !== 2) { throw new Error('Invalid arguments for IPC call'); }
+      p.net = net; p.mask = m; },
+    getStartIp: function () { return p.start; }, setStartIp: function (x) { p.start = x; },
+    getEndIp: function () { return '0.0.0.0'; },
+    getDefaultRouter: function () { return p.gw; }, setDefaultRouter: function (x) { p.gw = x; },
+    getDnsServerIp: function () { return p.dns; }, setDnsServerIp: function (x) { p.dns = x; },
+    getMaxUsers: function () { return p.max; }, setMaxUsers: function (x) { p.max = x; },
+    getTftpAddress: function () { return '0.0.0.0'; }, getWlcAddress: function () { return '0.0.0.0'; }
+  };
+}
+var __pools = [__Pool('serverPool')];
+__pools[0].setNetworkAddress('192.168.10.0');
+__pools[0].setStartIp('192.168.10.0');
+var __on = false;
+var dp = {
+  getPool: function (n) { for (var i = 0; i < __pools.length; i++) {
+    if (__pools[i].getDhcpPoolName() === n) { return __pools[i]; } } return null; },
+  addPool: function (n) { if (!dp.getPool(n)) { __pools.push(__Pool(n)); } },
+  removePool: function (n) { __pools = __pools.filter(function (p) {
+    return p.getDhcpPoolName() !== n; }); },
+  getPoolCount: function () { return __pools.length; },
+  getPoolAt: function (i) { return __pools[i]; },
+  getExcludedAddressCount: function () { return 0; },
+  setEnable: function (x) { __on = x; }, isEnable: function () { return __on; }
+};
+var dm = {getDhcpServerProcessByPortName: function (n) { return n === 'FastEthernet0' ? dp : null; }};
+var d = {getPorts: function () { return ['FastEthernet0']; },
+         getPort: function () { return {getIpAddress: function () { return '192.168.10.2'; }}; },
+         getProcess: function (n) { return n === 'DhcpServerMain' ? dm : null; }};
+var ipc = {network: function () { return {getDevice: function () { return d; }}; }};
+"""
+

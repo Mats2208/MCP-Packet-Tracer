@@ -270,8 +270,8 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
           common case). Touched only if a pool field below is given; if it
           doesn't exist it is created with those values.
         - gateway, dns, start_ip, mask ("255.255.255.0" or "24"), max_users,
-          tftp, wlc: empty/0 = leave alone. tftp/wlc can only be set when the
-          pool is created (PT has no setter for an existing pool's).
+          tftp, wlc: empty/0 = leave alone. PT's script API has no TFTP/WLC
+          setter, so tftp/wlc always come back in not_applied (set them in the GUI).
           Every field is read back: any PT does not hold comes back in
           not_applied, with ok=false.
         - enable: True = Service On (default), False = Off, None = leave alone.

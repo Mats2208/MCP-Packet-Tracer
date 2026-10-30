@@ -4,7 +4,7 @@ Methods taken from PT 9.0.1's IPC reference (help/default/IpcAPI) and tested
 against PT 9.0.1:
 - HttpClient.go(url) is asynchronous; the page arrives in getLastPageContent().
 - DhcpServerMain.getDhcpServerProcessByPortName(port) returns the per-interface
-  process, with editable pools (DhcpPool.set*) and addNewPool(...). That is what
+  process, with addPool(name) and editable pools (DhcpPool.set*). That is what
   issue #23 was missing ("DhcpServerMain does not expose pools").
 - DnsServer.addARecordToNameServerDb / addCNAMEToNameServerDb + setEnable.
 - HttpServer.setPageContents(url, html) / getPage(url). setPageContents only
@@ -84,6 +84,7 @@ def server_dhcp_js(
     *,
     port: str = "",
     pool: str = "",
+    network: str = "",
     gateway: str = "",
     dns: str = "",
     start_ip: str = "",
@@ -94,52 +95,73 @@ def server_dhcp_js(
     enable: bool | None = None,
     remove_pool: str = "",
     exclude: list[tuple[str, str]] | None = None,
+    drop_factory_pool: bool = False,
 ) -> str:
     """Services > DHCP: create or edit a pool, switch it on, exclude ranges, delete pools.
 
-    `pool` is only created or edited when at least one pool field (gateway,
-    dns, start_ip, mask, max_users, tftp, wlc) is given: a bare name, a
+    The ONE backend for both Server-PT DHCP tools (pt_server_dhcp and
+    pt_configure_dhcp_server). Only the measured API is used (see
+    skill/reference/script-engine-api.md, "DHCP server"): pools are created with
+    `addPool(name)` (a repeated name does not duplicate) and filled with the
+    setters, network + two-argument `setNetworkMask` first and `setStartIp`
+    before `setMaxUsers` (it recomputes the end from the start). `addNewPool`
+    (eight unnamed arguments) is not used, so TFTP and WLC, which have no
+    setter, always come back in `not_applied`.
+
+    `pool` is only created or edited when at least one pool field (network,
+    gateway, dns, start_ip, mask, max_users, tftp, wlc) is given: a bare name, a
     `remove_pool`, an `exclude` or an `enable` never create a pool (PT would
     get one full of 0.0.0.0). Exclusions belong to the port's DHCP process,
-    not to a pool, so they never touch one either.
+    not to a pool, so they never touch one either. A mask without `network`
+    re-fits the pool's network (from `start_ip`, else the current one) to it.
+    `drop_factory_pool` deletes the factory "serverPool" next to another pool
+    when it was never configured (no gateway, start at the network address):
+    it would hand out .1, the gateway.
+
+    Reports {ok, port, done, not_applied, enabled, pools, excluded, created,
+    dropped_factory_pool, error, server_ip}, or {ok: false, error} with
+    device_not_found / no_DhcpServerMain / port_not_found.
     """
-    has_fields = any((gateway, dns, start_ip, mask, max_users, tftp, wlc))
+    has_fields = any((network, gateway, dns, start_ip, mask, max_users, tftp, wlc))
     cfg = {
         "device": device, "port": port, "pool": pool if has_fields else "",
-        "gateway": gateway, "dns": dns,
+        "network": network, "gateway": gateway, "dns": dns,
         "start": start_ip, "mask": mask, "max": int(max_users or 0), "tftp": tftp, "wlc": wlc,
         "enable": enable, "remove": remove_pool, "exclude": [list(x) for x in (exclude or [])],
+        "drop_factory": bool(drop_factory_pool), "factory": "serverPool",
     }
     return (
         _head(cfg) + _proc("DhcpServerMain", "dm") + _DHCP_READ +
         "var names=d.getPorts();var pn=c.port||String(names[0]);"
         "var dp=null;try{dp=dm.getDhcpServerProcessByPortName(pn);}catch(e){}"
         "if(!dp){reportResult(JSON.stringify({ok:false,error:'port_not_found',ports:String(names.join(','))}));return;}"
-        "var done=[];var skipped=[];"
+        "var done=[];var skipped=[];var created=false;var dropped=false;var fail='';"
         "if(c.remove){if(dp.getPool(c.remove)){dp.removePool(c.remove);done.push('pool '+c.remove+' deleted');}"
         "else{done.push('pool '+c.remove+' did not exist');}}"
         "if(c.pool){var p=dp.getPool(c.pool);"
-        "if(!p){dp.addNewPool(c.pool,c.gateway||'0.0.0.0',c.dns||'0.0.0.0',c.start||'0.0.0.0',"
-        "c.mask||'0.0.0.0',c.max||256,c.tftp||'0.0.0.0',c.wlc||'0.0.0.0');p=dp.getPool(c.pool);"
-        "done.push('pool '+c.pool+' created');}"
-        # Editing uses the same setters as pt_configure_dhcp_server, in its
-        # order: network + mask (two-argument setNetworkMask), gateway, dns,
-        # start, then max users (it recomputes the end from the start). A mask
-        # without start_ip re-fits the pool's current network to it.
-        "else{if(c.mask){var nw=__net(c.start||String(p.getNetworkAddress()),c.mask);"
-        "p.setNetworkAddress(nw);p.setNetworkMask(nw,c.mask);}"
+        "if(!p){dp.addPool(c.pool);p=dp.getPool(c.pool);created=!!p;}"
+        "if(!p){fail='PT did not create the pool';}else{"
+        "var nw=c.network||(c.mask?__net(c.start||String(p.getNetworkAddress()),c.mask):'');"
+        "if(nw&&c.mask){p.setNetworkAddress(nw);p.setNetworkMask(nw,c.mask);}"
+        "else if(nw){p.setNetworkAddress(nw);}"
         "if(c.gateway){p.setDefaultRouter(c.gateway);}"
         "if(c.dns){p.setDnsServerIp(c.dns);}"
         "if(c.start){p.setStartIp(c.start);}"
         "if(c.max){p.setMaxUsers(c.max);}"
-        # PT's DhcpPool has no setter for TFTP or WLC: only addNewPool takes them.
+        # PT's DhcpPool has no setter for TFTP or WLC.
         "if(c.tftp){skipped.push('tftp');}if(c.wlc){skipped.push('wlc');}"
-        "done.push('pool '+c.pool+' updated');}}"
+        "done.push('pool '+c.pool+(created?' created':' updated'));}}"
         "for(var k=0;k<c.exclude.length;k++){dp.addExcludedAddress(c.exclude[k][0],c.exclude[k][1]);"
         "done.push('excluded '+c.exclude[k][0]+'-'+c.exclude[k][1]);}"
         "if(c.enable!==null){dp.setEnable(!!c.enable);done.push(c.enable?'service On':'service Off');}"
+        "if(c.drop_factory&&c.pool&&c.pool!==c.factory&&!fail){var f=dp.getPool(c.factory);"
+        "if(f&&String(f.getDefaultRouter())==='0.0.0.0'&&(String(f.getStartIp())===String(f.getNetworkAddress())"
+        "||String(f.getStartIp())==='0.0.0.0')){dp.removePool(c.factory);dropped=true;"
+        "done.push('pool '+c.factory+' deleted (never configured)');}}"
+        "var sip='';try{sip=String(d.getPort(pn).getIpAddress());}catch(e){}"
         "reportResult(JSON.stringify({ok:true,port:pn,done:done,not_applied:skipped,"
-        "enabled:!!dp.isEnable(),pools:__pools(dp),excluded:dp.getExcludedAddressCount()}));"
+        "enabled:!!dp.isEnable(),pools:__pools(dp),excluded:dp.getExcludedAddressCount(),"
+        "created:created,dropped_factory_pool:dropped,error:fail,server_ip:sip}));"
         + _TAIL
     )
 

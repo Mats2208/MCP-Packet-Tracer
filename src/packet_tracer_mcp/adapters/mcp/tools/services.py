@@ -16,6 +16,7 @@ from ....domain.rules.dhcp_server_rules import (
     validate_dhcp_server_against_topology,
 )
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
+from ....infrastructure.generator.service_js import server_dhcp_js
 from ....shared.utils import reply_json
 
 
@@ -213,8 +214,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Creates or edits a DHCP pool on a Server-PT (GUI: Services > DHCP), validated against
         its subnet, switches the service on and reads every pool back. No CLI (a Server-PT has none).
-        Router DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions, TFTP/WLC or showing the
-        page on screen: pt_server_dhcp.
+        Router DHCP: plan with dhcp=True or CLI `ip dhcp pool`. Exclusions or showing the page on
+        screen: pt_server_dhcp (same JS backend, server_dhcp_js).
 
         The server needs a static IP inside the pool's subnet (else warning DHCP_SERVER_NO_IP). PT
         never leases the server's own IP but DOES lease the gateway's if the range covers it.
@@ -274,87 +275,27 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 ))
 
         expected: dict = {}
-        if read_only:
-            body = ""
-        elif remove:
-            body = f"    __s.removePool({json.dumps(cfg.pool_name)});"
-        elif errors:
-            body = ""
-        else:
+        # The JS is server_dhcp_js, the same backend pt_server_dhcp uses: one
+        # implementation of the measured DHCP API for both tools.
+        js_kwargs: dict = {"port": cfg.port, "enable": None}
+        if remove:
+            js_kwargs["remove_pool"] = cfg.pool_name
+        elif not read_only and not errors:
             start, users = resolve_range(cfg)
             expected = {
                 "network": cfg.network, "mask": cfg.mask, "start": start,
                 "max_users": users,
             }
-            sets = [
-                f"    __p.setNetworkAddress({json.dumps(cfg.network)});",
-                # setNetworkMask takes (network, mask): with a single argument PT
-                # answers "Invalid arguments for IPC call".
-                f"    __p.setNetworkMask({json.dumps(cfg.network)}, {json.dumps(cfg.mask)});",
-            ]
             if cfg.gateway:
                 expected["gateway"] = cfg.gateway
-                sets.append(f"    __p.setDefaultRouter({json.dumps(cfg.gateway)});")
             if cfg.dns:
                 expected["dns"] = cfg.dns
-                sets.append(f"    __p.setDnsServerIp({json.dumps(cfg.dns)});")
-            # Order matters: setMaxUsers recomputes the end from the start.
-            sets.append(f"    __p.setStartIp({json.dumps(start)});")
-            sets.append(f"    __p.setMaxUsers({int(users)});")
-            name = json.dumps(cfg.pool_name)
-            drop = ""
-            if drop_factory_pool and cfg.pool_name != DEFAULT_SERVER_POOL:
-                factory = json.dumps(DEFAULT_SERVER_POOL)
-                drop = (
-                    f"    var __f = __s.getPool({factory});"
-                    "    if (__f && String(__f.getDefaultRouter()) === '0.0.0.0'"
-                    "        && (String(__f.getStartIp()) === String(__f.getNetworkAddress())"
-                    "            || String(__f.getStartIp()) === '0.0.0.0')) {"
-                    f"      __s.removePool({factory}); __dropped = true;"
-                    "    }"
-                )
-            body = (
-                f"    var __p = __s.getPool({name});"
-                f"    if (!__p) {{ __s.addPool({name}); __p = __s.getPool({name}); __created = true; }}"
-                "    if (!__p) { __fail = 'PT did not create the pool'; } else {"
-                + "".join(sets) +
-                f"    __s.setEnable({'true' if enabled else 'false'});"
-                + drop +
-                "    }"
+            js_kwargs.update(
+                pool=cfg.pool_name, network=cfg.network, mask=cfg.mask,
+                gateway=cfg.gateway, dns=cfg.dns, start_ip=start, max_users=users,
+                enable=enabled, drop_factory_pool=drop_factory_pool,
             )
-
-        js = (
-            "try {"
-            f"  var __d = ipc.network().getDevice({json.dumps(cfg.device)});"
-            "  if (!__d) { reportResult(JSON.stringify({ found: false })); }"
-            "  else {"
-            "    var __m = (typeof __d.getProcess === 'function') ? __d.getProcess('DhcpServerMain') : null;"
-            "    if (!__m) { reportResult(JSON.stringify({ found: true, supported: false })); }"
-            "    else {"
-            f"    var __s = __m.getDhcpServerProcessByPortName({json.dumps(cfg.port)});"
-            "    if (!__s) { reportResult(JSON.stringify({ found: true, supported: true, port_ok: false })); }"
-            "    else {"
-            "    var __created = false; var __dropped = false; var __fail = '';"
-            + body +
-            "    var __pools = [];"
-            "    for (var __i = 0; __i < __s.getPoolCount(); __i++) {"
-            "      var __q = __s.getPoolAt(__i);"
-            "      __pools.push({ name: String(__q.getDhcpPoolName()),"
-            "        network: String(__q.getNetworkAddress()), mask: String(__q.getSubnetMask()),"
-            "        gateway: String(__q.getDefaultRouter()), dns: String(__q.getDnsServerIp()),"
-            "        start: String(__q.getStartIp()), end: String(__q.getEndIp()),"
-            "        max_users: __q.getMaxUsers() });"
-            "    }"
-            "    var __ip = '';"
-            f"    try {{ __ip = String(__d.getPort({json.dumps(cfg.port)}).getIpAddress()); }} catch (__x) {{}}"
-            "    reportResult(JSON.stringify({ found: true, supported: true, port_ok: true,"
-            "      enabled: !!__s.isEnable(), server_ip: __ip, created: __created,"
-            "      dropped_factory_pool: __dropped, error: __fail, pools: __pools }));"
-            "    }"
-            "    }"
-            "  }"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
+        js = server_dhcp_js(cfg.device, **js_kwargs)
 
         payload: dict = {
             "valid": not errors,
@@ -386,18 +327,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception as exc:
             return f"Unreadable reply from PT: {exc}"
 
-        if not data.get("found"):
-            return (
-                f"'{device}' does not exist in the active topology. "
-                "Use pt_query_topology to see the real names."
-            )
-        if not data.get("supported"):
-            return (
-                f"'{device}' has no Server-PT DHCP server. If it is a router, "
-                "DHCP goes through the CLI (`ip dhcp pool`) or the plan with dhcp=True."
-            )
-        if not data.get("port_ok"):
-            return f"'{device}' has no DHCP server on port '{port}'."
+        if data.get("ok") is False:
+            return {
+                "device_not_found": (f"'{device}' does not exist in the active topology. "
+                                     "Use pt_query_topology to see the real names."),
+                "no_DhcpServerMain": (f"'{device}' has no Server-PT DHCP server. If it is a "
+                                      "router, DHCP goes through the CLI (`ip dhcp pool`) or "
+                                      "the plan with dhcp=True."),
+                "port_not_found": f"'{device}' has no DHCP server on port '{port}'.",
+            }.get(data.get("error"), f"PT error: {data.get('error')}")
 
         payload.update(data)
         payload["sent"] = True
