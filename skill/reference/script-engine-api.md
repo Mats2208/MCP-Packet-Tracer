@@ -61,6 +61,57 @@ If a method is not here, do **not** assume it exists.
   start = network address and no gateway, so next to a named pool it hands out `.1`.
   After changing a pool, clients keep their old lease — even one outside the new range. Toggling `setDhcpFlag` does not renew; run `ipconfig /release` then `ipconfig /renew` on the host console.
 
+**Process names** — verified PT 9.0 on a 2911 (2026-10-30)
+- Use the name with the `Process` suffix (or `*Main`): `RoutingProcess`, `OspfMainProcess`,
+  `EigrpMainProcess`, `ArpProcess`, `CdpProcess`, `NatProcess`, `AclProcess`, `IcmpProcess`,
+  `StpMainProcess`, `VlanManager` (switch). ☠️ The short names `Ospf`, `Arp`, `Cdp`, `Nat`, `Icmp`, `Stp`
+  **throw** `invalid string position`; `CdpMain` and `DhcpServerMain` (on a router) return null.
+- Table getters return **plain JS objects** (structs, and `vector<struct>` as Arrays): serialize them
+  with `JSON.stringify` instead of calling getters on them.
+
+**Routing / OSPF / ARP / STP / ACL / NAT reads**
+- `getProcess("RoutingProcess").getRoutingTable()` → `{routingNetworks:[{network, subnetMask,
+  routingEntries:[{networkId, subnetMask, nextHop, portName, adminDistance, metric, typeOfProtocol}]}]}`.
+  `typeOfProtocol` is the ASCII code of the IOS letter: 67 `C`, 76 `L`, 79 `O` (measured); 83 `S`,
+  68 `D`, 82 `R` by the same rule.
+- OSPF: `om = getProcess("OspfMainProcess")` → `getOspfProcessCount()` / `getOspfProcessAt(i)` → `op`;
+  `op.getRouterId()`, `op.getAreaCount()` / `getAreaAt(i)` → area; neighbours are **per area and port**:
+  `area.getNeighborTable(portName)` → `getNeighborCount()` / `getNeighborAt(k)` → `{address, areaId, dr,
+  backupDr, port, priority, routerId, state, ...}`. `state` 8 = FULL (measured against `show ip ospf
+  neighbor`); IOS order 1 DOWN .. 4 2WAY .. 8 FULL.
+- `getProcess("ArpProcess").getArpTable()` → `{entries:[{ipAddress, macAddress, portName}]}`.
+- `getProcess("StpMainProcess").getStpProcess(vlan)` → `isRootBridge()`, `getRootBridgeId()`
+  (`"32769 / 0001.63BE.8468"`). ❌ `getPortState` / `getPortRole` do not exist in 9.0 (TypeError).
+- `AclProcess.getAclCount()` / `getAclAt(i)` → `acl.getCommandAt(i)` (text). `NatProcess.getNatTable()`
+  → `{entries:[...]}`; `getInSrcListCount()`; router port `getNatMode()` (`"0"` = no NAT, sent as a string).
+- `VlanManager`: `getVlanCount()` / `getVlanAt(i)` → `getVlanNumber()`, `getName()`, `getMacTable()` →
+  `{entries:[{isDynamic, macAddress, port}]}`. Switch port: `isAccessPort()`, `getAccessVlan()`,
+  `getNativeVlanId()`; `getPortSecurity()` is null when port security is not configured.
+
+**IOS config with a status per line**
+- `d.enterCommand(cmd, mode)` returns `{first: status, second: output}`. Status: 0 ok, 1 ambiguous,
+  2 invalid, 3 incomplete, 4 not implemented (0 and 2 measured). `mode` is `"global"`, `"enable"`,
+  `"user"` or `""` (current mode). ⚠️ In `"global"` mode, `enable` returns 3 and `configure terminal`
+  returns 2: you are already there, so skip those lines instead of reporting them as rejected.
+
+**Simulation / time**
+- `ipc.appWindow().getUserCreatedPDU().addSimplePdu(src, dst)` → 0 added, 30 destination missing.
+  It is the GUI's *Add Simple PDU*: in Simulation the ICMP appears in the event list.
+- `ipc.appWindow().getRealtimeToolbar().fastForwardTime()` (~30 ms): STP converges at once, a link
+  cabled moments ago answers a ping. Do not use `resetNetwork()`.
+- `getProcess("IcmpProcess").startPing(ip, repeat, timeout, wait, port)` → id; `getPingProcess(id)` →
+  `getSentCount/getReceivedCount/getMinDelay/getMaxDelay/getLastTtl`. ⚠️ The `PingProcess` is destroyed
+  when the ping ends (`getPingProcess(id)` → null): poll while it runs; the last sample can be lost.
+
+**Wireless AP, host IPv6, mail**
+- AccessPoint-PT: `getProcess("WirelessServerProcess")` → `getSsid/setSsid`, `isSsidBrdCastEnabled`,
+  `isMacFilterEnabled`, `getAuthenType`, `getEncryptType`, `resetAllAssociations()`.
+  `WirelessCommon` is null there.
+- Host port: `addIpv6Address(ip, prefixLen, type, allowDup)` — **four** args (type 0 = unicast) → true;
+  `getIpv6Addresses()` → `[{address, prefix, type}]` (address upper-cased).
+- `getProcess("SmtpServer")`: `getServerDomainName/setServerDomainName`, `isEnabled/setEnable`;
+  `getProcess("Pop3Server")`: `isEnabled/setEnable`.
+
 **Cable enum ints (for `lw.createLink`)**: straight 8100 · cross 8101 · roll 8102 · fiber 8103 ·
 phone 8104 · cable 8105 · serial 8106 · auto 8107 · console 8108 · wireless 8109 · coaxial 8110 ·
 octal 8111 · cellular 8112 · usb 8113 · custom_io 8114.

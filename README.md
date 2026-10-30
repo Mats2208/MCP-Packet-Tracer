@@ -88,15 +88,15 @@ carries a per-machine token (see [Security](#security)).
 |---|---|---|
 | **Build** | One prompt → plan → validation → auto-fix → live deploy, with read-back of every device and link | `pt_full_build`, `pt_plan_topology`, `pt_validate_plan`, `pt_fix_plan`, `pt_live_deploy` |
 | **Addressing** | /24 LANs, /30 point-to-point links, DHCP pools on routers or on a dedicated Server-PT, IPv6 dual stack | `pt_configure_dhcp_server`, `dual_stack=True` |
-| **Routing** | Static (with floating backups), OSPF, EIGRP, RIP | generated IOS, applied live |
-| **Switching** | VLANs, trunks, router-on-a-stick, STP, port security | `pt_apply_vlan`, `pt_apply_stp`, `pt_apply_port_security` |
+| **Routing** | Static (with floating backups), OSPF, EIGRP, RIP; HSRP, BGP and QoS on a live router | generated IOS, applied live; `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` |
+| **Switching** | VLANs, trunks, router-on-a-stick, STP, port security, EtherChannel, AP SSID and MAC filter | `pt_apply_vlan`, `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_etherchannel`, `pt_wireless_ap` |
 | **Security** | ACLs, NAT, device hardening (SSH, local users, `enable secret`, banner) and an audit of the **live** config | `pt_apply_acl`, `pt_apply_nat`, `pt_apply_hardening`, `pt_audit_security` |
 | **Inside each device** | Type in a router's CLI tab, run `ping`/`ipconfig` on a PC, configure Server-PT DHCP/DNS/HTTP/FTP/EMAIL, use the Web Browser and Email apps | `pt_cli`, `pt_host_command`, `pt_server_*`, `pt_web_browser` |
-| **Verify** | Real ping with parsed results, health check, plan-vs-live diff, per-port inspection | `pt_verify_connectivity`, `pt_health_check`, `pt_diff`, `pt_inspect_ports` |
-| **Explain** | Step the simulation and read PT's own per-layer decision log for each packet | `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` |
+| **Verify** | Real ping with parsed results, health check, plan-vs-live diff, per-port inspection; every CLI change reports which IOS lines were rejected; structured reads of routes, OSPF, ARP, CDP, STP, ACL, NAT and MAC tables | `pt_verify_connectivity`, `pt_health_check`, `pt_diff`, `pt_inspect_ports`, `pt_read_routes`, `pt_read_ospf`, … |
+| **Explain** | Send a simple PDU, step the simulation and read PT's own per-layer decision log for each packet | `pt_send_pdu`, `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` |
 | **Document** | Canvas screenshots, notes and drawings on the canvas, `.pkt` save/open, config backup, exported plans and configs | `pt_screenshot`, `pt_add_note`, `pt_save_project`, `pt_backup_config`, `pt_export` |
 
-Every tool is listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
+All 94 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
 
 ## Installation
 
@@ -334,7 +334,7 @@ validation approved, a bridge returning the previous operation's result, a conne
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/CONTRIBUTING.md). The
-test suite (945 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
+test suite (1,297 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
 
 ## License
 

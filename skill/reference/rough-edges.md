@@ -80,9 +80,12 @@ with the default outline.
   canvas and as a down link in `pt_health_check`. Give it an address, even a throwaway `/30`.
 - **PT does not associate a wireless host with the nearest AP.** Measured: a laptop with its own LAN's
   AP right beside it did a *fresh* association and a *fresh* DHCP and still chose the AP of another LAN,
-  taking that LAN's address. Between APs sharing the default SSID the choice is arbitrary, and there is
-  no SSID API to force it (neither the AP nor its port has `setSsid`). If you need deterministic
-  addressing, use `wireless_laptops=False` and cable the laptops.
+  taking that LAN's address. Between APs sharing the default SSID the choice is arbitrary. The AP side
+  is settable (`pt_wireless_ap`: `WirelessServerProcess.setSsid` + `resetAllAssociations`, measured on
+  PT 9.0): renaming an AP's SSID drops its clients and keeps them off it. The client side is not
+  (`WirelessClientProcess.addProfile` throws), so a laptop only ever joins "Default". If you need
+  deterministic addressing, use `wireless_laptops=False` and cable the laptops. A dropped client's
+  port still reads `isPortUp()`/`getLink()` true: confirm association with a ping, not the port.
 - **`PT_MCP_BRIDGE_TOKEN` is validated.** If the server refuses to start with `BridgeTokenError`, the
   variable is set to something shorter than 32 chars or outside `[A-Za-z0-9_-]`. Fix it or unset it so
   the on-disk token is used. It fails loudly on purpose: a bad value there would disable the only real
@@ -90,6 +93,30 @@ with the default outline.
 - **The layout adapts to the busiest LAN.** Coordinates no longer go negative and LAN clusters no longer
   overlap, so you do not need to reposition devices by hand after `pt_full_build` — only if you want a
   specific arrangement.
+
+### Verified against PT 9.0 (2026-10-30)
+
+Several things this skill used to call impossible work through the API and have tools now:
+a simple PDU (`pt_send_pdu`), an AP's SSID and MAC filter (`pt_wireless_ap`), a static IPv6 on a host
+(`pt_host_ip_config(ipv6_address=...)`), the EMAIL domain and SMTP/POP3 switches (`pt_server_service`),
+and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a trap:
+
+- **A wireless client that lost its AP still looks cabled.** After an SSID change its port keeps
+  `isPortUp()` and `getLink()` true while the client is disassociated (100 % loss to the gateway).
+  Judge association by a ping, never by the port.
+- **CME voice needs a license PT does not ship enabled.** On a 2911, `telephony-service`,
+  `max-ephones` and `ephone-dn` come back with status 2 (invalid). It would need the `uck9` technology
+  package and a reload; untested, so there is no voice tool.
+- **`PingProcess` vanishes when the ping ends.** `IcmpProcess.getPingProcess(id)` returns null once it
+  finishes, so a structured ping must be polled while it runs and the last sample can be lost.
+  `pt_verify_connectivity` keeps using the console ping.
+- **The first PDU between two devices can die on ARP**, exactly like a first ping: send it again before
+  calling it a fault. The packet trace's explanation names the real reason (e.g. an ACL deny).
+- **`enterCommand(..., "global")` refuses navigation lines**: `enable` returns 3 and `configure terminal`
+  returns 2 because you are already in config mode. The verified CLI tools ignore those lines; raw JS
+  that checks statuses should too.
+- **CDP is empty for about a minute after a deploy** (it announces every 60 s): an empty `pt_read_cdp`
+  right after building is not a cabling fault.
 
 ### Large networks — verified against PT 9.0.1 (2026-10-26, 116 devices)
 
@@ -133,7 +160,8 @@ with the default outline.
   `addCNAMEToNameServerDb`, `remove…`, `setEnable`); `HttpServer` (`setPageContents/getPage`;
   replaces an existing page only, a new one throws `File not exist: <page>` on PT 9.0.0);
   `TftpServer`/`FtpServer` (`setEnabled`; FTP users via `getFtpUserAccountManager().addFtpUser`);
-  `SyslogServer`; `EmailServer` (`addUser/changePassword`, no domain or on/off API).
+  `SyslogServer`; `EmailServer` (`addUser/changePassword`); the EMAIL page's Domain Name and switches live
+  on `SmtpServer` (`get/setServerDomainName`, `isEnabled/setEnable`) and `Pop3Server` (`isEnabled/setEnable`).
 - ☠️ **HTTP and HTTPS both off is a trap on PT 9.0.0.810** (reproduced twice, same crash, fault offset
   `0x227c9da`). From that state, one call doing `setPageContents` + `HttpServer.setEnable(true)` +
   `HttpsServer.setEnable(true)` hung the script engine ("No answer from PT (timeout)") and PT then

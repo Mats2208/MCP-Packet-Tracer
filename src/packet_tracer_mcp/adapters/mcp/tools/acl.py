@@ -6,9 +6,25 @@ import json
 from mcp.server.fastmcp import FastMCP
 from ....domain.models.acls import ACLBinding
 from ....application.use_cases.apply_acl import build_acl_plan, apply_acl_uc, remove_acl_uc
-from ....infrastructure.generator.acl_cli_generator import generate_acl_cli
+from ....infrastructure.generator.acl_cli_generator import generate_acl_cli, generate_acl_statements
+from ....infrastructure.execution.ios_verify import IosApplyCheck, verification_summary
 from ..bridge_context import BridgeContext
 from ....shared.utils import reply_json
+
+
+def acl_object_outcome(added, expected: int) -> dict:
+    """Verification fields for pt_apply_acl_object: every statement must be accepted.
+
+    addStatement returns false for a statement PT does not take; counting it as a
+    success used to report an ACL with missing rules as applied.
+    """
+    try:
+        n = int(added)
+    except (TypeError, ValueError):
+        n = -1
+    ok = n == expected
+    return {"verified": ok, "verification": "verified" if ok else "rejected",
+            "statements_rejected": max(expected - n, 0) if n >= 0 else expected}
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -63,7 +79,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         # Only queries PT if the bridge is connected (dynamic validation)
         bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
-        send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
+        check = IosApplyCheck(_bridge_send_and_wait)
+        send_fn = check.send if bridge_ok and not dry_run else None
 
         result = apply_acl_uc(
             plan=plan,
@@ -80,16 +97,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         else:
             summary_lines.append(f"❌ ACL '{plan.name_or_number}' has {len(result['errors'])} error(s).")
 
+        verification = check.report()
         if dry_run:
             summary_lines.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary_lines.append(f"📤 Applied on '{router}' through the bridge (configureIosDevice).")
-            if binding:
-                summary_lines.append(f"   Binding: {binding.interface} {binding.direction}")
         elif result["valid"] and not bridge_ok:
             summary_lines.append("⚠ Bridge not connected — payload generated but NOT sent.")
-        elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK but sending failed.")
+        elif result["valid"]:
+            summary_lines.append(verification_summary(verification))
+            if binding and verification["verified"]:
+                summary_lines.append(f"   Binding: {binding.interface} {binding.direction}")
 
         return reply_json({
             "summary": "\n".join(summary_lines),
@@ -100,6 +116,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
+            **verification,
         })
 
     @mcp.tool()
@@ -160,10 +177,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "backend": "objects",
             })
 
-        # Convert CLI lines to statements (without the "access-list NAME " prefix)
+        # Bare statements (no "access-list NAME " prefix), the form addStatement takes
         cli_lines = generate_acl_cli(plan)
-        prefix = f"access-list {plan.name_or_number} "
-        statements = [ln[len(prefix):] for ln in cli_lines if ln.startswith(prefix)]
+        statements = generate_acl_statements(plan)
 
         # Build the JS for AclProcess.addAcl + addStatement
         name_js = json.dumps(str(plan.name_or_number))
@@ -228,8 +244,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return reply_json(payload)
 
         response = _bridge_send_and_wait(js, timeout=10.0)
+        payload["verified"] = False
         if response is None:
-            payload["summary"] = "No answer from PT."
+            payload["verification"] = "unverified"
+            payload["summary"] = "⚠ No answer from PT: the result is UNVERIFIED."
             return reply_json(payload)
 
         try:
@@ -238,9 +256,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 payload["sent"] = True
                 payload["added"] = r.get("added")
                 payload["cmd_count"] = r.get("cmdCount")
+                payload.update(acl_object_outcome(r.get("added"), len(statements)))
+                head = "📤" if payload["verified"] else "❌ Partial:"
                 payload["summary"] = (
-                    f"📤 ACL '{plan.name_or_number}' applied on '{router}' through AclProcess "
-                    f"({r.get('added')}/{len(statements)} statements). Binding={bound}."
+                    f"{head} ACL '{plan.name_or_number}' on '{router}' through AclProcess: "
+                    f"{r.get('added')}/{len(statements)} statements accepted. Binding={bound}."
                 )
             else:
                 payload["summary"] = f"PT error: {r.get('error', 'unknown')}"

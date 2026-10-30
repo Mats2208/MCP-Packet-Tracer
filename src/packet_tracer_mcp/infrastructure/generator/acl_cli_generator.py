@@ -1,6 +1,6 @@
 """IOS CLI generator for ACLs.
 
-Produces the `access-list` and `ip access-group` commands that are applied via
+Produces the `access-list` / `ip access-list` and `ip access-group` commands that are applied via
 `configureIosDevice` through the bridge. The output can be consumed in
 two ways:
 
@@ -16,18 +16,40 @@ from __future__ import annotations
 from ...domain.models.acls import ACLPlan, ACLEntry, ACLBinding
 
 
-def generate_acl_cli(plan: ACLPlan) -> list[str]:
-    """Generates the `access-list ...` lines for an ACLPlan.
+def is_named_acl(name_or_number: str) -> bool:
+    """A name, not a number: IOS only takes it through `ip access-list`."""
+    return not str(name_or_number).strip().isdigit()
 
-    Does not include `enable`, `configure terminal` or `end`. Only the intermediate
-    lines that define the ACL.
+
+def generate_acl_statements(plan: ACLPlan) -> list[str]:
+    """Each entry as its bare statement (`remark ...`, `permit ...`), no ACL prefix.
+
+    Shared by both CLI forms and by the object backend (AclProcess.addStatement).
     """
-    lines: list[str] = []
+    statements: list[str] = []
     for entry in plan.entries:
         if entry.remark:
-            lines.append(f"access-list {plan.name_or_number} remark {entry.remark}")
-        lines.append(_render_entry(plan.name_or_number, plan.acl_type, entry))
-    return lines
+            statements.append(f"remark {entry.remark}")
+        statements.append(_render_entry(plan.acl_type, entry))
+    return statements
+
+
+def generate_acl_cli(plan: ACLPlan) -> list[str]:
+    """Generates the lines that define an ACLPlan.
+
+    Numbered: one `access-list N ...` line per statement. Named: IOS rejects
+    `access-list NAME ...` (it only takes numbers there), so the ACL is opened with
+    `ip access-list standard|extended NAME` and each statement goes inside it.
+    Does not include `enable`, `configure terminal` or `end`.
+    """
+    statements = generate_acl_statements(plan)
+    if is_named_acl(plan.name_or_number):
+        return (
+            [f"ip access-list {plan.acl_type} {plan.name_or_number}"]
+            + [f" {st}" for st in statements]
+            + [" exit"]
+        )
+    return [f"access-list {plan.name_or_number} {st}" for st in statements]
 
 
 def generate_acl_binding_cli(binding: ACLBinding) -> list[str]:
@@ -77,7 +99,12 @@ def build_remove_payload(router: str, name_or_number: str, binding_interface: st
         lines.append(f"interface {binding_interface}")
         lines.append(f" no ip access-group {name_or_number} {direction}")
         lines.append(" exit")
-    lines.append(f"no access-list {name_or_number}")
+    if is_named_acl(name_or_number):
+        # The type is not known here; IOS ignores the one that does not match.
+        lines.append(f"no ip access-list standard {name_or_number}")
+        lines.append(f"no ip access-list extended {name_or_number}")
+    else:
+        lines.append(f"no access-list {name_or_number}")
     lines.append("end")
     lines.append("write memory")
     return "\n".join(lines)
@@ -87,9 +114,9 @@ def build_remove_payload(router: str, name_or_number: str, binding_interface: st
 # Private helpers
 # ----------------------------------------------------------------------
 
-def _render_entry(acl_id: str, acl_type: str, entry: ACLEntry) -> str:
-    """Renders an entry as an IOS line."""
-    parts: list[str] = [f"access-list {acl_id}"]
+def _render_entry(acl_type: str, entry: ACLEntry) -> str:
+    """Renders an entry as an IOS statement, without the `access-list N` prefix."""
+    parts: list[str] = []
 
     if entry.sequence is not None:
         # IOS standard: sequences are handled with `ip access-list` in named mode.

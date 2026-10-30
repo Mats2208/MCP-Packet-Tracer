@@ -82,6 +82,27 @@ def _is_v6(value: str) -> bool:
         return False
 
 
+def parse_ipv6_interface(value: str) -> tuple[str, int] | None:
+    """'2001:db8::10/64' → ('2001:db8::10', 64). None unless it is a usable host address.
+
+    The prefix is required (PT's addIpv6Address takes it as its own argument).
+    Multicast, unspecified, loopback and link-local are refused: none of them is
+    a static unicast address a host could be given (PT derives the link-local).
+    """
+    raw = (value or "").strip()
+    if "/" not in raw or not raw.isascii():
+        return None
+    try:
+        iface = ipaddress.IPv6Interface(raw)
+    except ValueError:
+        return None
+    ip = iface.ip
+    if (not 1 <= iface.network.prefixlen <= 128 or ip.is_multicast or ip.is_unspecified
+            or ip.is_loopback or ip.is_link_local):
+        return None
+    return str(ip), iface.network.prefixlen
+
+
 def validate_host_ip_config(
     device: str,
     *,
@@ -93,6 +114,7 @@ def validate_host_ip_config(
     ipv6_mode: str = "",
     ipv6_gateway: str = "",
     ipv6_dns: str = "",
+    ipv6_address: str = "",
     wait_dhcp_s: float = 12.0,
 ) -> ValidationResult:
     errors: list[PlanError] = list(validate_wait_seconds(
@@ -102,7 +124,7 @@ def validate_host_ip_config(
         errors.append(PlanError(code=code, device=device, message=msg, suggestion=hint))
 
     fields = {"ip": ip, "mask": mask, "gateway": gateway, "dns": dns,
-              "ipv6_gateway": ipv6_gateway, "ipv6_dns": ipv6_dns}
+              "ipv6_gateway": ipv6_gateway, "ipv6_dns": ipv6_dns, "ipv6_address": ipv6_address}
     for name, value in fields.items():
         if has_control_chars(value):
             bad(ErrorCode.PANEL_INVALID_CHARS, f"'{name}' contains a newline.")
@@ -111,7 +133,15 @@ def validate_host_ip_config(
         bad(ErrorCode.PANEL_INVALID_VALUE, f"mode '{mode}' is not valid.", "Use 'static' or 'dhcp'.")
     if ipv6_mode not in IPV6_MODES:
         bad(ErrorCode.PANEL_INVALID_VALUE, f"ipv6_mode '{ipv6_mode}' is not valid.",
-            "Use 'auto' (SLAAC) or 'off'. PT does not let the API set a static IPv6 on a host.")
+            "Use 'auto' (SLAAC) or 'off'. For a static address use ipv6_address.")
+    if ipv6_address:
+        if parse_ipv6_interface(ipv6_address) is None:
+            bad(ErrorCode.PANEL_INVALID_IP,
+                f"ipv6_address '{ipv6_address}' is not a usable IPv6 host address with a prefix.",
+                "Format: '2001:db8:0:1::10/64' (not multicast, loopback or link-local).")
+        if ipv6_mode == "off":
+            bad(ErrorCode.PANEL_INVALID_VALUE, "ipv6_address together with ipv6_mode='off'.",
+                "Drop ipv6_mode, or drop ipv6_address.")
 
     if mode == "dhcp" and ip:
         bad(ErrorCode.PANEL_INVALID_VALUE, "You asked for DHCP and a fixed IP at the same time.",
@@ -132,7 +162,7 @@ def validate_host_ip_config(
         if value and not _is_v6(value):
             bad(ErrorCode.PANEL_INVALID_IP, f"{name} '{value}' is not a valid IPv6 address.")
 
-    if not any([mode, ip, gateway, dns, ipv6_mode, ipv6_gateway, ipv6_dns]):
+    if not any([mode, ip, gateway, dns, ipv6_mode, ipv6_gateway, ipv6_dns, ipv6_address]):
         bad(ErrorCode.PANEL_INVALID_VALUE, "You did not ask for any change.",
             "Pass mode, ip/mask, gateway, dns or the ipv6_* fields.")
 

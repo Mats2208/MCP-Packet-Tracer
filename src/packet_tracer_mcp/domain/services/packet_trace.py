@@ -19,10 +19,26 @@ from __future__ import annotations
 
 import ipaddress
 
-# getUserTrafficType() returns an integer. 0 is ICMP and 5 is ARP, MEASURED (ping
-# from PC1 to its gateway: the ICMP stays buffered and the ARP broadcast goes out first).
-# Anything else has not been observed, so the raw value is returned instead of inventing names.
-TRAFFIC_TYPES = {0: "ICMP", 5: "ARP"}
+# getUserTrafficType() returns the TrafficType enum as an integer. The names come from
+# Cisco's IPC reference (FrameInstance.getUserTrafficType / Simulation.newFrameInstanceAdded,
+# eTrafficType_*). MEASURED against PT 9: 0 ICMP and 5 ARP (ping from PC1 to its gateway),
+# 11 STP and 12 OSPF (BPDUs and hellos in the event list). Every measured value matched the
+# documented enum, which is why the rest is taken from it. A value outside the enum is
+# passed through as `type<N>` instead of inventing a name.
+TRAFFIC_TYPES = {
+    0: "ICMP", 1: "TCP", 2: "UDP", 3: "RIPv1", 4: "RIPv2", 5: "ARP", 6: "CDP",
+    7: "DHCP", 8: "NAT", 9: "EIGRP", 10: "VTP", 11: "STP", 12: "OSPF", 13: "DTP",
+    14: "Telnet", 15: "SSH", 16: "TFTP", 17: "HTTP", 18: "HTTPS", 19: "DNS",
+    20: "ICMPv6", 21: "LACP", 22: "PAgP", 23: "IPsec", 24: "IKE", 25: "Syslog",
+    26: "TACACS", 27: "RADIUS", 28: "SNMP", 29: "NTP", 30: "FTP", 31: "SMTP",
+    32: "POP3", 33: "SCCP", 34: "RTP", 35: "H.323", 36: "BGP", 37: "HSRP",
+    38: "HSRPv6", 39: "NetFlow", 40: "NDv6", 41: "RIPng", 42: "DHCPv6",
+    43: "EIGRPv6", 44: "OSPFv6", 45: "IoE", 46: "PTP", 47: "REP", 48: "CAPWAP-UDP",
+    49: "LLDP", 50: "SPAN", 51: "IoE-TCP", 52: "USB", 53: "Bluetooth", 1000: "Custom",
+}
+
+# The values seen on a live PT, as opposed to read from the reference.
+MEASURED_TRAFFIC_TYPES = frozenset({0, 5, 11, 12})
 
 # Precedence order when deriving ONE state per frame. Whatever blocks goes first:
 # a dropped frame matters more than a "sent" one in the same tick.
@@ -72,8 +88,32 @@ def _is_expected_drop(reason: str, destination: str) -> bool:
 
 
 def traffic_type_label(raw) -> str:
-    """Label for the traffic type; passes the raw value through if it was not observed."""
+    """Label for the traffic type; passes the raw value through if it is not in the enum."""
     return TRAFFIC_TYPES.get(raw, f"type{raw}")
+
+
+def normalize_frame(frame: dict) -> dict:
+    """Labels the traffic type and fills empty endpoints from the user PDU, in place.
+
+    getSourceString()/getDestinationString() came back empty on the ICMP frames of a
+    PDU fired with addSimplePdu. When the frame carries its PDU's endpoints
+    (`pdu_source`/`pdu_destination`, device names from UserTraffic), they stand in
+    for the missing strings; `endpoints_from` says so, because a device name is
+    not the IP address those fields normally hold.
+    """
+    frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+    pdu_src = frame.pop("pdu_source", None) or ""
+    pdu_dst = frame.pop("pdu_destination", None) or ""
+    filled = False
+    if not frame.get("source") and pdu_src:
+        frame["source"] = pdu_src
+        filled = True
+    if not frame.get("destination") and pdu_dst:
+        frame["destination"] = pdu_dst
+        filled = True
+    if filled:
+        frame["endpoints_from"] = "pdu"
+    return frame
 
 
 def frame_status(frame: dict) -> str:
@@ -121,3 +161,41 @@ def summarize_trace(frames: list[dict]) -> dict:
         "expected_drops": expected,
         "clean": not failures,
     }
+
+
+def trace_report(data: dict) -> dict:
+    """The event-list read (packet_trace_js's reply) as summary + trace for the model.
+
+    Shared by pt_read_packet_trace and pt_send_pdu so both explain a trace the same way.
+    """
+    frames = data.get("frames", [])
+    for frame in frames:
+        normalize_frame(frame)
+
+    result = summarize_trace(frames)
+    result["total_in_event_list"] = data.get("total", 0)
+    result["simulation_mode"] = data.get("simulation_mode", False)
+    result["trace"] = frames
+
+    if not data.get("simulation_mode"):
+        result["summary"] = (
+            "PT is in Realtime mode: the event list does not keep packets. "
+            "Call pt_simulation_mode(on=True) and generate traffic."
+        )
+    elif not frames:
+        result["summary"] = (
+            "Simulation mode is on but there are no frames. Generate traffic "
+            "(for example pt_verify_connectivity) and read again."
+        )
+    elif result["clean"]:
+        normal = len(result["expected_drops"])
+        result["summary"] = (
+            f"{result['frames']} frame(s) read, none failed."
+            + (f" {normal} dropped as normal operation (flooded frames, STP BPDUs, multicast at hosts)." if normal else "")
+        )
+    else:
+        reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
+        result["summary"] = (
+            f"⚠ {len(result['failures'])} frame(s) did not reach their destination. {reasons}"
+        )
+    return result

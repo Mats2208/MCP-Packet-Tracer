@@ -136,10 +136,12 @@ def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
     it, it got 192.168.4.25, the one that corresponded to it.
 
     In other words, PT does not pick the nearest AP: the association is sticky and,
-    among APs that share the default SSID, arbitrary. There is no way to disambiguate
-    it, because PT exposes no SSID API (verified: neither the AP nor its port has
-    setSsid). The only honest thing is for the plan to say so instead of promising
-    an addressing scheme it does not control.
+    among APs that share the default SSID, arbitrary. The plan cannot fix it: the AP's
+    SSID is settable (WirelessServerProcess.setSsid, pt_wireless_ap), but a client
+    only joins "Default" and its profile API (WirelessClientProcess.addProfile) is
+    broken, so per-LAN SSIDs would just strand the other LANs' laptops. The only
+    honest thing is for the plan to say so instead of promising an addressing
+    scheme it does not control.
     """
     aps = plan.devices_by_category("accesspoint")
     wireless_hosts = [d for d in plan.devices if d.wireless]
@@ -156,9 +158,11 @@ def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
             "ANY of them and get an address from another LAN's DHCP pool."
         ),
         suggestion=(
-            "PT exposes no SSID API, so this cannot be fixed from the "
-            "plan. Check with pt_inspect_ports which subnet each wireless "
-            "host ended up in; for deterministic addressing use "
-            "wireless_laptops=False and cable the laptops to their switch."
+            "Check with pt_inspect_ports which subnet each wireless host "
+            "ended up in. pt_wireless_ap can rename an AP's SSID so clients "
+            "(which only join the default one) stay off it, but PT has no "
+            "working client profile API to point a laptop at a given SSID; "
+            "for deterministic addressing use wireless_laptops=False and "
+            "cable the laptops to their switch."
         ),
     )]

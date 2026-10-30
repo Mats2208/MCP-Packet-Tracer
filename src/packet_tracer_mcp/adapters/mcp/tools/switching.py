@@ -1,4 +1,4 @@
-"""Device-config tools sent as IOS CLI: VLANs, STP, port security, hardening, interface tuning, VLAN read-back."""
+"""Device-config tools sent as IOS CLI: VLANs, STP, port security, hardening, interface tuning, EtherChannel, VLAN read-back."""
 
 from __future__ import annotations
 
@@ -10,8 +10,53 @@ from ....domain.models.switch_security import STPConfig, PortSecurityConfig
 from ....application.use_cases.apply_hardening import build_hardening_config, apply_hardening_uc
 from ....application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ....domain.models.interface_tuning import InterfaceTuning
+from ....application.use_cases.apply_etherchannel import apply_etherchannel_uc
+from ....domain.models.etherchannel import EtherChannelConfig
+from ....infrastructure.execution.ios_verify import IosApplyCheck, verification_summary
+from ....domain.services.convergence import select_devices, vlans_report
+from ....infrastructure.generator.state_js import vlans_js
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
+
+
+def apply_reply(result: dict, label: str, bridge_ok: bool, dry_run: bool,
+                check: IosApplyCheck) -> str:
+    """Reply of a verified CLI apply tool: validation, then what IOS accepted."""
+    summary = []
+    summary.append(f"✅ {label} valid." if result["valid"]
+                   else f"❌ {label}: {len(result['errors'])} error(s).")
+    verification = check.report()
+    if dry_run:
+        summary.append("dry_run mode — NOT sent to the bridge.")
+    elif result["valid"] and not bridge_ok:
+        summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
+    elif result["valid"]:
+        summary.append(verification_summary(verification))
+    return reply_json({
+        "summary": "\n".join(summary),
+        "valid": result["valid"],
+        "errors": result["errors"],
+        "warnings": result["warnings"],
+        "cli_lines": result["cli_lines"],
+        "js_payload": result["js_payload"],
+        "sent": result["sent"],
+        "dry_run": result["dry_run"],
+        **verification,
+    })
+
+
+def invalid_input_reply(label: str, exc: Exception) -> str:
+    """Reply for arguments that do not even fit the model (e.g. a dict missing a key)."""
+    message = str(exc).splitlines()
+    return reply_json({
+        "summary": f"❌ {label}: invalid arguments.",
+        "valid": False,
+        "errors": [{"error_code": "VALIDATION_ERROR", "device": "",
+                    "message": " ".join(m.strip() for m in message[:6]),
+                    "suggestion": "Check the parameter shapes in the tool description."}],
+        "warnings": [], "cli_lines": [], "sent": False,
+        "verified": False, "verification": "not_sent",
+    })
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -21,7 +66,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _query_pt_devices = ctx.live_devices
-    _bridge_send_payload = ctx.send_payload
 
     @mcp.tool()
     def pt_apply_vlan(
@@ -56,58 +100,16 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
-        send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
+        check = IosApplyCheck(_bridge_send_and_wait)
 
         result = apply_vlan_uc(
             plan=plan,
             query_pt_topology=query_fn,
-            bridge_send=send_fn,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-
-        summary = []
-        if result["valid"]:
-            summary.append(f"✅ VLAN config valid ({len(plan.vlans)} VLAN(s)).")
-        else:
-            summary.append(f"❌ VLAN: {len(result['errors'])} error(s).")
-        if dry_run:
-            summary.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary.append("📤 Applied through the bridge (configureIosDevice).")
-        elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
-
-        return reply_json({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        })
-
-    def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
-        summary = []
-        summary.append(f"✅ {label} valid." if result["valid"]
-                       else f"❌ {label}: {len(result['errors'])} error(s).")
-        if dry_run:
-            summary.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary.append("📤 Applied through the bridge (configureIosDevice).")
-        elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
-        return reply_json({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        })
+        return apply_reply(result, f"VLAN config ({len(plan.vlans)} VLAN(s))",
+                               bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_stp(
@@ -144,13 +146,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bpduguard_ports=bpduguard_ports or [],
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_stp_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "STP", bridge_ok, dry_run)
+        return apply_reply(result, "STP", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_port_security(
@@ -182,13 +185,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             violation=violation, sticky=sticky, static_macs=static_macs or [],
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_port_security_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Port-security", bridge_ok, dry_run)
+        return apply_reply(result, "Port-security", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_hardening(
@@ -230,13 +234,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             service_password_encryption=service_password_encryption,
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_hardening_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Hardening", bridge_ok, dry_run)
+        return apply_reply(result, "Hardening", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_interface_tuning(
@@ -290,13 +295,59 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             delay=delay, ospf_network=ospf_network,
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_interface_tuning_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Interface tuning", bridge_ok, dry_run)
+        return apply_reply(result, "Interface tuning", bridge_ok, dry_run, check)
+
+    @mcp.tool()
+    def pt_apply_etherchannel(
+        switch: str,
+        ports: list[str],
+        group: int = 1,
+        mode: str = "active",
+        trunk: bool = False,
+        allowed_vlans: list[int] | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Bundles switch ports into an EtherChannel (Port-channel<group>) through IOS CLI,
+        each line verified. Measured on a 2960-24TT in PT 9; other models are not verified.
+
+        - switch: switch name in PT.
+        - ports: 2-8 full port names of one speed, e.g. ["FastEthernet0/10", "FastEthernet0/11"].
+          A contiguous run is sent as `interface range FastEthernet0/10 - 11`.
+        - group: channel-group number (1-6 on a 2960).
+        - mode: "active"|"passive" (LACP), "desirable"|"auto" (PAgP) or "on" (static).
+          At least one side must be active/desirable: passive+passive or auto+auto never forms.
+          Configure the peer switch the same way (same group mode family, same ports count).
+        - trunk: True puts Port-channel<group> in `switchport mode trunk`.
+        - allowed_vlans: trunk only, e.g. [10, 20] (`switchport trunk allowed vlan`).
+        - dry_run: validate and return the CLI/payload without sending.
+
+        Check it with pt_cli(device=switch, commands=["show etherchannel summary"]).
+        Example: pt_apply_etherchannel(switch="SW1", ports=["FastEthernet0/10",
+          "FastEthernet0/11"], group=1, mode="active", trunk=True)
+        """
+        try:
+            cfg = EtherChannelConfig(switch=switch, ports=list(ports or []), group=group,
+                                     mode=mode, trunk=trunk, allowed_vlans=allowed_vlans)
+        except ValueError as exc:
+            return invalid_input_reply("EtherChannel", exc)
+        bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
+        result = apply_etherchannel_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return apply_reply(result, f"EtherChannel Port-channel{group} ({cfg.protocol()})",
+                           bridge_ok, dry_run, check)
 
     # ------------------------------------------------------------------
     # VLANs — read from the switch's VlanManager, not from the plan
@@ -307,51 +358,24 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Reads a switch's REAL VLAN database in PT.
 
-        Returns each VLAN with its number, name and whether it is one of PT's
-        factory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan
-        was applied, or to discover what is in a topology you didn't build.
+        Returns each VLAN with its number, name, whether it is one of PT's
+        factory ones (1, 1002-1005) and its access ports; plus the trunk ports
+        (with native VLAN), the ports with port security, and access ports left
+        in a VLAN missing from the database. Use it to confirm that a
+        pt_apply_vlan was applied, or to discover a topology you didn't build.
 
         Parameters:
         - switch: switch name in PT.
 
         Example: pt_read_vlans(switch="SW1")
         """
+        if not switch.strip():
+            return "Pass the switch name. Use pt_query_topology to see the real names."
         err = _check_bridge()
         if err:
             return err
 
-        name = json.dumps(switch.strip())
-        js = (
-            "try {"
-            f"  var __d = ipc.network().getDevice({name});"
-            "  if (!__d) { reportResult(JSON.stringify({ found: false })); } else {"
-            "    var __vm = (typeof __d.getProcess === 'function') ? __d.getProcess('VlanManager') : null;"
-            "    if (!__vm) { reportResult(JSON.stringify({ found: true, supported: false })); } else {"
-            "      var __vs = [];"
-            "      var __n = __vm.getVlanCount();"
-            "      for (var __i = 0; __i < __n; __i++) {"
-            "        try {"
-            "          var __v = __vm.getVlanAt(__i);"
-            "          if (!__v) continue;"
-            "          __vs.push({"
-            "            number: __v.getVlanNumber(),"
-            "            name: __v.getName(),"
-            "            is_default: !!__v.isDefault()"
-            "          });"
-            "        } catch (__ve) {}"
-            "      }"
-            "      reportResult(JSON.stringify({"
-            "        found: true, supported: true,"
-            "        max_vlans: __vm.getMaxVlans(),"
-            "        vlan_interfaces: __vm.getVlanIntCount(),"
-            "        vlans: __vs"
-            "      }));"
-            "    }"
-            "  }"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
-
-        raw = _bridge_send_and_wait(js, timeout=10.0)
+        raw = _bridge_send_and_wait(vlans_js(switch.strip()), timeout=10.0)
         if raw is None:
             return _TIMEOUT_MSG
         if raw.startswith("ERROR:"):
@@ -361,22 +385,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception as exc:
             return f"Unreadable reply from PT: {exc}"
 
-        if not data.get("found"):
-            return (
-                f"'{switch}' does not exist in the active topology. "
-                "Use pt_query_topology to see the real names."
-            )
-        if not data.get("supported"):
-            return (
-                f"'{switch}' does not expose VlanManager: it is not a switch or the model does not "
-                "handle VLANs. Use pt_get_device_details to see what it is."
-            )
-
-        vlans = data.get("vlans", [])
-        custom = [v for v in vlans if not v.get("is_default")]
-        data["summary"] = (
-            f"{len(vlans)} VLAN(s): {len(custom)} custom, "
-            f"{len(vlans) - len(custom)} factory. "
-            f"Model maximum: {data.get('max_vlans')}."
-        )
-        return reply_json(data)
+        devices = select_devices(data, switch.strip(), "VlanManager")
+        if isinstance(devices, str):
+            return devices
+        return reply_json(vlans_report(devices[0]))

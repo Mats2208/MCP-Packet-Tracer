@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **94 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -83,14 +83,15 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
 | `pt_host_command` | Desktop › Command Prompt | `ping`, `ipconfig`, `tracert`, `arp -a`, `nslookup`, `telnet`/`ssh` (answers via `inputs`). |
 | `pt_terminal` | PC Desktop › Terminal | Find the router at the other end of the PC's console cable and type on its console, as from the PC's Terminal app. |
-| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig. |
+| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig or a static IPv6 (`ipv6_address="2001:db8::10/64"`, read back). |
 | `pt_host_firewall` | Desktop › Firewall | Inbound IPv4/IPv6 firewall on or off. |
 | `pt_web_browser` | Desktop › Web Browser | Open a URL and return the page as text; in UI mode the window's own browser navigates. |
 | `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |
 | `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
 | `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
 | `pt_server_http` | Services › HTTP | Replace existing pages (it cannot create new ones), switch HTTP/HTTPS. Refuses to turn either back on or write pages while both are off (PT 9.0.0 crashes); turn one on in the GUI first. |
-| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts. |
+| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts; EMAIL's Domain Name and SMTP/POP3 on/off, read back. |
+| `pt_wireless_ap` | AccessPoint-PT Config › Port 1 | SSID, SSID broadcast, MAC filter (allow or deny the listed MACs), applied and read back; resets associations so clients re-associate. No WPA/WEP: the client side has no working profile API. |
 | `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
 
 ### Headless or UI mode
@@ -139,8 +140,14 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
 | `pt_apply_port_security` | Port-security: max MACs, sticky/static MACs, violation action. |
 | `pt_apply_hardening` | hostname, banner, enable secret, local users, SSH (RSA keys + vty), password-encryption. |
 | `pt_apply_interface_tuning` | Serial clock-rate (DCE), bandwidth, per-interface OSPF/EIGRP knobs. |
+| `pt_apply_etherchannel` | Bundle 2-8 switch ports into Port-channel<n> (LACP, PAgP or static), optionally as a trunk. |
+| `pt_apply_hsrp` | One HSRP group on a router interface: virtual IP, priority, preempt (version 2). |
+| `pt_apply_bgp` | `router bgp`: neighbors with their remote AS and advertised networks (CIDR). |
+| `pt_apply_qos` | class-maps (DSCP / NBAR protocol), a policy-map with priority or bandwidth per class and fair-queue on class-default, attached outbound. |
 
-All accept `dry_run=True` to preview the generated CLI without touching PT.
+All accept `dry_run=True` to preview the generated CLI without touching PT, and
+report which IOS lines were rejected. CME voice (`telephony-service`) is not
+supported: PT's 2911 rejects it without the UC license.
 
 ## Server services
 
@@ -175,13 +182,22 @@ All accept `dry_run=True` to preview the generated CLI without touching PT.
 ## Live-state inspection
 
 These read the **device**, not the plan — useful to confirm a change landed, or to
-understand a topology you didn't build. Verified against PT 9.0.0.0810.
+understand a topology you didn't build. Verified against PT 9.0.0.0810; the readers from
+`pt_read_routes` down were checked on PT 9.0 against the matching `show` commands.
 
 | Tool | What it does |
 |------|--------------|
 | `pt_audit_security` | Security posture of every IOS device, graded high/medium/low: missing `enable secret`, reversibly-stored credentials (type 7), `service password-encryption` off, no local users, no MOTD banner, config-register left at `0x2142`. |
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
-| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
+| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005), with each VLAN's access ports, the trunk ports and their native VLAN, the ports with port security, and access ports left in a VLAN missing from the database. |
+| `pt_read_routes` | The real routing table (what `show ip route` shows): prefix, protocol (C, L, S, O, D, R), next hop, interface, AD and metric. Across routers it lists `convergence_gaps`: prefixes a router running a dynamic protocol lacks while the others know them. |
+| `pt_read_ospf` | OSPF per process: router-id, areas and neighbours with state by name (FULL, 2WAY, INIT...), DR/BDR role, local port and address. Flags neighbours not FULL, duplicate router-ids and routers with OSPF but no neighbours. |
+| `pt_read_arp` | The ARP table (IP, MAC, port) of a router or host. |
+| `pt_read_cdp` | The CDP neighbour table: device id, local and remote port, platform, capability. CDP announces every 60 s, so it is empty right after a deploy. |
+| `pt_read_stp` | Spanning Tree per switch and VLAN: whether it is the root and the root ID. Flags VLANs where switches disagree on the root. PT 9 exposes no per-port STP state or role. |
+| `pt_read_acl` | Each ACL on a router with its commands, and which ports apply which ACL in which direction. Flags ports that reference a missing ACL. |
+| `pt_read_nat` | The NAT translation table, NAT counters (inside source lists, statics, pools) and the inside/outside interfaces. Flags NAT without both an inside and an outside interface. |
+| `pt_read_mac_table` | A switch's MAC address table per VLAN: MAC, port, dynamic or static. |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
 
 ## Canvas: capture & annotations
@@ -235,12 +251,12 @@ describing the network and starts showing it.
 | `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. |
 | `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
 
-!!! note "NetFlow is configured natively; QoS can only be read"
+!!! note "NetFlow is configured natively; QoS through IOS CLI"
     These two look symmetric but are not. `pt_apply_netflow` configures the
     exporter directly and verifies the result — no CLI involved. QoS, by
-    contrast, can be **read** but not created programmatically, so class-maps and
-    policy-maps are authored through IOS CLI (`pt_send_raw` →
-    `configureIosDevice`) and `pt_read_qos` is how you confirm it landed.
+    contrast, can be **read** but not created through the object API, so class-maps
+    and policy-maps are authored through IOS CLI with `pt_apply_qos` and
+    `pt_read_qos` is how you confirm it landed.
 
 ## Simulation
 
@@ -252,6 +268,8 @@ them in real time, which is what makes a step-by-step trace possible.
 | `pt_simulation_mode` | Switch between Realtime and Simulation. |
 | `pt_simulation_step` | Advance, rewind or reset the simulation (`forward` / `back` / `reset`). |
 | `pt_read_packet_trace` | Read the event list: per frame the device, ingress/egress port, source, destination, traffic type and outcome — **plus PT's own per-OSI-layer explanation** of what the device decided and why. |
+| `pt_send_pdu` | The GUI's *Add Simple PDU*: an ICMP echo between two devices. In Simulation it waits in the event list; with `steps > 0` it is stepped and the trace comes back in the same reply. |
+| `pt_fast_forward` | Realtime's *Fast Forward Time*: STP converges at once, so a link cabled moments ago answers a ping right away. The deploy and `pt_verify_connectivity` already use it. |
 
 !!! tip "`pt_read_packet_trace` answers *why*, not just *what*"
     The decision log is the same text Packet Tracer shows in its **PDU Details**
@@ -263,10 +281,12 @@ them in real time, which is what makes a step-by-step trace possible.
           send an ARP request for that IP address and buffers this packet.
     ```
 
-!!! warning "There is no `pt_send_pdu`"
-    Packet Tracer does not let an extension originate a packet the way the GUI's
-    *Add Simple PDU* button does. Generate traffic the way a user would —
-    `pt_verify_connectivity` runs a real ping — and then read the trace.
+!!! tip "`pt_send_pdu` is the GUI's *Add Simple PDU*"
+    It calls the same `addSimplePdu(source, destination)` the button does (0 = added,
+    30 = the destination does not exist; any other code is returned as is). The
+    first PDU between two devices can die at a router waiting on ARP, exactly like
+    the first ping: send it again. `pt_verify_connectivity` remains the way to run a
+    real ping from a device's console.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

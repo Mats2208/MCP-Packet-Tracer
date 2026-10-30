@@ -56,7 +56,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         err = _check_bridge()
         if err:
             return err
-        live = _live_devices()
+        live = ctx.read_live_devices()
+        if live is None:
+            # A failed read used to come back as [] and pass for a healthy topology.
+            return reply_json({"healthy": None, "error": "read_failed", "summary":
+                               "❌ Could not read the canvas (no answer or PT error): "
+                               "health UNKNOWN. Check pt_bridge_status and retry."})
+        if not live:
+            return reply_json({"healthy": True, "empty": True,
+                               "summary": "The canvas is empty: nothing to check."})
         result = health_check(live)
         result["summary"] = (
             "✅ Healthy topology."

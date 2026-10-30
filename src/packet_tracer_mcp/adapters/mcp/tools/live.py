@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from ....domain.models.plans import TopologyPlan
 from ....domain.models.requests import TopologyRequest
 from ....domain.services.orchestrator import plan_from_request
 from ....domain.services.explainer import explain_plan
 from ....domain.services.estimator import estimate_from_plan
+from ....domain.services.validator import validate_plan
 from ....infrastructure.generator.ptbuilder_generator import (
     generate_full_script,
     generate_executable_script,
@@ -22,75 +24,14 @@ from ....infrastructure.generator.cli_config_generator import (
 from ....infrastructure.execution.manual_executor import ManualExecutor
 from ....infrastructure.execution.deploy_executor import DeployExecutor
 from ....infrastructure.execution.bridge_token import token_was_rotated, token_is_ephemeral
-from ..bridge_context import BridgeContext, DEPLOY_BATCH, stp_wait_seconds
+from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
     dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
+    console_ping_arm_js, console_ping_poll_js,
 )
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions, read_plan_source
-
-
-# --- Device console (real ping) ----------------------------------------------
-#
-# `getCommandPrompt()` ONLY exists on hosts (PC/Server/Laptop). Against a router
-# it blows up with `TypeError: Property 'getCommandPrompt' of object is not a
-# function`, so pinging from IOS never worked despite being documented.
-# Verified against PT 9.0.1: routers expose `getCommandLine()` and PCs
-# expose BOTH, so getCommandLine works for both worlds.
-#
-# The console also has to be primed. A router just deployed by the MCP was never
-# touched through its console, so it is still parked at "Would you like to enter the
-# initial configuration dialog? [yes/no]:". There the `ping` is consumed as the
-# answer to the yes/no and never runs.
-_CONSOLE_PRIME_JS = (
-    "var p=String(cl.getPrompt()||'');"
-    "if(p.indexOf('[yes/no]')>=0){cl.enterCommand('no');}"
-    "cl.enterCommand('');"
-)
-
-
-# Statistics block markers, in PT's two formats.
-_PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
-
-def console_ping_arm_js(device: str, target: str) -> str:
-    """JS that makes the console usable, counts the existing blocks and fires the ping.
-
-    Returns 'BASE:<n>' with how many statistics blocks there already were: the
-    console keeps history, so markers are counted instead of trusting the length.
-    """
-    dev = json.dumps(device)
-    cmd = json.dumps("ping " + target.strip())
-    return (
-        f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
-        "if(!cl){reportResult('ERR:device has no console');}"
-        "else{"
-        f"{_CONSOLE_PRIME_JS}"
-        "var o=String(cl.getOutput());"
-        f"var m=o.match({_PING_STAT_MARKERS});"
-        "var base=m?m.length:0;"
-        f"cl.enterCommand({cmd});"
-        "reportResult('BASE:'+base);}"
-    )
-
-
-def console_ping_poll_js(device: str, base: int) -> str:
-    """JS that polls the console until it sees a NEW statistics block."""
-    dev = json.dumps(device)
-    return (
-        f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
-        "if(!cl){reportResult('ERR:device has no console');}"
-        "else{"
-        "var o=String(cl.getOutput());"
-        f"var m=o.match({_PING_STAT_MARKERS});"
-        "var cur=m?m.length:0;"
-        f"if(cur>{int(base)}){{"
-        # raw: the \d and \n belong to the JS regex, they are not Python escapes.
-        r"var stat=o.match(/Packets: Sent = \d+, Received = (\d+), Lost = (\d+)[^\n]*"
-        r"|Success rate is (\d+) percent \((\d+)\/(\d+)\)/g);"
-        "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
-        "}else{reportResult('WAIT');}}"
-    )
+from ....shared.utils import js_escape, safe_name_component, resolve_within, classify_ping as _classify_ping, name_collisions, read_plan_source
 
 
 # Names of the devices on the canvas, as a JSON array.
@@ -99,6 +40,14 @@ _LIVE_NAMES_JS = (
     "for(var i=0;i<n;i++){a.push(net.getDeviceAt(i).getName());}"
     "reportResult(JSON.stringify(a));}catch(e){reportResult('[]');}"
 )
+
+
+def save_target_exists(directory: str, name: str) -> bool:
+    """Whether `name` already exists under the local `directory` (pt_save_project)."""
+    try:
+        return resolve_within(Path(directory).expanduser(), name).exists()
+    except (ValueError, OSError):
+        return False
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -270,7 +219,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 parts.append(f"  {v.check_type}: {v.from_device} → {v.to_target} (expected: {v.expected})")
 
         # --- Deploy ---
-        if deploy:
+        if deploy and not validation.is_valid:
+            # A plan that failed validation used to be deployed anyway, under a
+            # report that listed its errors: half a topology on the canvas.
+            parts += ["", "NOT DEPLOYED: the plan failed validation (errors above). "
+                      "Fix them, or pt_fix_plan, then deploy."]
+        elif deploy:
             parts.append("")
             parts.append("=" * 60)
             parts.append("DEPLOYMENT TO PACKET TRACER")
@@ -386,6 +340,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             plan = TopologyPlan.model_validate_json(read_plan_source(plan_json, plan_path))
         except ValueError as exc:
             return f"Invalid plan: {exc}"
+        # Same rules as pt_validate_plan: an invalid plan deploys as a broken topology.
+        problems = validate_plan(plan).errors
+        if problems:
+            return "Not deployed: the plan has validation errors (see pt_validate_plan).\n" + "\n".join(
+                f"  ERROR [{e.code.value}]: {e.message}" for e in problems)
 
         # A name already on the canvas would be created a second time (PT allows
         # duplicate names) while links and config land on the old device, and the
@@ -520,7 +479,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dhcp_lines: list[str] = []
         dhcp_hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
         if dhcp_hosts:
-            time.sleep(stp_wait_seconds(ctx.last_link_change, time.monotonic()))
+            ctx.settle_stp()
             dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(
                 lambda js, t: _bridge_send_and_wait(js, timeout=t), dhcp_hosts))
 
@@ -653,10 +612,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         # Links created moments ago are still in STP listening/learning: a ping now
-        # is lost and reads as a fault. Wait out the rest of that window first.
-        stp_wait = stp_wait_seconds(ctx.last_link_change, time.monotonic())
-        if stp_wait > 0:
-            time.sleep(stp_wait)
+        # is lost and reads as a fault. Fast-forward past it (or sleep it out).
+        stp_wait = ctx.settle_stp()
         waited = f"\n(waited {stp_wait:.0f}s for STP on links created moments ago)" if stp_wait > 0 else ""
 
         # The JS lives in `console_ping_arm_js` / `console_ping_poll_js` (module
@@ -693,7 +650,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         return ping_no_result_message(from_device, to_ip, timeout_s) + waited
 
     @mcp.tool()
-    def pt_save_project(filename: str, directory: str = "") -> str:
+    def pt_save_project(filename: str, directory: str = "", overwrite: bool = False) -> str:
         """
         Saves Packet Tracer's active topology as a .pkt file.
 
@@ -703,6 +660,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Parameters:
         - filename: file name (.pkt is added if missing)
         - directory: destination folder. Empty = PT's save folder.
+        - overwrite: replace an existing file (default False: an existing file is an error).
         """
         err = _check_bridge()
         if err:
@@ -711,6 +669,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         name = safe_name_component(filename.strip(), "topology")
         if not name.lower().endswith(".pkt"):
             name += ".pkt"
+        # PT shares this machine's disk: refuse early when the target is visible here.
+        # The JS repeats the check for PT's default folder, which only PT knows.
+        if directory.strip() and not overwrite and save_target_exists(directory.strip(), name):
+            return f"Not saved: {name} already exists in {directory.strip()}. Pass overwrite=True to replace it."
 
         js = (
             "var aw=ipc.appWindow();"
@@ -718,9 +680,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "if(!dir){dir=String(aw.getDefaultFileSaveLocation());}"
             "dir=String(dir).replace(/\\\\/g,'/').replace(/\\/+$/,'');"
             f"var full=dir+'/'+{json.dumps(name)};"
-            "aw.fileSaveAsNoPrompt(full,false);"
             "var fm=ipc.systemFileManager();"
-            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:not created '+full));"
+            f"if(!{json.dumps(overwrite)}&&fm.fileExists(full)){{reportResult('EXISTS:'+full);}}else{{"
+            "aw.fileSaveAsNoPrompt(full,false);"
+            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:not created '+full));}"
         )
         result = _bridge_send_and_wait(js, timeout=20.0)
         if result is None:
@@ -728,6 +691,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if result.startswith("OK:"):
             path_str, _, size = result[3:].rpartition("|")
             return f"Project saved to {path_str} ({size} bytes)."
+        if result.startswith("EXISTS:"):
+            return f"Not saved: {result[7:]} already exists. Pass overwrite=True to replace it."
         return f"PT error while saving: {result}"
 
     @mcp.tool()

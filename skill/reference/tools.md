@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (79)
+## Tool catalog (94)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -21,7 +21,12 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 `pt_apply_nat`, `pt_remove_nat` — all accept `dry_run=True` to preview CLI without touching PT.
 **Config-driven (live, dry_run):** `pt_apply_vlan` (VLAN/trunk/inter-VLAN subinterfaces),
 `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
-`pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs).
+`pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs),
+`pt_apply_etherchannel` (switch), `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` (router) —
+each IOS line verified. These and the ACL/NAT tools send the config line by line and reply with
+`verified`, `verification` (`verified` / `rejected` / `error` / `unverified` = PT never answered) and
+`rejected_lines` (device, line, command, IOS reason). Only `verified: true` means it landed.
+CME voice (`telephony-service`) is not supported (no UC license in PT).
 **Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
 `pt_verify_connectivity` gives **three** verdicts, not two: `CONNECTIVITY OK` (every packet returned),
 `PARTIAL CONNECTIVITY (packet loss)` (some loss — normal on a first ping because of ARP, so re-run once before
@@ -32,7 +37,17 @@ there is a real host that never got its DHCP lease.
 posture with severities; never returns passwords or hashes, only the algorithm label),
 `pt_inspect_ports(device, only_linked)` (per-port line/protocol, MAC, duplex, bandwidth, MTU, CDP,
 NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
-your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
+your VLANs from PT's factory ones; access ports per VLAN, trunks with native VLAN, port-security ports),
+`pt_device_power(device, on)` (power-cycle with read-back).
+**Convergence reads (live, read-only, `device=""` = every device that has the table):**
+`pt_read_routes(device)` (routing table: prefix, protocol C/L/S/O/D/R, next hop, port, AD, metric;
+`convergence_gaps` across routers), `pt_read_ospf(device)` (router-id, areas, neighbours with state name
+and DR/BDR role; flags not-FULL, duplicate router-ids, OSPF without neighbours), `pt_read_arp(device)`,
+`pt_read_cdp(device)` (empty for the first ~60 s after a deploy), `pt_read_stp(switch, vlans)` (root
+bridge per VLAN; flags VLANs where switches disagree; no per-port state/role in PT 9),
+`pt_read_acl(device)` (ACLs with their commands and where each is applied; flags a port pointing at a
+missing ACL), `pt_read_nat(device)` (translations, counters, inside/outside ports),
+`pt_read_mac_table(switch, vlan)`. Use them after a change instead of parsing `show` output.
 **Canvas (capture & annotate):** `pt_screenshot(filename, fmt, output_dir)` writes the image to disk
 and returns the **path** — never the bytes, they would flood the context. `pt_add_note(x, y, text)`
 writes a label; font size is not settable. `pt_clear_annotations(kind)` removes annotations only,
@@ -54,24 +69,30 @@ back. Without `network` it only reads. Router DHCP is a different thing: IOS CLI
 is what `dhcp=True` in the planner emits. Give the server a static IP inside the pool's subnet first.
 **Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
 monitors, remove, dry_run)` configures a NetFlow exporter directly (not via CLI) and reads it back to
-confirm. `pt_read_qos(device)` is **read-only**: QoS cannot be created programmatically, so author
-class-maps and policy-maps with IOS CLI and use this to verify.
+confirm. `pt_read_qos(device)` is **read-only**: the object API cannot create QoS, so author
+class-maps and policy-maps with `pt_apply_qos` (IOS CLI) and use this to verify.
 **Simulation:** `pt_simulation_mode(on)` (Realtime ↔ Simulation), `pt_simulation_step(action, times)`
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
-There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
-*Add Simple PDU* button does. Generate traffic with a real ping instead.
+`pt_send_pdu(source, destination, simulation=True, steps=0)` is the GUI's *Add Simple PDU*
+(`getUserCreatedPDU().addSimplePdu`: 0 added, 30 destination missing, other codes raw); with
+`steps > 0` it steps the simulation and returns the trace. `pt_fast_forward()` is Realtime's
+*Fast Forward Time*: STP converges at once (the deploy and `pt_verify_connectivity` use it).
 **Device panel (CLI / Desktop / Services, live):** `pt_cli(device, commands)` types IOS commands
 in the router's real CLI tab one at a time, waiting for the prompt, and marks each `ok` / `ERROR` /
 `UNKNOWN COMMAND` / `WAITING FOR ANSWER` / `TIMEOUT`; `pt_host_command(host, command, inputs)` is the
 PC's Desktop › Command Prompt (ping, ipconfig, tracert, nslookup, telnet/ssh); `pt_terminal(pc,
 commands)` types on the router at the other end of the PC's console cable. `pt_host_ip_config`
-(static/DHCP/gateway/DNS/IPv6 auto), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
+(static/DHCP/gateway/DNS/IPv6 auto or static `ipv6_address="2001:db8::10/64"`), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
 `pt_email_client`. Server-PT: `pt_server_dhcp` (create/edit/delete pools, exclusions, on/off),
 `pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS; refuses to re-enable or write pages while HTTP and HTTPS are
 both off, see rough-edges),
-`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts).
+`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts, EMAIL `domain` and
+`smtp`/`pop3` on/off, read back).
+`pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list, reset_associations,
+dry_run)`: an AccessPoint-PT's SSID, SSID broadcast and MAC filter, applied and read back
+(`WirelessServerProcess`). WPA/WEP are not set: the client would need a profile, and that API is broken.
 `pt_read_device_panel(device)` reads every tab at once (read-only).
 **UI mode:** `pt_ui_mode("headless"|"ui"|"status")` — headless (default) does everything through the
 API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
@@ -85,14 +106,15 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
   trunk uplink, router `.1q` subinterfaces, one `/24` + DHCP pool per VLAN. 2960 omits trunk
   `encapsulation` (dot1q-only); 3560 emits it.
 - **IPv6 dual-stack:** `pt_plan_topology(dual_stack=True)` → routers get `ipv6 address` via CLI +
-  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). Static host
-  IPv6 is NOT settable via the PT API (`addIpv6Address` fails on HostPort) — SLAAC is the path.
+  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). A static
+  host IPv6 is set afterwards with `pt_host_ip_config(host, ipv6_address="2001:db8:0:1::10/64")`
+  (`port.addIpv6Address(addr, prefix, 0, false)`, measured on PT 9.0; read back via `getIpv6Addresses()`).
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
   → `Wireless0`, and adds **one `AccessPoint-PT` per LAN**, each wired to that LAN's own switch.
   ⚠️ **Wireless addressing is NOT deterministic.** Laptops auto-associate on the default SSID and
-  PT exposes **no SSID API** (verified: neither the AP nor its port has `setSsid`), so with more
-  than one AP a laptop can associate to *any* of them and take a DHCP lease from **another LAN's
-  pool**. Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
+  the client side has **no working profile API** (`WirelessClientProcess.addProfile` throws), so with
+  more than one AP a laptop can associate to *any* of them and take a DHCP lease from **another
+  LAN's pool**. The AP side *is* settable: `pt_wireless_ap` renames the SSID (clients drop off it). Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
   the LAN-1 AP and got `192.168.0.13`; only with that AP powered off did it take `192.168.4.25`.
   The planner now emits a `WIRELESS_AMBIGUOUS_ASSOCIATION` **warning** when ≥2 APs coexist.
   Always confirm with `pt_inspect_ports`; for deterministic addressing use `wireless_laptops=False`.

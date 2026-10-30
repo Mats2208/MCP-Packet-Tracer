@@ -121,3 +121,65 @@ def dhcp_lease_report(renewed: list[str], without_ip: list[str]) -> list[str]:
     if without_ip:
         lines.append(f"  ⚠ Hosts still without a DHCP lease: {', '.join(without_ip)}")
     return lines
+
+
+# --- Device console (real ping) ----------------------------------------------
+#
+# `getCommandPrompt()` ONLY exists on hosts (PC/Server/Laptop). Against a router
+# it blows up with `TypeError: Property 'getCommandPrompt' of object is not a
+# function`, so pinging from IOS never worked despite being documented.
+# Verified against PT 9.0.1: routers expose `getCommandLine()` and PCs
+# expose BOTH, so getCommandLine works for both worlds.
+#
+# The console also has to be primed. A router just deployed by the MCP was never
+# touched through its console, so it is still parked at "Would you like to enter the
+# initial configuration dialog? [yes/no]:". There the `ping` is consumed as the
+# answer to the yes/no and never runs.
+_CONSOLE_PRIME_JS = (
+    "var p=String(cl.getPrompt()||'');"
+    "if(p.indexOf('[yes/no]')>=0){cl.enterCommand('no');}"
+    "cl.enterCommand('');"
+)
+
+
+# Statistics block markers, in PT's two formats.
+_PING_STAT_MARKERS = "/Packets: Sent|Success rate/g"
+
+def console_ping_arm_js(device: str, target: str) -> str:
+    """JS that makes the console usable, counts the existing blocks and fires the ping.
+
+    Returns 'BASE:<n>' with how many statistics blocks there already were: the
+    console keeps history, so markers are counted instead of trusting the length.
+    """
+    dev = json.dumps(device)
+    cmd = json.dumps("ping " + target.strip())
+    return (
+        f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
+        "if(!cl){reportResult('ERR:device has no console');}"
+        "else{"
+        f"{_CONSOLE_PRIME_JS}"
+        "var o=String(cl.getOutput());"
+        f"var m=o.match({_PING_STAT_MARKERS});"
+        "var base=m?m.length:0;"
+        f"cl.enterCommand({cmd});"
+        "reportResult('BASE:'+base);}"
+    )
+
+
+def console_ping_poll_js(device: str, base: int) -> str:
+    """JS that polls the console until it sees a NEW statistics block."""
+    dev = json.dumps(device)
+    return (
+        f"var cl=ipc.network().getDevice({dev}).getCommandLine();"
+        "if(!cl){reportResult('ERR:device has no console');}"
+        "else{"
+        "var o=String(cl.getOutput());"
+        f"var m=o.match({_PING_STAT_MARKERS});"
+        "var cur=m?m.length:0;"
+        f"if(cur>{int(base)}){{"
+        # raw: the \d and \n belong to the JS regex, they are not Python escapes.
+        r"var stat=o.match(/Packets: Sent = \d+, Received = (\d+), Lost = (\d+)[^\n]*"
+        r"|Success rate is (\d+) percent \((\d+)\/(\d+)\)/g);"
+        "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
+        "}else{reportResult('WAIT');}}"
+    )

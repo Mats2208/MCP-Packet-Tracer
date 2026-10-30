@@ -38,14 +38,18 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/device_panel_tools.py` | pt_cli, pt_host_command, pt_host_ip_config, pt_read_device_panel, pt_remove_module, pt_ui_capture, pt_ui_close, pt_ui_mode, pt_ui_open |
 | `adapters/mcp/tools/acl.py` | pt_apply_acl, pt_apply_acl_object, pt_remove_acl, pt_remove_acl_object |
 | `adapters/mcp/tools/canvas.py` | pt_add_note, pt_clear_annotations, pt_screenshot |
+| `adapters/mcp/tools/convergence.py` | pt_read_acl, pt_read_arp, pt_read_cdp, pt_read_mac_table, pt_read_nat, pt_read_ospf, pt_read_routes, pt_read_stp |
 | `adapters/mcp/tools/inspect.py` | pt_device_power, pt_diff, pt_health_check, pt_inspect_ports |
 | `adapters/mcp/tools/live.py` | pt_bridge_status, pt_full_build, pt_live_deploy, pt_open_project, pt_save_project, pt_verify_connectivity |
 | `adapters/mcp/tools/modules.py` | pt_add_module, pt_install_modules_batch, pt_list_modules |
 | `adapters/mcp/tools/nat.py` | pt_apply_nat, pt_remove_nat |
 | `adapters/mcp/tools/planning.py` | pt_deploy, pt_estimate_plan, pt_explain_plan, pt_export, pt_fix_plan, pt_generate_configs, pt_generate_script, pt_get_device_details, pt_list_devices, pt_list_projects, pt_list_templates, pt_load_project, pt_plan_topology, pt_validate_plan |
 | `adapters/mcp/tools/project.py` | pt_backup_config, pt_project_metadata, pt_workspace_options |
+| `adapters/mcp/tools/routing.py` | pt_apply_bgp, pt_apply_hsrp, pt_apply_qos |
 | `adapters/mcp/tools/security.py` | pt_audit_security |
 | `adapters/mcp/tools/services.py` | pt_apply_netflow, pt_configure_dhcp_server, pt_read_qos |
 | `adapters/mcp/tools/simulation.py` | pt_read_packet_trace, pt_simulation_mode, pt_simulation_step |
-| `adapters/mcp/tools/switching.py` | pt_apply_hardening, pt_apply_interface_tuning, pt_apply_port_security, pt_apply_stp, pt_apply_vlan, pt_read_vlans |
+| `adapters/mcp/tools/switching.py` | pt_apply_etherchannel, pt_apply_hardening, pt_apply_interface_tuning, pt_apply_port_security, pt_apply_stp, pt_apply_vlan, pt_read_vlans |
 | `adapters/mcp/tools/topology.py` | pt_add_device, pt_add_link, pt_delete_device, pt_delete_link, pt_export_topology, pt_move_device, pt_query_topology, pt_rename_device, pt_send_raw, pt_set_port |
+| `adapters/mcp/tools/traffic.py` | pt_fast_forward, pt_send_pdu |
+| `adapters/mcp/tools/wireless.py` | pt_wireless_ap |

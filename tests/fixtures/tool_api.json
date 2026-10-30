@@ -228,6 +228,122 @@
    "type": "object"
   }
  },
+ "pt_apply_bgp": {
+  "description": "Configures BGP on a router through IOS CLI, each line verified (`router bgp`,\n`neighbor <ip> remote-as`, `network <net> mask <mask>`). Measured on a 2911 in PT 9.\n\n- router: router name in PT.\n- asn: local AS, 1-65535 (4-byte ASNs were not measured).\n- neighbors: [{\"ip\": \"10.0.0.2\", \"remote_as\": 65002}]; remote_as == asn is iBGP.\n  With PT connected, a neighbor off every connected subnet is a warning.\n- networks: CIDR list, host bits zero, e.g. [\"192.168.1.0/24\"]. BGP only advertises\n  a network that is in the routing table with that exact mask. `show running-config`\n  prints a classful one without `mask`.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_bgp(router=\"R1\", asn=65001,\n  neighbors=[{\"ip\": \"10.0.0.2\", \"remote_as\": 65002}], networks=[\"192.168.1.0/24\"])\nCheck: pt_cli(device=\"R1\", commands=[\"show ip bgp summary\"]).",
+  "inputSchema": {
+   "properties": {
+    "asn": {
+     "title": "Asn",
+     "type": "integer"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "neighbors": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Neighbors"
+    },
+    "networks": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Networks"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "asn"
+   ],
+   "title": "pt_apply_bgpArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_etherchannel": {
+  "description": "Bundles switch ports into an EtherChannel (Port-channel<group>) through IOS CLI,\neach line verified. Measured on a 2960-24TT in PT 9; other models are not verified.\n\n- switch: switch name in PT.\n- ports: 2-8 full port names of one speed, e.g. [\"FastEthernet0/10\", \"FastEthernet0/11\"].\n  A contiguous run is sent as `interface range FastEthernet0/10 - 11`.\n- group: channel-group number (1-6 on a 2960).\n- mode: \"active\"|\"passive\" (LACP), \"desirable\"|\"auto\" (PAgP) or \"on\" (static).\n  At least one side must be active/desirable: passive+passive or auto+auto never forms.\n  Configure the peer switch the same way (same group mode family, same ports count).\n- trunk: True puts Port-channel<group> in `switchport mode trunk`.\n- allowed_vlans: trunk only, e.g. [10, 20] (`switchport trunk allowed vlan`).\n- dry_run: validate and return the CLI/payload without sending.\n\nCheck it with pt_cli(device=switch, commands=[\"show etherchannel summary\"]).\nExample: pt_apply_etherchannel(switch=\"SW1\", ports=[\"FastEthernet0/10\",\n  \"FastEthernet0/11\"], group=1, mode=\"active\", trunk=True)",
+  "inputSchema": {
+   "properties": {
+    "allowed_vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allowed Vlans"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "group": {
+     "default": 1,
+     "title": "Group",
+     "type": "integer"
+    },
+    "mode": {
+     "default": "active",
+     "title": "Mode",
+     "type": "string"
+    },
+    "ports": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Ports",
+     "type": "array"
+    },
+    "switch": {
+     "title": "Switch",
+     "type": "string"
+    },
+    "trunk": {
+     "default": false,
+     "title": "Trunk",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "switch",
+    "ports"
+   ],
+   "title": "pt_apply_etherchannelArguments",
+   "type": "object"
+  }
+ },
  "pt_apply_hardening": {
   "description": "Hardens a router/switch in the active topology.\n\nApplies via CLI: hostname, MOTD banner, enable secret, local users, SSH\n(domain-name + RSA keys + `ip ssh version`), service password-encryption, and\nrestricts the vty lines to SSH with local login.\n\nParameters:\n- device: device name in PT.\n- hostname: new hostname (optional).\n- banner_motd: MOTD banner text (without the '#' character).\n- enable_secret: enable password (it is encrypted).\n- users: list of {username, secret, privilege?}. Needed for SSH/local login.\n- ssh: dict {domain?, modulus?, version?, enable?} to enable SSH. Requires\n  at least one user. modulus<768 raises a warning.\n- service_password_encryption: applies `service password-encryption` (default True).\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: full hardening of R1 with SSH:\n  pt_apply_hardening(device=\"R1\", hostname=\"R1\", enable_secret=\"cisco123\",\n    users=[{\"username\":\"admin\",\"secret\":\"adminpass\",\"privilege\":15}],\n    ssh={\"domain\":\"lab.local\",\"modulus\":1024}, dry_run=True)",
   "inputSchema": {
@@ -295,6 +411,57 @@
     "device"
    ],
    "title": "pt_apply_hardeningArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_hsrp": {
+  "description": "Configures one HSRP group on a router interface through IOS CLI, each line verified\n(`standby version`, `standby <g> ip|priority|preempt`). Measured on a 2911 in PT 9.\n\n- router / interface: e.g. \"R1\", \"GigabitEthernet0/0\" (pt_query_topology).\n- group: 0-4095 with version 2. Both routers use the same group and virtual_ip.\n- virtual_ip: the hosts' gateway. With PT connected it must be a free host address\n  in the interface's live subnet, not the interface's own IP.\n- priority: 0-255, default 100; the higher one becomes active.\n- preempt: take over again when this router comes back (default True).\n- version: 2 (measured). 1 is accepted but NOT verified.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample (active router; repeat on R2 with priority=100):\n  pt_apply_hsrp(router=\"R1\", interface=\"GigabitEthernet0/0\", group=1,\n                virtual_ip=\"192.168.1.254\", priority=110)\nCheck: pt_cli(device=\"R1\", commands=[\"show standby brief\"]).",
+  "inputSchema": {
+   "properties": {
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "group": {
+     "title": "Group",
+     "type": "integer"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "preempt": {
+     "default": true,
+     "title": "Preempt",
+     "type": "boolean"
+    },
+    "priority": {
+     "default": 100,
+     "title": "Priority",
+     "type": "integer"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "version": {
+     "default": 2,
+     "title": "Version",
+     "type": "integer"
+    },
+    "virtual_ip": {
+     "title": "Virtual Ip",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "interface",
+    "group",
+    "virtual_ip"
+   ],
+   "title": "pt_apply_hsrpArguments",
    "type": "object"
   }
  },
@@ -672,6 +839,51 @@
     "port"
    ],
    "title": "pt_apply_port_securityArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_qos": {
+  "description": "Configures QoS (MQC) on a router through IOS CLI, each line verified: one\n`class-map match-any` per class, a `policy-map` whose class-default gets\n`fair-queue`, and `service-policy output` on the interface. Measured on a 2911.\n\n- router / interface: e.g. \"R1\", \"GigabitEthernet0/1\" (the WAN side).\n- policy_name: one word, e.g. \"WAN-OUT\".\n- classes: [{\"name\", \"match_dscp\"?, \"match_protocol\"?, \"priority_kbps\"|\"bandwidth_kbps\"}].\n  At least one match per class (both = match-any); exactly one action.\n  Measured: match_protocol \"rtp\", match_dscp \"ef\", priority_kbps. Other DSCP values,\n  other protocols and bandwidth_kbps are accepted but NOT verified (warning).\n- direction: \"output\" only (queuing actions are outbound in IOS).\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_qos(router=\"R1\", interface=\"GigabitEthernet0/1\", policy_name=\"WAN-OUT\",\n  classes=[{\"name\": \"VOICE\", \"match_protocol\": \"rtp\", \"match_dscp\": \"ef\",\n            \"priority_kbps\": 512}])\nCheck: pt_read_qos(device=\"R1\").",
+  "inputSchema": {
+   "properties": {
+    "classes": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Classes",
+     "type": "array"
+    },
+    "direction": {
+     "default": "output",
+     "title": "Direction",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "policy_name": {
+     "title": "Policy Name",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "interface",
+    "policy_name",
+    "classes"
+   ],
+   "title": "pt_apply_qosArguments",
    "type": "object"
   }
  },
@@ -1144,7 +1356,7 @@
   }
  },
  "pt_email_client": {
-  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe EMAIL service's \"Domain Name\" has no API: set it in the server's\nwindow (pt_ui_open(server, tab=\"Services\", section=\"EMAIL\")).",
+  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe server's Domain Name and SMTP/POP3 switches are set with\npt_server_service(server, \"email\", domain=..., smtp=..., pop3=...).",
   "inputSchema": {
    "properties": {
     "action": {
@@ -1332,6 +1544,14 @@
   "inputSchema": {
    "properties": {},
    "title": "pt_export_topologyArguments",
+   "type": "object"
+  }
+ },
+ "pt_fast_forward": {
+  "description": "Realtime's \"Fast Forward Time\" button: moves PT's clock ahead at once.\n\nUse it after cabling or changing switch links: STP needs ~30 s to put a\nnew port in forwarding, and fast-forwarding gets there immediately, so a\nping right after it works (measured on PT 9.0). Realtime only (in\nSimulation use pt_simulation_step). The network is not reset.\npt_live_deploy and pt_verify_connectivity already do this themselves.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_fast_forwardArguments",
    "type": "object"
   }
  },
@@ -1652,7 +1872,7 @@
   }
  },
  "pt_host_ip_config": {
-  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
+  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, IPv6 (automatic or static).\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\".\n- ipv6_address: static IPv6 with its prefix, \"2001:db8:0:1::10/64\".\n  Added to the port (it does not remove other addresses) and read back.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -1682,6 +1902,11 @@
     "ip": {
      "default": "",
      "title": "Ip",
+     "type": "string"
+    },
+    "ipv6_address": {
+     "default": "",
+     "title": "Ipv6 Address",
      "type": "string"
     },
     "ipv6_dns": {
@@ -2045,6 +2270,48 @@
    "type": "object"
   }
  },
+ "pt_read_acl": {
+  "description": "Reads the REAL ACLs of a router: each ACL with its commands, and which\nports have an ACL applied in which direction.\n\nFlags ports that reference an ACL that does not exist. Use it to check\na pt_apply_acl.\n\nParameters:\n- device: router name; empty = every device with ACLs.\n\nExample: pt_read_acl(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_aclArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_arp": {
+  "description": "Reads the REAL ARP table (IP -> MAC -> port) of a device, router or host.\n\nParameters:\n- device: device name; empty = every device.\n\nExample: did PC1 resolve its gateway?  pt_read_arp(device=\"PC1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_arpArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_cdp": {
+  "description": "Reads the REAL CDP neighbour table: who is cabled to which port.\n\nPer neighbour: device id, local and remote port, platform, capability.\nCDP announces every 60 s: right after a deploy the table is empty.\n\nParameters:\n- device: device name; empty = every device.\n\nExample: pt_read_cdp(device=\"SW1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_cdpArguments",
+   "type": "object"
+  }
+ },
  "pt_read_device_panel": {
   "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
   "inputSchema": {
@@ -2058,6 +2325,53 @@
     "device"
    ],
    "title": "pt_read_device_panelArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_mac_table": {
+  "description": "Reads a switch's REAL MAC address table, per VLAN: MAC, port, dynamic or static.\n\nParameters:\n- switch: switch name; empty = every switch.\n- vlan: VLAN number; 0 = every VLAN.\n\nExample: where did SW1 learn PC1's MAC?  pt_read_mac_table(switch=\"SW1\")",
+  "inputSchema": {
+   "properties": {
+    "switch": {
+     "default": "",
+     "title": "Switch",
+     "type": "string"
+    },
+    "vlan": {
+     "default": 0,
+     "title": "Vlan",
+     "type": "integer"
+    }
+   },
+   "title": "pt_read_mac_tableArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_nat": {
+  "description": "Reads a router's REAL NAT state: the translation table, NAT counters\n(inside source lists, statics, pools) and inside/outside interfaces.\n\nFlags a router with NAT but without both an inside and an outside\ninterface. Use it to check a pt_apply_nat.\n\nParameters:\n- device: router name; empty = every router with NAT.\n\nExample: pt_read_nat(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_natArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_ospf": {
+  "description": "Reads OSPF's REAL state: router-id, areas and neighbours per process.\n\nEach neighbour comes with its state by name (FULL, 2WAY, INIT...), its\nrole (DR/BDR/DROTHER, null on point-to-point), local port and address.\nFlags neighbours not FULL (2WAY between DROTHERs is normal), duplicate\nrouter-ids and routers with OSPF but no neighbours.\n\nParameters:\n- device: router name; empty = every router.\n\nExample: pt_read_ospf(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_ospfArguments",
    "type": "object"
   }
  },
@@ -2101,8 +2415,51 @@
    "type": "object"
   }
  },
+ "pt_read_routes": {
+  "description": "Reads the REAL routing table of a live device (or of every router).\n\nWhat `show ip route` shows, read from the device's RoutingProcess:\nper route its prefix, protocol letter and name (C connected, L local,\nS static, O OSPF, D EIGRP, R RIP), next hop, interface, AD and metric.\nAcross several routers it lists `convergence_gaps`: prefixes a router\nrunning a dynamic protocol lacks while the others know them.\n\nParameters:\n- device: device name; empty = every device with a routing table.\n\nExample: did OSPF converge?  pt_read_routes()",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_routesArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_stp": {
+  "description": "Reads Spanning Tree's REAL state per VLAN: who the root bridge is.\n\nPer switch and VLAN: whether it is the root, the root ID (priority and\nMAC), and where available its bridge ID, priority, root path cost and\nroot port. Across switches it flags VLANs where they disagree on the\nroot (not converged). PT 9 does not expose per-port STP state or role.\n\nParameters:\n- switch: switch name; empty = every switch.\n- vlans: VLAN numbers to read; empty = every VLAN in the switch.\n\nExample: pt_read_stp(vlans=[1, 10])",
+  "inputSchema": {
+   "properties": {
+    "switch": {
+     "default": "",
+     "title": "Switch",
+     "type": "string"
+    },
+    "vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Vlans"
+    }
+   },
+   "title": "pt_read_stpArguments",
+   "type": "object"
+  }
+ },
  "pt_read_vlans": {
-  "description": "Reads a switch's REAL VLAN database in PT.\n\nReturns each VLAN with its number, name and whether it is one of PT's\nfactory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan\nwas applied, or to discover what is in a topology you didn't build.\n\nParameters:\n- switch: switch name in PT.\n\nExample: pt_read_vlans(switch=\"SW1\")",
+  "description": "Reads a switch's REAL VLAN database in PT.\n\nReturns each VLAN with its number, name, whether it is one of PT's\nfactory ones (1, 1002-1005) and its access ports; plus the trunk ports\n(with native VLAN), the ports with port security, and access ports left\nin a VLAN missing from the database. Use it to confirm that a\npt_apply_vlan was applied, or to discover a topology you didn't build.\n\nParameters:\n- switch: switch name in PT.\n\nExample: pt_read_vlans(switch=\"SW1\")",
   "inputSchema": {
    "properties": {
     "switch": {
@@ -2299,7 +2656,7 @@
   }
  },
  "pt_save_project": {
-  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder.",
+  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder.\n- overwrite: replace an existing file (default False: an existing file is an error).",
   "inputSchema": {
    "properties": {
     "directory": {
@@ -2310,6 +2667,11 @@
     "filename": {
      "title": "Filename",
      "type": "string"
+    },
+    "overwrite": {
+     "default": false,
+     "title": "Overwrite",
+     "type": "boolean"
     }
    },
    "required": [
@@ -2340,6 +2702,37 @@
     }
    },
    "title": "pt_screenshotArguments",
+   "type": "object"
+  }
+ },
+ "pt_send_pdu": {
+  "description": "The GUI's \"Add Simple PDU\": an ICMP echo from one device to another.\n\nParameters:\n- source, destination: device names (pt_query_topology).\n- simulation: True (default) switches PT to Simulation first, so the\n  PDU waits in the event list; False switches to Realtime, where PT\n  delivers it at once.\n- steps: in Simulation, how many events to step forward right away\n  (0-100). With steps > 0 the reply includes the packet trace (path,\n  drops and PT's per-layer reason), like pt_read_packet_trace.\n\nThe first PDU between two devices can die at a router waiting on ARP,\nexactly like the first ping: send it again.\n\nExample: pt_send_pdu(\"PC1\", \"PC4\", steps=10)",
+  "inputSchema": {
+   "properties": {
+    "destination": {
+     "title": "Destination",
+     "type": "string"
+    },
+    "simulation": {
+     "default": true,
+     "title": "Simulation",
+     "type": "boolean"
+    },
+    "source": {
+     "title": "Source",
+     "type": "string"
+    },
+    "steps": {
+     "default": 0,
+     "title": "Steps",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "title": "pt_send_pduArguments",
    "type": "object"
   }
  },
@@ -2639,7 +3032,7 @@
   }
  },
  "pt_server_service": {
-  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
+  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -2649,6 +3042,11 @@
     },
     "device": {
      "title": "Device",
+     "type": "string"
+    },
+    "domain": {
+     "default": "",
+     "title": "Domain",
      "type": "string"
     },
     "enable": {
@@ -2668,6 +3066,18 @@
      "title": "Output Dir",
      "type": "string"
     },
+    "pop3": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pop3"
+    },
     "service": {
      "title": "Service",
      "type": "string"
@@ -2683,6 +3093,18 @@
      ],
      "default": null,
      "title": "Show"
+    },
+    "smtp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Smtp"
     },
     "users": {
      "anyOf": [
@@ -3059,6 +3481,88 @@
     "url"
    ],
    "title": "pt_web_browserArguments",
+   "type": "object"
+  }
+ },
+ "pt_wireless_ap": {
+  "description": "An access point's wireless settings (AccessPoint-PT Config > Port 1),\napplied and read back. With no settings it only reads.\n\nParameters (empty/None = leave alone):\n- ssid: network name (up to 32 bytes). Clients on another SSID drop\n  off; giving each AP its own SSID keeps clients off the APs you rename.\n- broadcast: SSID broadcast on/off.\n- mac_filter: MAC filtering on/off.\n- allow_listed: True = only listed MACs may associate, False = listed\n  MACs are denied.\n- mac_list: REPLACES the filter list (\"0001.63BE.8468\", \"00:01:63:BE:84:68\").\n- reset_associations: after a change, drop every client so they\n  re-associate against the new settings (default True; without it,\n  clients already associated may keep the old association).\n- dry_run: only read and report what would change.\n\nA dropped client's port still reads up/linked: confirm with a ping\n(pt_host_command) or its address, not the port state. WPA/WEP are not\nsettable: clients need a matching profile, and PT's client profile API\nis broken.",
+  "inputSchema": {
+   "properties": {
+    "allow_listed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allow Listed"
+    },
+    "broadcast": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Broadcast"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "mac_filter": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac Filter"
+    },
+    "mac_list": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac List"
+    },
+    "reset_associations": {
+     "default": true,
+     "title": "Reset Associations",
+     "type": "boolean"
+    },
+    "ssid": {
+     "default": "",
+     "title": "Ssid",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_wireless_apArguments",
    "type": "object"
   }
  },
