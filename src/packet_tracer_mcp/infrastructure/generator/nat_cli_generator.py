@@ -14,6 +14,8 @@ Critical constraint: the payload MUST travel inside a single JS statement
 """
 
 from __future__ import annotations
+
+import json
 from ...domain.models.nat import NATConfig
 
 
@@ -157,11 +159,6 @@ def build_nat_js_call(router: str, ios_payload: str) -> str:
     content of the JS string literal — executeCode() strips REAL line breaks
     in source code, but not escape sequences inside strings.
     """
-    safe_router = router.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_router}", "{safe_payload}");'
+    # json.dumps per value: it also escapes \r, U+2028/2029 and control
+    # characters, which the old hand-written escaping let through.
+    return f"configureIosDevice({json.dumps(router)}, {json.dumps(ios_payload)});"

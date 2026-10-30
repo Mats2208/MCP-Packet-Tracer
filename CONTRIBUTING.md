@@ -35,8 +35,9 @@ Two conventions that matter:
   free-form; the rules modules decide what's legal and return `ValidationResult`.
 - **Generated JavaScript is built with `json.dumps`**, never with raw f-strings.
   Everything the generators emit is executed by PT's script engine via
-  `new Function()`, so an unescaped field is code execution, not a typo. If you
-  must interpolate into an existing literal, use `js_escape` from `shared/utils`.
+  `new Function()`, so an unescaped field is code execution, not a typo. To put
+  a value inside a message, assign `json.dumps(value)` to a JS variable and
+  concatenate the variable; there is no hand-written escaping helper.
 
 ## Filesystem paths
 

@@ -11,6 +11,8 @@ JS line (the `\n` travel as literal escapes, not as code line breaks that execut
 
 from __future__ import annotations
 
+import json
+
 from ...domain.models.vlans import (
     VLANConfig, AccessPortConfig, TrunkConfig, SubinterfaceConfig,
 )
@@ -122,11 +124,6 @@ def build_router_subinterface_payload(subinterfaces) -> str:
 
 def build_vlan_js_call(device: str, ios_payload: str) -> str:
     """Wraps the IOS payload in `configureIosDevice` as a single JS line."""
-    safe_dev = device.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_dev}", "{safe_payload}");'
+    # json.dumps per value: it also escapes \r, U+2028/2029 and control
+    # characters, which the old hand-written escaping let through.
+    return f"configureIosDevice({json.dumps(device)}, {json.dumps(ios_payload)});"

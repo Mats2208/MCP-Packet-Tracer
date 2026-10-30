@@ -38,28 +38,6 @@ def safe_name_component(name: str, fallback: str = "topology") -> str:
     return cleaned[:_MAX_COMPONENT_LEN]
 
 
-def js_escape(s: str) -> str:
-    """Escapes a string so it can be inserted into a JS literal.
-
-    A JS literal cannot cross a line break, and JS treats U+2028/U+2029 as line
-    breaks too. Without escaping them, a name containing a line break does not
-    "slip through" as code: it breaks parsing and the whole command is silently
-    lost inside the bridge's catch, which is worse than failing loudly.
-
-    To build an entire call, prefer `json.dumps`; this is for the cases where
-    something has to be interpolated inside an existing literal.
-    """
-    return (
-        s.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("'", "\\'")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
-
-
 def name_collisions(plan_names: list[str], live_names: list[str]) -> list[str]:
     """Plan device names that already exist on the canvas, in plan order."""
     live = set(live_names)

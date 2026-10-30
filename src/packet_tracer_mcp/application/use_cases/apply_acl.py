@@ -12,6 +12,8 @@ module free of HTTP bridge dependencies.
 """
 
 from __future__ import annotations
+
+import json
 from typing import Callable
 
 from ...domain.models.acls import ACLPlan, ACLEntry, ACLBinding
@@ -210,11 +212,6 @@ def _build_js_call(router: str, ios_payload: str) -> str:
     because they are string-literal escapes — they are not source-code line breaks
     that executeCode() would strip.
     """
-    safe_router = router.replace("\\", "\\\\").replace('"', '\\"')
-    safe_payload = (
-        ios_payload
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-    return f'configureIosDevice("{safe_router}", "{safe_payload}");'
+    # json.dumps per value: it also escapes \r, U+2028/2029 and control
+    # characters, which the old hand-written escaping let through.
+    return f"configureIosDevice({json.dumps(router)}, {json.dumps(ios_payload)});"

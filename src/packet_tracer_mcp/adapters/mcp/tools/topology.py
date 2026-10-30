@@ -11,7 +11,7 @@ from ....infrastructure.generator.topology_js import (
     delete_link_js, move_device_js, rename_device_js, topology_snapshot_js,
 )
 from ....domain.services.topology_view import format_export, format_query
-from ....shared.utils import js_escape, reply_json
+from ....shared.utils import reply_json
 
 # Reader error codes -> the words a caller sees.
 _EDIT_ERRORS = {
@@ -27,7 +27,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _js_guard = BridgeContext.js_guard
-    _js_escape = js_escape
 
 
 
@@ -86,10 +85,10 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        safe_name = _js_escape(device_name)
         js = (
             "try {"
-            f'  var dev = ipc.network().getDevice("{safe_name}");'
+            f"  var N = {json.dumps(device_name)};"
+            "  var dev = ipc.network().getDevice(N);"
             "  if (!dev) { reportResult('ERROR:Device not found'); }"
             "  else {"
             "    var lw = ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();"
@@ -97,7 +96,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "      reportResult('ERROR:removeDevice API not available in this PT build');"
             "    } else {"
             "      lw.removeDevice(dev.getName());"
-            f'      var still = ipc.network().getDevice("{safe_name}");'
+            "      var still = ipc.network().getDevice(N);"
             "      reportResult(still ? 'ERROR:device still present after removeDevice' : 'OK:deleted');"
             "    }"
             "  }"
@@ -252,19 +251,19 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        safe_name = _js_escape(name.strip())
         js = (
             "try {"
+            f"  var N = {json.dumps(name.strip())};"
             "  var net = ipc.network();"
             "  var n = net.getDeviceCount();"
             "  for (var i = 0; i < n; i++) {"
-            "    if (net.getDeviceAt(i).getName() === '" + safe_name + "') {"
-            "      reportResult('ERROR:DUPLICATE:Device \\'" + safe_name + "\\' already exists');"
+            "    if (net.getDeviceAt(i).getName() === N) {"
+            "      reportResult('ERROR:DUPLICATE:Device \\'' + N + '\\' already exists');"
             "      throw 'dup';"
             "    }"
             "  }"
-            f'  addDevice("{safe_name}", "{_js_escape(device_model.pt_type)}", {int(x)}, {int(y)});'
-            "  var check = ipc.network().getDevice('" + safe_name + "');"
+            f"  addDevice(N, {json.dumps(device_model.pt_type)}, {int(x)}, {int(y)});"
+            "  var check = ipc.network().getDevice(N);"
             "  if (check) {"
             "    reportResult('OK:' + check.getName() + '|' + check.getModel());"
             "  } else {"
@@ -318,26 +317,27 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if err:
             return err
 
-        sd1 = _js_escape(device1)
-        sp1 = _js_escape(port1)
-        sd2 = _js_escape(device2)
-        sp2 = _js_escape(port2)
-
+        # Each name reaches JS once, through json.dumps, as a variable; the
+        # messages below concatenate the variables, never the raw text.
+        names = (
+            f"var D1={json.dumps(device1)},P1={json.dumps(port1)},"
+            f"D2={json.dumps(device2)},P2={json.dumps(port2)};"
+        )
         js = (
-            "try {"
-            f"  var d1 = ipc.network().getDevice('{sd1}');"
-            f"  var d2 = ipc.network().getDevice('{sd2}');"
-            f"  if (!d1) {{ reportResult('ERROR:Device \\'{sd1}\\' not found'); throw 'stop'; }}"
-            f"  if (!d2) {{ reportResult('ERROR:Device \\'{sd2}\\' not found'); throw 'stop'; }}"
-            f"  var p1 = d1.getPort('{sp1}');"
-            f"  var p2 = d2.getPort('{sp2}');"
-            f"  if (!p1) {{ reportResult('ERROR:Port \\'{sp1}\\' not found on \\'{sd1}\\''); throw 'stop'; }}"
-            f"  if (!p2) {{ reportResult('ERROR:Port \\'{sp2}\\' not found on \\'{sd2}\\''); throw 'stop'; }}"
+            "try {" + names +
+            "  var d1 = ipc.network().getDevice(D1);"
+            "  var d2 = ipc.network().getDevice(D2);"
+            "  if (!d1) { reportResult('ERROR:Device \\'' + D1 + '\\' not found'); throw 'stop'; }"
+            "  if (!d2) { reportResult('ERROR:Device \\'' + D2 + '\\' not found'); throw 'stop'; }"
+            "  var p1 = d1.getPort(P1);"
+            "  var p2 = d2.getPort(P2);"
+            "  if (!p1) { reportResult('ERROR:Port \\'' + P1 + '\\' not found on \\'' + D1 + '\\''); throw 'stop'; }"
+            "  if (!p2) { reportResult('ERROR:Port \\'' + P2 + '\\' not found on \\'' + D2 + '\\''); throw 'stop'; }"
             "  if (p1.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp1}\\' on \\'{sd1}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port \\'' + P1 + '\\' on \\'' + D1 + '\\' already has a link'); throw 'stop';"
             "  }"
             "  if (p2.getLink() != null) {"
-            f"    reportResult('ERROR:Port \\'{sp2}\\' on \\'{sd2}\\' already has a link'); throw 'stop';"
+            "    reportResult('ERROR:Port \\'' + P2 + '\\' on \\'' + D2 + '\\' already has a link'); throw 'stop';"
             "  }"
             # getModel() and NOT getClassName(): PT's class does not tell a
             # switch from a router (a 3560 says "Router" because it is multilayer, and
@@ -363,13 +363,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             )
 
         js_link = (
-            "try {"
-            f'  addLink("{sd1}", "{sp1}", "{sd2}", "{sp2}", "{resolved_cable}");'
-            f"  var pCheck = ipc.network().getDevice('{sd1}').getPort('{sp1}');"
+            "try {" + names +
+            f"  addLink(D1, P1, D2, P2, {json.dumps(resolved_cable)});"
+            "  var pCheck = ipc.network().getDevice(D1).getPort(P1);"
             "  if (pCheck && pCheck.getLink() != null) {"
             "    reportResult('OK:link created');"
             "  } else {"
-            f"    reportResult('ERROR:addLink returned but link not found on {sp1}');"
+            "    reportResult('ERROR:addLink returned but link not found on ' + P1);"
             "  }"
             "} catch(e) { reportResult('ERROR:' + e); }"
         )
@@ -434,9 +434,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         parts = [
             'var d=ipc.network().getDevice(' + json.dumps(device) + ');',
-            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: ' + _js_escape(device) + '"}));return;}',
+            'if(!d){reportResult(JSON.stringify({success:false,error:"device not found: "+' + json.dumps(device) + '}));return;}',
             'var p=d.getPort(' + json.dumps(interface) + ');',
-            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: ' + _js_escape(interface) + '"}));return;}',
+            'if(!p){reportResult(JSON.stringify({success:false,error:"port not found: "+' + json.dumps(interface) + '}));return;}',
             'var applied=[];',
         ]
 
