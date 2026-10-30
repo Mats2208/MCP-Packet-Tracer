@@ -251,6 +251,10 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     def _fast(name: str, model: str) -> str | None:
         return _next_port(name, model, PortSpeed.FAST_ETHERNET)
 
+    def _router_port(name: str, model: str) -> str | None:
+        """Gigabit first; a router with only FastEthernet (the 2811) falls back to it."""
+        return _gig(name, model) or _fast(name, model)
+
     def _ether(name: str, model: str) -> str | None:
         """Plain Ethernet port — the cloud's is Ethernet6, not FastEthernet."""
         return _next_port(name, model, PortSpeed.ETHERNET)
@@ -258,7 +262,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     # Router ↔ Router — the SHAPE depends on the template (it used to always be a chain, which
     # meant three_router_triangle lacked the R3↔R1 closing link = no redundancy).
     def _link_routers(ra, rb):
-        p1, p2 = _gig(ra.name, ra.model), _gig(rb.name, rb.model)
+        p1, p2 = _router_port(ra.name, ra.model), _router_port(rb.name, rb.model)
         if p1 and p2:
             plan.links.append(LinkPlan(
                 device_a=ra.name, port_a=p1,
@@ -283,7 +287,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     spr = req.switches_per_router
     for i, router in enumerate(routers):
         for sw in switches[i * spr:(i + 1) * spr]:
-            rp, sp = _gig(router.name, router.model), _gig(sw.name, sw.model)
+            rp, sp = _router_port(router.name, router.model), _gig(sw.name, sw.model)
             if rp and sp:
                 plan.links.append(LinkPlan(
                     device_a=router.name, port_a=rp,
@@ -373,7 +377,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     # Router ↔ Cloud
     if cloud and routers:
         last = routers[-1]
-        rp, cp = _gig(last.name, last.model), _ether(cloud.name, cloud.model)
+        rp, cp = _router_port(last.name, last.model), _ether(cloud.name, cloud.model)
         if rp and cp:
             plan.links.append(LinkPlan(
                 device_a=last.name, port_a=rp,
