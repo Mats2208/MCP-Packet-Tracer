@@ -129,7 +129,7 @@ def port_state_js(device: str, port: str) -> str:
 # PT 9.0.1 getProcess("Aaa") throws "invalid string position".
 _SERVICE_PROCS = (
     "DhcpServerMain", "DnsServer", "HttpServer", "HttpsServer", "TftpServer",
-    "FtpServer", "SyslogServer", "EmailServer", "NtpServer",
+    "FtpServer", "SyslogServer", "EmailServer", "SmtpServer", "Pop3Server", "NtpServer",
 )
 
 

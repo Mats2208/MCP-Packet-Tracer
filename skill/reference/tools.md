@@ -73,7 +73,8 @@ commands)` types on the router at the other end of the PC's console cable. `pt_h
 `pt_email_client`. Server-PT: `pt_server_dhcp` (create/edit/delete pools, exclusions, on/off),
 `pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS; refuses to re-enable or write pages while HTTP and HTTPS are
 both off, see rough-edges),
-`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts).
+`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts, EMAIL `domain` and
+`smtp`/`pop3` on/off, read back).
 `pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list, reset_associations,
 dry_run)`: an AccessPoint-PT's SSID, SSID broadcast and MAC filter, applied and read back
 (`WirelessServerProcess`). WPA/WEP are not set: the client would need a profile, and that API is broken.

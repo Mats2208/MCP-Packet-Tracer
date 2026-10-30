@@ -20,8 +20,8 @@ from ...domain.rules.panel_rules import (
     MAX_BROWSER_TIMEOUT_S, normalize_mask, validate_wait_seconds,
 )
 from ...domain.rules.service_rules import (
-    EMAIL_ACTIONS, SERVICES, parse_range, validate_dhcp, validate_dns, validate_texts,
-    validate_users,
+    EMAIL_ACTIONS, SERVICES, parse_range, validate_dhcp, validate_dns, validate_email_server,
+    validate_texts, validate_users,
 )
 from ...infrastructure.generator.service_js import (
     console_peer_js, email_client_js, host_firewall_js, server_dhcp_js, server_dns_js, server_http_js, server_service_js,
@@ -105,6 +105,13 @@ def http_both_off_warning(device: str) -> str:
 def email_account_names(raw: str) -> list[str]:
     """Usernames out of PT's getAllEmailAcctAsStrings() ("user:password,..."), passwords dropped."""
     return [a.split(":", 1)[0].strip() for a in (raw or "").split(",") if a.strip()]
+
+
+def email_not_applied(data: dict, *, domain: str = "", smtp: bool | None = None,
+                      pop3: bool | None = None) -> list[str]:
+    """EMAIL settings that did not read back as requested (empty when all stuck)."""
+    want = {"domain": domain or None, "smtp": smtp, "pop3": pop3}
+    return [k for k, v in want.items() if v is not None and data.get(k) != v]
 
 
 def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
@@ -389,6 +396,9 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         service: str,
         enable: bool | None = None,
         users: list[dict] | None = None,
+        domain: str = "",
+        smtp: bool | None = None,
+        pop3: bool | None = None,
         show: bool | None = None,
         capture: bool = False,
         output_dir: str = "screenshots",
@@ -397,7 +407,10 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.
 
         - service: "tftp" | "ftp" | "syslog" | "email"
-        - enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.
+        - enable: True/False (None = leave alone). On EMAIL it switches SMTP
+          and POP3 together.
+        - domain, smtp, pop3: EMAIL only. The Domain Name ("lab.com"; empty =
+          leave alone) and each protocol On/Off; all three are read back.
         - users: accounts for ftp/email:
           [{"username": "alice", "password": "secret", "permissions": "RWDNL"}]
           (permissions FTP only: Read Write Delete reName List).
@@ -405,16 +418,26 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         """
         svc = (service or "").strip().lower()
         us = [dict(u) for u in (users or [])]
+        dom = (domain or "").strip()
         v = validate_users(device, svc, us)
+        v.errors += validate_email_server(device, svc, domain=dom, smtp=smtp, pop3=pop3).errors
         if not v.is_valid:
             return errors_text(v)
         err = ps.check_bridge()
         if err:
             return err
-        data, error = ps.call(server_service_js(device, svc, enable=enable, users=us), device)
+        if svc == "email" and enable is not None:
+            smtp = enable if smtp is None else smtp
+            pop3 = enable if pop3 is None else pop3
+        data, error = ps.call(server_service_js(
+            device, svc, enable=enable, users=us, domain=dom or None, smtp=smtp, pop3=pop3), device)
         if error:
             return error
         data.pop("ok", None)
+        if svc == "email":
+            missed = email_not_applied(data, domain=dom, smtp=smtp, pop3=pop3)
+            if missed:
+                data["not_applied"] = missed
         # PT hands back "user:password" pairs; credentials never leave the device.
         if "accounts" in data:
             data["accounts"] = email_account_names(str(data["accounts"]))
@@ -451,8 +474,8 @@ def register_desktop_service_tools(mcp: FastMCP, ps: PanelSupport) -> None:
         - action="receive": asks the POP3 server for mail (it shows in the
           window; PT does not expose the mailbox through the API).
         Server accounts are created with pt_server_service(service="email").
-        The EMAIL service's "Domain Name" has no API: set it in the server's
-        window (pt_ui_open(server, tab="Services", section="EMAIL")).
+        The server's Domain Name and SMTP/POP3 switches are set with
+        pt_server_service(server, "email", domain=..., smtp=..., pop3=...).
         """
         act = (action or "").strip().lower()
         if act not in EMAIL_ACTIONS:

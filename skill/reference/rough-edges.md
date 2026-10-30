@@ -136,7 +136,8 @@ with the default outline.
   `addCNAMEToNameServerDb`, `remove…`, `setEnable`); `HttpServer` (`setPageContents/getPage`;
   replaces an existing page only, a new one throws `File not exist: <page>` on PT 9.0.0);
   `TftpServer`/`FtpServer` (`setEnabled`; FTP users via `getFtpUserAccountManager().addFtpUser`);
-  `SyslogServer`; `EmailServer` (`addUser/changePassword`, no domain or on/off API).
+  `SyslogServer`; `EmailServer` (`addUser/changePassword`); the EMAIL page's Domain Name and switches live
+  on `SmtpServer` (`get/setServerDomainName`, `isEnabled/setEnable`) and `Pop3Server` (`isEnabled/setEnable`).
 - ☠️ **HTTP and HTTPS both off is a trap on PT 9.0.0.810** (reproduced twice, same crash, fault offset
   `0x227c9da`). From that state, one call doing `setPageContents` + `HttpServer.setEnable(true)` +
   `HttpsServer.setEnable(true)` hung the script engine ("No answer from PT (timeout)") and PT then

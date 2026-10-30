@@ -90,7 +90,7 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
 | `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
 | `pt_server_http` | Services › HTTP | Replace existing pages (it cannot create new ones), switch HTTP/HTTPS. Refuses to turn either back on or write pages while both are off (PT 9.0.0 crashes); turn one on in the GUI first. |
-| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts. |
+| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts; EMAIL's Domain Name and SMTP/POP3 on/off, read back. |
 | `pt_wireless_ap` | AccessPoint-PT Config › Port 1 | SSID, SSID broadcast, MAC filter (allow or deny the listed MACs), applied and read back; resets associations so clients re-associate. No WPA/WEP: the client side has no working profile API. |
 | `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
 

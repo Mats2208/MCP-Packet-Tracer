@@ -1144,7 +1144,7 @@
   }
  },
  "pt_email_client": {
-  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe EMAIL service's \"Domain Name\" has no API: set it in the server's\nwindow (pt_ui_open(server, tab=\"Services\", section=\"EMAIL\")).",
+  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe server's Domain Name and SMTP/POP3 switches are set with\npt_server_service(server, \"email\", domain=..., smtp=..., pop3=...).",
   "inputSchema": {
    "properties": {
     "action": {
@@ -2683,7 +2683,7 @@
   }
  },
  "pt_server_service": {
-  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
+  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -2693,6 +2693,11 @@
     },
     "device": {
      "title": "Device",
+     "type": "string"
+    },
+    "domain": {
+     "default": "",
+     "title": "Domain",
      "type": "string"
     },
     "enable": {
@@ -2712,6 +2717,18 @@
      "title": "Output Dir",
      "type": "string"
     },
+    "pop3": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pop3"
+    },
     "service": {
      "title": "Service",
      "type": "string"
@@ -2727,6 +2744,18 @@
      ],
      "default": null,
      "title": "Show"
+    },
+    "smtp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Smtp"
     },
     "users": {
      "anyOf": [

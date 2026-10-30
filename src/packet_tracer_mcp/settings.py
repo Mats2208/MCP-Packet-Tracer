@@ -192,7 +192,7 @@ Everything in a device's window is driven through the API, without taking the mo
 - `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto or static `ipv6_address`), `pt_host_firewall`,
   `pt_web_browser` (returns the page as text), `pt_email_client`.
 - Server-PT Services: `pt_server_dhcp` (pools, exclusions), `pt_server_dns` (A/CNAME),
-  `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts).
+  `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts, EMAIL domain and SMTP/POP3 on/off).
 - `pt_read_device_panel(device)`: reads ports, IPs, MAC, firewall and services in one go.
 - `pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list)`: an AP's SSID,
   SSID broadcast and MAC filter, applied and read back; resets associations after a change. A
@@ -209,8 +209,7 @@ Presentation mode (`pt_ui_mode`):
 - `pt_ui_open(device, tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)` to
   show/capture without doing anything else.
 PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API throws
-"invalid vector subscript"), the Text Editor, the EMAIL service's "Domain Name" and individual
-host-firewall rules. For those, open the window with pt_ui_open and let the user do it.
+"invalid vector subscript"), the Text Editor and individual host-firewall rules. For those, open the window with pt_ui_open and let the user do it.
 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).

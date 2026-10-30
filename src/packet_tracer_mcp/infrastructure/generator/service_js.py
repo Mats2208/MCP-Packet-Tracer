@@ -252,14 +252,20 @@ def server_service_js(
     *,
     enable: bool | None = None,
     users: list[dict] | None = None,
+    domain: str | None = None,
+    smtp: bool | None = None,
+    pop3: bool | None = None,
 ) -> str:
-    """Toggle TFTP/FTP/SYSLOG, and FTP/EMAIL accounts.
+    """Toggle TFTP/FTP/SYSLOG, FTP/EMAIL accounts, and EMAIL's domain and SMTP/POP3.
 
     users: [{"username": "...", "password": "...", "permissions": "RWDNL"}] (permissions: FTP only).
+    EMAIL's switches are not on EmailServer: measured on PT 9.0, getProcess("SmtpServer")
+    has get/setServerDomainName and isEnabled/setEnable, getProcess("Pop3Server")
+    isEnabled/setEnable. None = leave alone; all three are read back.
     """
     proc, setter, getter = SIMPLE_SERVICES[service]
     cfg = {"device": device, "service": service, "enable": enable, "users": users or [],
-           "setter": setter, "getter": getter}
+           "setter": setter, "getter": getter, "domain": domain, "smtp": smtp, "pop3": pop3}
     return (
         _head(cfg) + _proc(proc) +
         "var done=[];"
@@ -272,8 +278,17 @@ def server_service_js(
         "if(c.users.length&&c.service==='email'){for(var j=0;j<c.users.length;j++){var e=c.users[j];"
         "var ok=s.addUser(e.username,e.password);if(!ok){s.changePassword(e.username,e.password);}"
         "done.push('account '+e.username);}}"
+        "var sm=null,p3=null;"
+        "if(c.service==='email'){try{sm=d.getProcess('SmtpServer');}catch(e){}"
+        "try{p3=d.getProcess('Pop3Server');}catch(e){}"
+        "if(c.smtp!==null&&sm){sm.setEnable(!!c.smtp);done.push(c.smtp?'SMTP On':'SMTP Off');}"
+        "if(c.pop3!==null&&p3){p3.setEnable(!!c.pop3);done.push(c.pop3?'POP3 On':'POP3 Off');}"
+        "if(c.domain!==null&&sm){sm.setServerDomainName(c.domain);done.push('domain '+c.domain);}}"
         "var info={ok:true,service:c.service,done:done,"
         "enabled:(c.getter&&typeof s[c.getter]==='function')?!!s[c.getter]():null};"
+        "if(c.service==='email'){info.smtp=sm?!!sm.isEnabled():null;info.pop3=p3?!!p3.isEnabled():null;"
+        "info.domain=sm?String(sm.getServerDomainName()):null;"
+        "if(info.smtp!==null&&info.pop3!==null){info.enabled=info.smtp&&info.pop3;}}"
         "if(c.service==='ftp'){var mm=s.getFtpUserAccountManager();info.users=[];"
         "for(var k=0;k<mm.getUsersCount();k++){info.users.push(String(mm.getUsernameAt(k)));}}"
         "if(c.service==='email'){info.accounts=String(s.getAllEmailAcctAsStrings());}"
