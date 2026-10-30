@@ -1660,7 +1660,7 @@
   }
  },
  "pt_host_ip_config": {
-  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
+  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, IPv6 (automatic or static).\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\".\n- ipv6_address: static IPv6 with its prefix, \"2001:db8:0:1::10/64\".\n  Added to the port (it does not remove other addresses) and read back.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -1690,6 +1690,11 @@
     "ip": {
      "default": "",
      "title": "Ip",
+     "type": "string"
+    },
+    "ipv6_address": {
+     "default": "",
+     "title": "Ipv6 Address",
      "type": "string"
     },
     "ipv6_dns": {

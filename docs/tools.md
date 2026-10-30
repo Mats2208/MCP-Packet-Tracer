@@ -83,7 +83,7 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
 | `pt_host_command` | Desktop › Command Prompt | `ping`, `ipconfig`, `tracert`, `arp -a`, `nslookup`, `telnet`/`ssh` (answers via `inputs`). |
 | `pt_terminal` | PC Desktop › Terminal | Find the router at the other end of the PC's console cable and type on its console, as from the PC's Terminal app. |
-| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig. |
+| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig or a static IPv6 (`ipv6_address="2001:db8::10/64"`, read back). |
 | `pt_host_firewall` | Desktop › Firewall | Inbound IPv4/IPv6 firewall on or off. |
 | `pt_web_browser` | Desktop › Web Browser | Open a URL and return the page as text; in UI mode the window's own browser navigates. |
 | `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |

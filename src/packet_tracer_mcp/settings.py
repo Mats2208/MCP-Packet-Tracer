@@ -189,7 +189,7 @@ Everything in a device's window is driven through the API, without taking the mo
 - `pt_host_command(host, command, inputs)`: Desktop > Command Prompt (ping, ipconfig, tracert,
   arp -a, nslookup, telnet/ssh with `inputs`).
 - `pt_terminal(pc, commands)`: Desktop > Terminal of a PC with a console cable to a router.
-- `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto), `pt_host_firewall`,
+- `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto or static `ipv6_address`), `pt_host_firewall`,
   `pt_web_browser` (returns the page as text), `pt_email_client`.
 - Server-PT Services: `pt_server_dhcp` (pools, exclusions), `pt_server_dns` (A/CNAME),
   `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts).

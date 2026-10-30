@@ -69,7 +69,7 @@ in the router's real CLI tab one at a time, waiting for the prompt, and marks ea
 `UNKNOWN COMMAND` / `WAITING FOR ANSWER` / `TIMEOUT`; `pt_host_command(host, command, inputs)` is the
 PC's Desktop › Command Prompt (ping, ipconfig, tracert, nslookup, telnet/ssh); `pt_terminal(pc,
 commands)` types on the router at the other end of the PC's console cable. `pt_host_ip_config`
-(static/DHCP/gateway/DNS/IPv6 auto), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
+(static/DHCP/gateway/DNS/IPv6 auto or static `ipv6_address="2001:db8::10/64"`), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
 `pt_email_client`. Server-PT: `pt_server_dhcp` (create/edit/delete pools, exclusions, on/off),
 `pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS; refuses to re-enable or write pages while HTTP and HTTPS are
 both off, see rough-edges),
@@ -90,8 +90,9 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
   trunk uplink, router `.1q` subinterfaces, one `/24` + DHCP pool per VLAN. 2960 omits trunk
   `encapsulation` (dot1q-only); 3560 emits it.
 - **IPv6 dual-stack:** `pt_plan_topology(dual_stack=True)` → routers get `ipv6 address` via CLI +
-  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). Static host
-  IPv6 is NOT settable via the PT API (`addIpv6Address` fails on HostPort) — SLAAC is the path.
+  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). A static
+  host IPv6 is set afterwards with `pt_host_ip_config(host, ipv6_address="2001:db8:0:1::10/64")`
+  (`port.addIpv6Address(addr, prefix, 0, false)`, measured on PT 9.0; read back via `getIpv6Addresses()`).
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
   → `Wireless0`, and adds **one `AccessPoint-PT` per LAN**, each wired to that LAN's own switch.
   ⚠️ **Wireless addressing is NOT deterministic.** Laptops auto-associate on the default SSID and

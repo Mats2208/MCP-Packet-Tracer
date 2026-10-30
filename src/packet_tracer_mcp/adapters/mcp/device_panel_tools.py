@@ -14,13 +14,16 @@ desktop_service_tools.py.
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from typing import Callable, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from ...domain.rules.console_rules import split_commands
-from ...domain.rules.panel_rules import normalize_mask, validate_host_ip_config
+from ...domain.rules.panel_rules import (
+    normalize_mask, parse_ipv6_interface, validate_host_ip_config,
+)
 from ...infrastructure.generator.host_js import (
     host_ip_config_js, port_state_js, read_device_panel_js, remove_module_js,
 )
@@ -56,6 +59,21 @@ def stale_dhcp_ip(before: dict | None) -> str | None:
 def is_new_lease(state: dict, stale: str | None) -> bool:
     ip = (state or {}).get("ip")
     return ip not in _NO_IP and ip != stale
+
+
+def has_ipv6_address(state: dict | None, address: str) -> bool:
+    """Whether getIpv6Addresses() (as read by the port reader) lists `address`.
+
+    PT reports it uppercased ("2001:DB8:0:1::22"), so compare as addresses.
+    """
+    want = ipaddress.IPv6Address(address)
+    for entry in (state or {}).get("ipv6_addresses") or []:
+        try:
+            if ipaddress.IPv6Address(str((entry or {}).get("address", ""))) == want:
+                return True
+        except (ValueError, AttributeError):
+            continue
+    return False
 
 
 def register_device_panel_tools(
@@ -264,6 +282,7 @@ def register_device_panel_tools(
         ipv6_mode: str = "",
         ipv6_gateway: str = "",
         ipv6_dns: str = "",
+        ipv6_address: str = "",
         wait_dhcp_s: float = 12.0,
         show: bool | None = None,
         capture: bool = False,
@@ -271,7 +290,7 @@ def register_device_panel_tools(
     ) -> str:
         """
         Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:
-        static IP or DHCP, mask, gateway, DNS, automatic IPv6.
+        static IP or DHCP, mask, gateway, DNS, IPv6 (automatic or static).
 
         Parameters (empty = leave alone):
         - mode: "static" | "dhcp". With "dhcp" a lease is requested and the
@@ -279,8 +298,9 @@ def register_device_panel_tools(
         - ip, mask: IPv4 and mask ("255.255.255.0" or "24").
         - gateway, dns: IPv4. "0.0.0.0" to clear.
         - interface: port (default: the first Ethernet, or Wireless0).
-        - ipv6_mode: "auto" (SLAAC) | "off". PT does not let the API set a
-          static IPv6 on a host.
+        - ipv6_mode: "auto" (SLAAC) | "off".
+        - ipv6_address: static IPv6 with its prefix, "2001:db8:0:1::10/64".
+          Added to the port (it does not remove other addresses) and read back.
         - ipv6_gateway, ipv6_dns.
         - show / capture: opens Desktop > IP Configuration (per pt_ui_mode).
 
@@ -289,18 +309,20 @@ def register_device_panel_tools(
         res = validate_host_ip_config(
             device, mode=mode, ip=ip, mask=mask, gateway=gateway, dns=dns,
             ipv6_mode=ipv6_mode, ipv6_gateway=ipv6_gateway, ipv6_dns=ipv6_dns,
-            wait_dhcp_s=wait_dhcp_s,
+            ipv6_address=ipv6_address, wait_dhcp_s=wait_dhcp_s,
         )
         if not res.is_valid:
             return errors_text(res)
         err = check_bridge()
         if err:
             return err
+        v6 = parse_ipv6_interface(ipv6_address) if ipv6_address else None
         js = host_ip_config_js(
             device, interface.strip(), mode=mode, ip=ip.strip(),
             mask=(normalize_mask(mask) or "") if ip else "",
             gateway=gateway.strip() or None, dns=dns.strip() or None,
             ipv6_mode=ipv6_mode, ipv6_gateway=ipv6_gateway.strip(), ipv6_dns=ipv6_dns.strip(),
+            ipv6_address=v6[0] if v6 else "", ipv6_prefix=v6[1] if v6 else 0,
         )
         data, error = ps.call(js, device)
         if error:
@@ -343,6 +365,7 @@ def register_device_panel_tools(
             "mask": state.get("mask"),
             "ipv6": state.get("ipv6"),
             "link_local": state.get("link_local"),
+            "ipv6_addresses": state.get("ipv6_addresses"),
             "summary": f"{device}/{data.get('port')}: {', '.join(data.get('applied', []))} → "
                        f"{state.get('ip')}/{state.get('mask')}"
                        + (" (DHCP requested, no lease yet)" if lease is False
@@ -351,6 +374,13 @@ def register_device_panel_tools(
         }
         if lease is not None:
             out["lease"] = lease
+        if v6:
+            out["ipv6_static"] = has_ipv6_address(state, v6[0])
+            if not out["ipv6_static"]:
+                notes.append(
+                    f"IPv6: {v6[0]}/{v6[1]} is not among the port's addresses after "
+                    f"addIpv6Address (it answered {data.get('ipv6_added')!r})."
+                )
         return with_notes(out, notes)
 
     @mcp.tool()

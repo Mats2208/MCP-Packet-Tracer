@@ -22,7 +22,8 @@ _PORT_READ_JS = (
     "return {name:String(n),ip:s('getIpAddress'),mask:s('getSubnetMask'),"
     "dhcp:b('isDhcpClientOn'),mac:s('getMacAddress'),up:b('isPortUp'),power:b('getPower'),"
     "linked:b('getLink'),ipv6:b('isIpv6Enabled'),ipv6_auto:b('isIpv6AddressAutoConfig'),"
-    "link_local:s('getIpv6LinkLocal'),firewall:b('isInboundFirewallOn'),"
+    "link_local:s('getIpv6LinkLocal'),ipv6_addresses:v('getIpv6Addresses'),"
+    "firewall:b('isInboundFirewallOn'),"
     "description:s('getDescription')||'',bandwidth_kbps:v('getBandwidth'),"
     "full_duplex:b('isFullDuplex')};}"
 )
@@ -45,16 +46,25 @@ def host_ip_config_js(
     ipv6_mode: str = "",
     ipv6_gateway: str = "",
     ipv6_dns: str = "",
+    ipv6_address: str = "",
+    ipv6_prefix: int = 0,
 ) -> str:
     """What Desktop > IP Configuration does (and Config > Global > Gateway/DNS).
 
     Empty `port` = the first Ethernet interface (or Wireless0), like the
     extension's configurePcIp. `gateway`/`dns` None = leave alone.
+
+    `ipv6_address` + `ipv6_prefix` add a static IPv6 with
+    `port.addIpv6Address(address, prefix, 0, false)` (type 0 = unicast, no
+    duplicates): measured on PT 9.0 it answers true and `getIpv6Addresses()`
+    then lists `{address, prefix, type}`. Its raw answer is reported as
+    `ipv6_added`.
     """
     cfg = json.dumps({
         "device": device, "port": port, "mode": mode, "ip": ip, "mask": mask,
         "gateway": gateway, "dns": dns, "ipv6_mode": ipv6_mode,
         "ipv6_gateway": ipv6_gateway, "ipv6_dns": ipv6_dns,
+        "ipv6_address": ipv6_address, "ipv6_prefix": ipv6_prefix,
     })
     return (
         "(function(){"
@@ -92,7 +102,11 @@ def host_ip_config_js(
         "else if(c.ipv6_mode==='off'&&typeof p.setIpv6Enabled==='function'){p.setIpv6Enabled(false);applied.push('ipv6 off');}"
         "if(c.ipv6_gateway&&typeof p.setv6DefaultGateway==='function'){p.setv6DefaultGateway(c.ipv6_gateway);applied.push('ipv6 gateway');}"
         "if(c.ipv6_dns&&typeof p.setv6ServerIp==='function'){p.setv6ServerIp(c.ipv6_dns);applied.push('ipv6 dns');}"
-        "reportResult(JSON.stringify({ok:true,port:pn,applied:applied,"
+        "var added6=null;"
+        "if(c.ipv6_address){try{added6=(typeof p.addIpv6Address==='function')?"
+        "p.addIpv6Address(c.ipv6_address,c.ipv6_prefix,0,false):'unsupported';}catch(e){added6=String(e);}"
+        "applied.push('ipv6 '+c.ipv6_address+'/'+c.ipv6_prefix);}"
+        "reportResult(JSON.stringify({ok:true,port:pn,applied:applied,ipv6_added:added6,"
         "dhcp_flag:(typeof d.getDhcpFlag==='function')?!!d.getDhcpFlag():null,before:before,"
         "state:__port(d,pn)}));"
         "})();"
