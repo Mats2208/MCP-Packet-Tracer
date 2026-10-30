@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from mcp.server.fastmcp import FastMCP
-from ....domain.services.packet_trace import summarize_trace, traffic_type_label
+from ....domain.services.packet_trace import normalize_frame, summarize_trace
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -209,8 +209,23 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "          } catch (__de) {}"
             "        }"
             "      }"
+            # A PDU fired with addSimplePdu came back with empty source/destination
+            # strings on its ICMP frames (live PT 9, not explained by this reader:
+            # the strings are passed through untouched). getTrafficSource() is the
+            # documented frame -> UserTraffic link, so the PDU's endpoints are read
+            # from there as a fallback. Not yet verified live; null for traffic
+            # that no user PDU started (ARP, routing protocols, console pings).
+            "      var __ps = null, __pdst = null;"
+            "      try {"
+            "        var __ut = (typeof __f.getTrafficSource === 'function') ? __f.getTrafficSource() : null;"
+            "        if (__ut) {"
+            "          if (typeof __ut.getCanonicalSource === 'function') { __ps = String(__ut.getCanonicalSource()); }"
+            "          if (typeof __ut.getCanonicalDestination === 'function') { __pdst = String(__ut.getCanonicalDestination()); }"
+            "        }"
+            "      } catch (__te) {}"
             "      __out.push({"
             "        index: __i, device: __dn,"
+            "        pdu_source: __ps, pdu_destination: __pdst,"
             "        previous_device: __prev ? __prev.getName() : null,"
             "        in_port: __ip ? __ip.getName() : null, out_port: __op,"
             "        source: __f.getSourceString(), destination: __f.getDestinationString(),"
@@ -245,7 +260,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         frames = data.get("frames", [])
         for frame in frames:
-            frame["traffic_type"] = traffic_type_label(frame.pop("traffic_type_raw", None))
+            normalize_frame(frame)
 
         result = summarize_trace(frames)
         result["total_in_event_list"] = data.get("total", 0)

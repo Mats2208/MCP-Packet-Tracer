@@ -2045,6 +2045,48 @@
    "type": "object"
   }
  },
+ "pt_read_acl": {
+  "description": "Reads the REAL ACLs of a router: each ACL with its commands, and which\nports have an ACL applied in which direction.\n\nFlags ports that reference an ACL that does not exist. Use it to check\na pt_apply_acl.\n\nParameters:\n- device: router name; empty = every device with ACLs.\n\nExample: pt_read_acl(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_aclArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_arp": {
+  "description": "Reads the REAL ARP table (IP -> MAC -> port) of a device, router or host.\n\nParameters:\n- device: device name; empty = every device.\n\nExample: did PC1 resolve its gateway?  pt_read_arp(device=\"PC1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_arpArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_cdp": {
+  "description": "Reads the REAL CDP neighbour table: who is cabled to which port.\n\nPer neighbour: device id, local and remote port, platform, capability.\nCDP announces every 60 s: right after a deploy the table is empty.\n\nParameters:\n- device: device name; empty = every device.\n\nExample: pt_read_cdp(device=\"SW1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_cdpArguments",
+   "type": "object"
+  }
+ },
  "pt_read_device_panel": {
   "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
   "inputSchema": {
@@ -2058,6 +2100,53 @@
     "device"
    ],
    "title": "pt_read_device_panelArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_mac_table": {
+  "description": "Reads a switch's REAL MAC address table, per VLAN: MAC, port, dynamic or static.\n\nParameters:\n- switch: switch name; empty = every switch.\n- vlan: VLAN number; 0 = every VLAN.\n\nExample: where did SW1 learn PC1's MAC?  pt_read_mac_table(switch=\"SW1\")",
+  "inputSchema": {
+   "properties": {
+    "switch": {
+     "default": "",
+     "title": "Switch",
+     "type": "string"
+    },
+    "vlan": {
+     "default": 0,
+     "title": "Vlan",
+     "type": "integer"
+    }
+   },
+   "title": "pt_read_mac_tableArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_nat": {
+  "description": "Reads a router's REAL NAT state: the translation table, NAT counters\n(inside source lists, statics, pools) and inside/outside interfaces.\n\nFlags a router with NAT but without both an inside and an outside\ninterface. Use it to check a pt_apply_nat.\n\nParameters:\n- device: router name; empty = every router with NAT.\n\nExample: pt_read_nat(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_natArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_ospf": {
+  "description": "Reads OSPF's REAL state: router-id, areas and neighbours per process.\n\nEach neighbour comes with its state by name (FULL, 2WAY, INIT...), its\nrole (DR/BDR/DROTHER, null on point-to-point), local port and address.\nFlags neighbours not FULL (2WAY between DROTHERs is normal), duplicate\nrouter-ids and routers with OSPF but no neighbours.\n\nParameters:\n- device: router name; empty = every router.\n\nExample: pt_read_ospf(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_ospfArguments",
    "type": "object"
   }
  },
@@ -2101,8 +2190,51 @@
    "type": "object"
   }
  },
+ "pt_read_routes": {
+  "description": "Reads the REAL routing table of a live device (or of every router).\n\nWhat `show ip route` shows, read from the device's RoutingProcess:\nper route its prefix, protocol letter and name (C connected, L local,\nS static, O OSPF, D EIGRP, R RIP), next hop, interface, AD and metric.\nAcross several routers it lists `convergence_gaps`: prefixes a router\nrunning a dynamic protocol lacks while the others know them.\n\nParameters:\n- device: device name; empty = every device with a routing table.\n\nExample: did OSPF converge?  pt_read_routes()",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_routesArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_stp": {
+  "description": "Reads Spanning Tree's REAL state per VLAN: who the root bridge is.\n\nPer switch and VLAN: whether it is the root, the root ID (priority and\nMAC), and where available its bridge ID, priority, root path cost and\nroot port. Across switches it flags VLANs where they disagree on the\nroot (not converged). PT 9 does not expose per-port STP state or role.\n\nParameters:\n- switch: switch name; empty = every switch.\n- vlans: VLAN numbers to read; empty = every VLAN in the switch.\n\nExample: pt_read_stp(vlans=[1, 10])",
+  "inputSchema": {
+   "properties": {
+    "switch": {
+     "default": "",
+     "title": "Switch",
+     "type": "string"
+    },
+    "vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Vlans"
+    }
+   },
+   "title": "pt_read_stpArguments",
+   "type": "object"
+  }
+ },
  "pt_read_vlans": {
-  "description": "Reads a switch's REAL VLAN database in PT.\n\nReturns each VLAN with its number, name and whether it is one of PT's\nfactory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan\nwas applied, or to discover what is in a topology you didn't build.\n\nParameters:\n- switch: switch name in PT.\n\nExample: pt_read_vlans(switch=\"SW1\")",
+  "description": "Reads a switch's REAL VLAN database in PT.\n\nReturns each VLAN with its number, name, whether it is one of PT's\nfactory ones (1, 1002-1005) and its access ports; plus the trunk ports\n(with native VLAN), the ports with port security, and access ports left\nin a VLAN missing from the database. Use it to confirm that a\npt_apply_vlan was applied, or to discover a topology you didn't build.\n\nParameters:\n- switch: switch name in PT.\n\nExample: pt_read_vlans(switch=\"SW1\")",
   "inputSchema": {
    "properties": {
     "switch": {

@@ -13,8 +13,10 @@ import pytest
 
 from src.packet_tracer_mcp.domain.services.packet_trace import (
     FAILURE_STATUSES,
+    MEASURED_TRAFFIC_TYPES,
     TRAFFIC_TYPES,
     frame_status,
+    normalize_frame,
     summarize_trace,
     traffic_type_label,
 )
@@ -44,15 +46,22 @@ def _frame(**overrides) -> dict:
 
 
 class TestTrafficTypeLabel:
-    @pytest.mark.parametrize("raw,label", [(0, "ICMP"), (5, "ARP")])
+    @pytest.mark.parametrize("raw,label", [(0, "ICMP"), (5, "ARP"), (11, "STP"), (12, "OSPF")])
     def test_measured_types(self, raw, label):
-        """Solo 0 y 5 fueron observados contra PT real."""
+        """Observed against a live PT 9 (STP and OSPF used to read as type11/type12)."""
         assert traffic_type_label(raw) == label
         assert TRAFFIC_TYPES[raw] == label
+        assert raw in MEASURED_TRAFFIC_TYPES
 
-    def test_unobserved_type_is_not_invented(self):
-        """Inventar un nombre para un valor no observado sería una claim falsa."""
-        assert traffic_type_label(9) == "type9"
+    @pytest.mark.parametrize("raw,label", [(7, "DHCP"), (19, "DNS"), (17, "HTTP"),
+                                           (9, "EIGRP"), (49, "LLDP"), (1000, "Custom")])
+    def test_documented_types(self, raw, label):
+        """From Cisco's eTrafficType_* enum, which matched every measured value."""
+        assert traffic_type_label(raw) == label
+
+    def test_value_outside_the_enum_is_not_invented(self):
+        assert traffic_type_label(54) == "type54"
+        assert traffic_type_label(None) == "typeNone"
 
 
 class TestFrameStatus:
@@ -200,3 +209,41 @@ class TestExpectedDrops:
         out = summarize_trace([hello, stray])
         assert [f["destination"] for f in out["expected_drops"]] == ["224.0.0.5"]
         assert [f["destination"] for f in out["failures"]] == ["192.168.1.9"]
+
+
+class TestEmptyEndpoints:
+    """Live PT 9 (2026-10-30): the ICMP frames of a PDU fired with addSimplePdu came
+    back with empty source/destination strings. The reader now also asks the frame
+    for its UserTraffic (getTrafficSource) and uses the PDU's endpoints."""
+
+    def _raw(self, **overrides) -> dict:
+        frame = {"device": "R2", "source": "", "destination": "", "traffic_type_raw": 0,
+                 "pdu_source": "PC1", "pdu_destination": "PC4", "dropped": True,
+                 "decisions": [{"description": "The routing table does not have a route."}]}
+        frame.update(overrides)
+        return frame
+
+    def test_pdu_endpoints_fill_empty_strings(self):
+        frame = normalize_frame(self._raw())
+        assert (frame["source"], frame["destination"]) == ("PC1", "PC4")
+        assert frame["endpoints_from"] == "pdu"
+        assert frame["traffic_type"] == "ICMP"
+        assert "pdu_source" not in frame and "traffic_type_raw" not in frame
+
+    def test_frame_strings_win_over_the_pdu(self):
+        frame = normalize_frame(self._raw(source="192.168.1.10", destination="192.168.4.10"))
+        assert frame["destination"] == "192.168.4.10"
+        assert "endpoints_from" not in frame
+
+    def test_traffic_without_a_pdu_stays_empty(self):
+        frame = normalize_frame(self._raw(pdu_source=None, pdu_destination=None))
+        assert frame["destination"] == "" and "endpoints_from" not in frame
+
+    def test_failure_names_the_pdu_destination(self):
+        out = summarize_trace([normalize_frame(self._raw())])
+        assert out["failures"][0]["destination"] == "PC4"
+
+    def test_reader_asks_for_the_traffic_source_behind_typeof(self):
+        src = registry_source()
+        assert "typeof __f.getTrafficSource === 'function'" in src
+        assert "normalize_frame(frame)" in src

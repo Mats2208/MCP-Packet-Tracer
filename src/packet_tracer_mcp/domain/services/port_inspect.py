@@ -19,6 +19,9 @@ NAT_MODES = {0: "none", 1: "inside", 2: "outside"}
 
 def nat_mode_label(raw) -> str:
     """Human-readable label for the NAT mode; passes the raw value through if a new one appears."""
+    # A live probe on PT 9 (2026-10-30) got the string "0" from RouterPort.getNatMode().
+    if isinstance(raw, str) and raw.strip().isdigit():
+        raw = int(raw)
     return NAT_MODES.get(raw, f"unknown({raw})")
 
 
