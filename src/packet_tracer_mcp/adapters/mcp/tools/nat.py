@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 from ....application.use_cases.apply_nat import build_nat_config, apply_nat_uc, remove_nat_uc
+from ....infrastructure.execution.ios_verify import IosApplyCheck, verification_summary
 from ..bridge_context import BridgeContext
 from ....shared.utils import reply_json
 
@@ -13,6 +14,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _pick_channel = ctx.pick_channel
     _query_pt_devices = ctx.live_devices
     _bridge_send_payload = ctx.send_payload
+    _bridge_send_and_wait = ctx.send_and_wait
 
     # ------------------------------------------------------------------
     # NAT / PAT — apply and remove address translation through the bridge
@@ -71,7 +73,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
-        send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
+        check = IosApplyCheck(_bridge_send_and_wait)
+        send_fn = check.send if bridge_ok and not dry_run else None
 
         result = apply_nat_uc(
             config=config,
@@ -87,14 +90,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         else:
             summary_lines.append(f"❌ {mode_label}: {len(result['errors'])} error(s).")
 
+        verification = check.report()
         if dry_run:
             summary_lines.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary_lines.append(f"📤 Applied on '{router}' through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
             summary_lines.append("⚠ Bridge not connected — payload generated but NOT sent.")
-        elif result["valid"] and not result["sent"]:
-            summary_lines.append("⚠ Bridge OK but sending failed.")
+        elif result["valid"]:
+            summary_lines.append(verification_summary(verification))
 
         return reply_json({
             "summary": "\n".join(summary_lines),
@@ -106,6 +108,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
+            **verification,
         })
 
     @mcp.tool()

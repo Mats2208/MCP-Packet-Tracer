@@ -10,6 +10,7 @@ from ....domain.models.switch_security import STPConfig, PortSecurityConfig
 from ....application.use_cases.apply_hardening import build_hardening_config, apply_hardening_uc
 from ....application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ....domain.models.interface_tuning import InterfaceTuning
+from ....infrastructure.execution.ios_verify import IosApplyCheck, verification_summary
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -21,7 +22,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _query_pt_devices = ctx.live_devices
-    _bridge_send_payload = ctx.send_payload
 
     @mcp.tool()
     def pt_apply_vlan(
@@ -56,48 +56,29 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         bridge_ok = _pick_channel() != ""
         query_fn = _query_pt_devices if bridge_ok else None
-        send_fn = _bridge_send_payload if bridge_ok and not dry_run else None
+        check = IosApplyCheck(_bridge_send_and_wait)
 
         result = apply_vlan_uc(
             plan=plan,
             query_pt_topology=query_fn,
-            bridge_send=send_fn,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
+        return _apply_response(result, f"VLAN config ({len(plan.vlans)} VLAN(s))",
+                               bridge_ok, dry_run, check)
 
-        summary = []
-        if result["valid"]:
-            summary.append(f"✅ VLAN config valid ({len(plan.vlans)} VLAN(s)).")
-        else:
-            summary.append(f"❌ VLAN: {len(result['errors'])} error(s).")
-        if dry_run:
-            summary.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary.append("📤 Applied through the bridge (configureIosDevice).")
-        elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
-
-        return reply_json({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-        })
-
-    def _switch_security_response(result: dict, label: str, bridge_ok: bool, dry_run: bool) -> str:
+    def _apply_response(result: dict, label: str, bridge_ok: bool, dry_run: bool,
+                        check: IosApplyCheck) -> str:
         summary = []
         summary.append(f"✅ {label} valid." if result["valid"]
                        else f"❌ {label}: {len(result['errors'])} error(s).")
+        verification = check.report()
         if dry_run:
             summary.append("dry_run mode — NOT sent to the bridge.")
-        elif result["sent"]:
-            summary.append("📤 Applied through the bridge (configureIosDevice).")
         elif result["valid"] and not bridge_ok:
             summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
+        elif result["valid"]:
+            summary.append(verification_summary(verification))
         return reply_json({
             "summary": "\n".join(summary),
             "valid": result["valid"],
@@ -107,6 +88,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "js_payload": result["js_payload"],
             "sent": result["sent"],
             "dry_run": result["dry_run"],
+            **verification,
         })
 
     @mcp.tool()
@@ -144,13 +126,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bpduguard_ports=bpduguard_ports or [],
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_stp_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "STP", bridge_ok, dry_run)
+        return _apply_response(result, "STP", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_port_security(
@@ -182,13 +165,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             violation=violation, sticky=sticky, static_macs=static_macs or [],
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_port_security_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Port-security", bridge_ok, dry_run)
+        return _apply_response(result, "Port-security", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_hardening(
@@ -230,13 +214,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             service_password_encryption=service_password_encryption,
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_hardening_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Hardening", bridge_ok, dry_run)
+        return _apply_response(result, "Hardening", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_interface_tuning(
@@ -290,13 +275,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             delay=delay, ospf_network=ospf_network,
         )
         bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
         result = apply_interface_tuning_uc(
             cfg,
             query_pt_topology=_query_pt_devices if bridge_ok else None,
-            bridge_send=_bridge_send_payload if bridge_ok and not dry_run else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _switch_security_response(result, "Interface tuning", bridge_ok, dry_run)
+        return _apply_response(result, "Interface tuning", bridge_ok, dry_run, check)
 
     # ------------------------------------------------------------------
     # VLANs — read from the switch's VlanManager, not from the plan
