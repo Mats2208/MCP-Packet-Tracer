@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **83 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -139,8 +139,14 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
 | `pt_apply_port_security` | Port-security: max MACs, sticky/static MACs, violation action. |
 | `pt_apply_hardening` | hostname, banner, enable secret, local users, SSH (RSA keys + vty), password-encryption. |
 | `pt_apply_interface_tuning` | Serial clock-rate (DCE), bandwidth, per-interface OSPF/EIGRP knobs. |
+| `pt_apply_etherchannel` | Bundle 2-8 switch ports into Port-channel<n> (LACP, PAgP or static), optionally as a trunk. |
+| `pt_apply_hsrp` | One HSRP group on a router interface: virtual IP, priority, preempt (version 2). |
+| `pt_apply_bgp` | `router bgp`: neighbors with their remote AS and advertised networks (CIDR). |
+| `pt_apply_qos` | class-maps (DSCP / NBAR protocol), a policy-map with priority or bandwidth per class and fair-queue on class-default, attached outbound. |
 
-All accept `dry_run=True` to preview the generated CLI without touching PT.
+All accept `dry_run=True` to preview the generated CLI without touching PT, and
+report which IOS lines were rejected. CME voice (`telephony-service`) is not
+supported: PT's 2911 rejects it without the UC license.
 
 ## Server services
 
@@ -238,9 +244,9 @@ describing the network and starts showing it.
 !!! note "NetFlow is configured natively; QoS can only be read"
     These two look symmetric but are not. `pt_apply_netflow` configures the
     exporter directly and verifies the result — no CLI involved. QoS, by
-    contrast, can be **read** but not created programmatically, so class-maps and
-    policy-maps are authored through IOS CLI (`pt_send_raw` →
-    `configureIosDevice`) and `pt_read_qos` is how you confirm it landed.
+    contrast, can be **read** but not created through the object API, so class-maps
+    and policy-maps are authored through IOS CLI with `pt_apply_qos` and
+    `pt_read_qos` is how you confirm it landed.
 
 ## Simulation
 
