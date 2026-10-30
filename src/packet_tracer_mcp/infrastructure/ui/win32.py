@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from typing import Iterator
 
 _PW_RENDERFULLCONTENT = 2
+_WM_SETTEXT, _BM_CLICK = 0x000C, 0x00F5
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_IDOK, _IDCANCEL = 1, 2
 _WM_MOUSEMOVE, _WM_LBUTTONDOWN, _WM_LBUTTONUP = 0x0200, 0x0201, 0x0202
 _MK_LBUTTON = 0x0001
 _SW_SHOWNOACTIVATE, _SW_RESTORE = 4, 9
@@ -94,6 +97,9 @@ def _load() -> None:
         (user32, "GetForegroundWindow"): ([], wt.HWND),
         (user32, "SetForegroundWindow"): ([wt.HWND], wt.BOOL),
         (user32, "IsWindow"): ([wt.HWND], wt.BOOL),
+        (user32, "FindWindowExW"): ([wt.HWND, wt.HWND, wt.LPCWSTR, wt.LPCWSTR], wt.HWND),
+        (user32, "SendMessageW"): ([wt.HWND, wt.UINT, wt.WPARAM, wt.LPCWSTR], ctypes.c_ssize_t),
+        (user32, "GetDlgItem"): ([wt.HWND, ctypes.c_int], wt.HWND),
         (user32, "AttachThreadInput"): ([wt.DWORD, wt.DWORD, wt.BOOL], wt.BOOL),
         (user32, "SendInput"): ([wt.UINT, ctypes.c_void_p, ctypes.c_int], wt.UINT),
         (user32, "SetWindowPos"): ([wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
@@ -143,6 +149,50 @@ def top_windows(pid: int) -> list[tuple[int, str]]:
 
     user32.EnumWindows(_WNDENUMPROC(cb), 0)
     return found
+
+
+def _image_name(pid: int) -> str:
+    """Executable of process `pid`, lower-case ("" if it can't be read)."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+    kernel32.OpenProcess.restype = wt.HANDLE
+    kernel32.CloseHandle.argtypes = [wt.HANDLE]
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        size = wt.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(size.value)
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD)]
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return ""
+        return os.path.basename(buf.value).lower()
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def pt_pids() -> list[int]:
+    """Running Packet Tracer processes, found without the bridge.
+
+    The bridge can't be asked: this answers whether it is safe to talk to it.
+    """
+    _load()
+    pids: set[int] = set()
+
+    def cb(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd):
+            n = user32.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value.startswith(("Cisco Packet Tracer", "Activity Wizard")):
+                owner = wt.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+                pids.add(owner.value)
+        return True
+
+    user32.EnumWindows(_WNDENUMPROC(cb), 0)
+    return sorted(p for p in pids if _image_name(p).startswith("packettracer"))
 
 
 def find_window(pid: int, title: str) -> int | None:
@@ -341,6 +391,31 @@ def capture(hwnd: int) -> tuple[int, int, bytes]:
         gdi32.DeleteObject(bmp)
         gdi32.DeleteDC(mdc)
         user32.ReleaseDC(hwnd, hdc)
+
+
+def fill_file_dialog(dialog: int, path: str) -> bool:
+    """Type `path` into a native (#32770) file dialog and press Open.
+
+    Measured on PT 9.0.1 with "Import Instruction Page". False when the dialog
+    doesn't have the expected ComboBoxEx32 > ComboBox > Edit chain or an Open button.
+    """
+    _load()
+    combo_ex = user32.FindWindowExW(dialog, None, "ComboBoxEx32", None)
+    combo = user32.FindWindowExW(combo_ex, None, "ComboBox", None) if combo_ex else None
+    edit = user32.FindWindowExW(combo, None, "Edit", None) if combo else None
+    button = user32.GetDlgItem(dialog, _IDOK)
+    if not edit or not button:
+        return False
+    user32.SendMessageW(edit, _WM_SETTEXT, 0, path)
+    user32.PostMessageW(button, _BM_CLICK, 0, 0)
+    return True
+
+
+def cancel_dialog(dialog: int) -> bool:
+    """Press Cancel on a native dialog: a modal is never left behind."""
+    _load()
+    button = user32.GetDlgItem(dialog, _IDCANCEL)
+    return bool(button) and bool(user32.PostMessageW(button, _BM_CLICK, 0, 0))
 
 
 def post_click(hwnd: int, screen_x: int, screen_y: int) -> tuple[int, int]:

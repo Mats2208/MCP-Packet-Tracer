@@ -11,6 +11,7 @@ import json
 import time
 import urllib.parse
 import urllib.request
+from typing import Callable
 
 from ...infrastructure.execution.bridge_token import get_bridge_token, token_fingerprint
 from ...infrastructure.execution.file_bridge import FileBridge
@@ -88,6 +89,8 @@ class BridgeContext:
         self.instance: PTCommandBridge | None = None
         # time.monotonic() of the last JS that created a link (see STP_SETTLE_S).
         self.last_link_change: float | None = None
+        # Set by tools/activity.py: says why PT must not get commands right now.
+        self.modal_gate: Callable[[], str | None] | None = None
 
     def _note(self, js: str) -> None:
         if creates_links(js):
@@ -195,7 +198,18 @@ class BridgeContext:
             return "file"
         return ""
 
+    def modal_block(self) -> str | None:
+        """Why nothing may go to PT right now, or None (see `modal_gate`)."""
+        if self.modal_gate is None:
+            return None
+        try:
+            return self.modal_gate()
+        except Exception:  # noqa: BLE001 - a broken check must not stop the bridge
+            return None
+
     def channel_send(self, payload: str) -> bool:
+        if self.modal_block():
+            return False
         """Send fire-and-forget over the available channel."""
         self._note(payload)
         ch = self.pick_channel()
@@ -238,6 +252,9 @@ class BridgeContext:
         - file: the Script Engine injects a local reportResult that captures the
           value and writes it to the res file; here the "raw" js is sent with its try/catch.
         """
+        blocked = self.modal_block()
+        if blocked:
+            return f"ERROR: {blocked}"
         self._note(js_call)
         ch = self.pick_channel()
         guarded = (
