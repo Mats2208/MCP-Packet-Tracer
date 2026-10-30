@@ -1272,7 +1272,7 @@
   }
  },
  "pt_delete_link": {
-  "description": "Delete the link connected to a specific interface on a device in PT.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
+  "description": "Delete the link connected to a specific interface on a device in PT.\nReads both ends back: `verified` is true only when this port AND the\nfar-end port no longer have a link. Reports the far end and the cable.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -1540,7 +1540,7 @@
   }
  },
  "pt_export_topology": {
-  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns JSON with devices (name, model, x/y position, interfaces with IPs)\nand links (endpoints, ports, cable type). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
+  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns devices (name, model, x/y position, interfaces with IPs) and links\n(endpoints, ports, and the REAL cable type PT reports for each link:\nstraight, cross, serial, fiber...). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
   "inputSchema": {
    "properties": {},
    "title": "pt_export_topologyArguments",
@@ -1965,7 +1965,7 @@
   }
  },
  "pt_inspect_ports": {
-  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied\nACLs. Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
+  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode, applied\nACLs and, on a cabled port, the real cable type (straight, cross,\nserial...) and the far end (\"SW1:FastEthernet0/1\"). Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2103,7 +2103,7 @@
   }
  },
  "pt_move_device": {
-  "description": "Move a device to new coordinates on the Packet Tracer canvas.\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
+  "description": "Move a device to new coordinates on the Packet Tracer canvas.\nReads the position back: `verified` is true when PT reports exactly (x, y).\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -2263,7 +2263,7 @@
   }
  },
  "pt_query_topology": {
-  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology.\nRequires bridge connected (use pt_bridge_status to verify).",
+  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology,\nthen every link with its real cable type (read from the link itself).\nRequires bridge connected (use pt_bridge_status to verify).",
   "inputSchema": {
    "properties": {},
    "title": "pt_query_topologyArguments",
@@ -2635,7 +2635,7 @@
   }
  },
  "pt_rename_device": {
-  "description": "Rename a device in the active Packet Tracer topology.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
+  "description": "Rename a device in the active Packet Tracer topology.\nReads the result back: `verified` is true only when the new name resolves\nto the device and the old name no longer does.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
   "inputSchema": {
    "properties": {
     "new_name": {

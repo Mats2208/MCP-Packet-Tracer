@@ -7,6 +7,8 @@ from mcp.server.fastmcp import FastMCP
 from ....domain.models.plans import TopologyPlan
 from ....domain.services.topology_diff import diff as topology_diff, health_check
 from ....domain.services.port_inspect import nat_mode_label, summarize_ports
+from ....infrastructure.catalog.cables import cable_type_name
+from ....infrastructure.generator.topology_js import PORT_LINK_JS
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -95,6 +97,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         want = json.dumps(device.strip())
         return (
             "try {"
+            + PORT_LINK_JS +
             f"  var __want = {want};"
             "  var __net = ipc.network();"
             "  var __out = [];"
@@ -116,6 +119,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "            up: !!__p.isPortUp(),"
             "            protocol_up: (typeof __p.isProtocolUp === 'function') ? !!__p.isProtocolUp() : null,"
             "            linked: !!__p.getLink(),"
+            "            link: __plink(String(__dn), __p),"
             "            ip: __p.getIpAddress(),"
             "            mask: __p.getSubnetMask(),"
             "            mac: (typeof __p.getMacAddress === 'function') ? __p.getMacAddress() : null,"
@@ -150,8 +154,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Real state of each port of a live device in PT.
 
         Reads the device, not the plan: line/protocol status, MAC, IP/mask,
-        duplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied
-        ACLs. Flags anomalies (cable connected with the port down, line up with
+        duplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode, applied
+        ACLs and, on a cabled port, the real cable type (straight, cross,
+        serial...) and the far end ("SW1:FastEthernet0/1"). Flags anomalies (cable connected with the port down, line up with
         protocol down).
 
         It is the DETAIL view of one device; for the sweep of the whole
@@ -191,6 +196,11 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 ports = [p for p in ports if p.get("linked")]
             for port in ports:
                 port["nat_mode"] = nat_mode_label(port.pop("nat_mode_raw", None))
+                link = port.pop("link", None)
+                if isinstance(link, dict):
+                    port["cable"] = cable_type_name(link.get("cable_raw"))
+                    port["peer"] = (f"{link['peer_device']}:{link['peer_port']}"
+                                    if link.get("peer_device") else None)
             dev["ports"] = ports
 
         result = summarize_ports(devices)
