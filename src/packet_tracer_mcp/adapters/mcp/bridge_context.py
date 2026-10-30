@@ -289,21 +289,26 @@ class BridgeContext:
             "takes over while PT stays open."
         )
 
-    def live_devices(self) -> list[dict]:
+    def read_live_devices(self) -> list[dict] | None:
         """Read PT's active topology as a structured list of devices.
 
         Each element: {name, model, ports:[{name, ip, mask, up, linked}]}.
-        Single source of truth for the pre-checks (module compat, ACL/NAT),
-        pt_diff and pt_health_check. Returns [] if the bridge doesn't answer or PT fails.
+        None when the read failed (no answer, PT error, unreadable reply), so a
+        failed read is never mistaken for an empty canvas ([]).
         """
         result = self.send_and_wait(LIVE_DEVICES_JS, timeout=10.0)
         if not result or result.startswith("PT_ERROR") or result.startswith("ERROR"):
-            return []
+            return None
         try:
-            data = json.loads(result)
-            return data.get("devices", []) or []
+            devices = json.loads(result).get("devices")
         except Exception:
-            return []
+            return None
+        return devices if isinstance(devices, list) else None
+
+    def live_devices(self) -> list[dict]:
+        """`read_live_devices`, with a failed read as [] (the best-effort pre-checks:
+        module compat, ACL/NAT, pt_diff)."""
+        return self.read_live_devices() or []
 
     def send_payload(self, js_call: str) -> bool:
         """Send a fire-and-forget JS payload over the available channel (HTTP or file)."""
