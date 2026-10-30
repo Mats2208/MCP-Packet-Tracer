@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import time
 from typing import Callable
@@ -51,15 +52,22 @@ def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> st
 
 
 def dhcp_host_ports(plan, static_names: set[str]) -> dict[str, str]:
-    """{host: port} of the plan's hosts that take their address from a DHCP pool."""
+    """{host: port} of the plan's hosts that take their address from a DHCP pool.
+
+    Same rule as the deploy script: a wired host is DHCP only when a pool serves its
+    subnet; elsewhere it keeps its planned static address and must not be touched.
+    """
     hosts: dict[str, str] = {}
     if not plan.dhcp_pools:
         return hosts
+    pool_nets = [ipaddress.ip_network(f"{p.network}/{p.mask}", strict=False) for p in plan.dhcp_pools]
     for dev in plan.devices:
         if dev.category not in ("pc", "server", "laptop") or dev.name in static_names:
             continue
         if dev.interfaces:
-            hosts[dev.name] = next(iter(dev.interfaces))
+            port, ip = next(iter(dev.interfaces.items()))
+            if ip and any(ipaddress.ip_interface(ip).ip in net for net in pool_nets):
+                hosts[dev.name] = port
         elif getattr(dev, "wireless", False):
             hosts[dev.name] = "Wireless0"
     return hosts

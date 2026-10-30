@@ -75,6 +75,13 @@ def test_dhcp_hosts_are_the_non_static_ones():
     assert hosts == {n: "FastEthernet0" for n in ("PC1", "PC2", "PC3", "PC5")}
 
 
+def test_hosts_outside_every_pool_are_not_dhcp_hosts():
+    plan = _triangle_plan()
+    plan.dhcp_pools = [p for p in plan.dhcp_pools if p.router == "R1"]
+    hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
+    assert hosts == {"PC1": "FastEthernet0", "PC2": "FastEthernet0"}
+
+
 class _FakeBridge:
     """PT seen through the bridge: hosts in `late` only get a lease once re-requested."""
 
