@@ -39,6 +39,35 @@ def generate_all_configs(plan: TopologyPlan) -> dict[str, str]:
     return configs
 
 
+def static_host_ips(plan: TopologyPlan) -> dict[str, str]:
+    """
+    {host_name: ip} of the wired hosts deployed with a fixed IP even when DHCP is on:
+    every server, plus the last host of each subnet (Fix F17). The router pools must
+    exclude these addresses, or a lease can duplicate them.
+    """
+    if not plan.dhcp_pools:
+        return {}
+    host_ip: dict[str, str] = {}
+    by_subnet: dict[str, list[str]] = {}
+    for dev in plan.devices:
+        if dev.category not in ("pc", "server", "laptop") or not dev.interfaces:
+            continue
+        iface_ip = next(iter(dev.interfaces.values()), None)
+        if not iface_ip:
+            continue
+        host_ip[dev.name] = iface_ip.split("/")[0]
+        net = str(ipaddress.ip_interface(iface_ip).network)
+        by_subnet.setdefault(net, []).append(dev.name)
+
+    # Fix F17: with DHCP active, the LAST wired host on a LAN sometimes does not
+    # complete the DHCP DISCOVER. As a deterministic fallback we assign it a static IP
+    # (the one the planner already calculated): the host with the highest IP per subnet.
+    static = {d.name for d in plan.devices if d.category == "server" and d.name in host_ip}
+    for names in by_subnet.values():
+        static.add(max(names, key=lambda n: ipaddress.ip_address(host_ip[n])))
+    return {n: host_ip[n] for n in static}
+
+
 def _with_extra_cli(cfg: str, extra: list[str]) -> str:
     """Insert the plan's extra lines before the trailing `end` / `write memory`."""
     lines = cfg.split("\n")
@@ -117,8 +146,13 @@ def _router_config(router: DevicePlan, plan: TopologyPlan, l3_switch: bool = Fal
 
     # --- DHCP ---
     pools = [p for p in plan.dhcp_pools if p.router == router.name]
+    static_ips = sorted(set(static_host_ips(plan).values()), key=ipaddress.ip_address)
     for pool in pools:
         lines.append(f"ip dhcp excluded-address {pool.excluded_start} {pool.excluded_end}")
+        pool_net = ipaddress.ip_network(f"{pool.network}/{pool.mask}", strict=False)
+        for ip in static_ips:
+            if ipaddress.ip_address(ip) in pool_net:
+                lines.append(f"ip dhcp excluded-address {ip}")
     for pool in pools:
         lines.append(f"ip dhcp pool {pool.pool_name}")
         lines.append(f" network {pool.network} {pool.mask}")

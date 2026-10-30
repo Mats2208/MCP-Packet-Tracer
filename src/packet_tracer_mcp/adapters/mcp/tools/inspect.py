@@ -64,6 +64,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             else f"⚠ {len(result['down_links'])} link(s) down, "
                  f"{len(result['duplicate_ips'])} duplicate IP(s)."
         )
+        # "healthy" only covers down links and duplicates: a host left without an
+        # address must not hide behind a green summary.
+        if result["cabled_without_ip"]:
+            result["summary"] += (
+                f" ⚠ {len(result['cabled_without_ip'])} cabled port(s) without an IP "
+                "(DHCP pending?)."
+            )
         return reply_json(result)
 
     # ------------------------------------------------------------------

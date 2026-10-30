@@ -17,6 +17,7 @@ from ....infrastructure.generator.ptbuilder_generator import (
 from ....infrastructure.generator.cli_config_generator import (
     generate_all_configs,
     generate_pc_config,
+    static_host_ips,
 )
 from ....infrastructure.execution.manual_executor import ManualExecutor
 from ....infrastructure.execution.deploy_executor import DeployExecutor
@@ -24,6 +25,7 @@ from ....infrastructure.execution.bridge_token import token_was_rotated, token_i
 from ..bridge_context import BridgeContext, DEPLOY_BATCH, stp_wait_seconds
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
+    dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
 )
 from ....shared.enums import RoutingProtocol, TopologyTemplate
 from ....shared.utils import js_escape, safe_name_component, classify_ping as _classify_ping, name_collisions, read_plan_source
@@ -514,6 +516,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                     )
             link_fail = still_failed_links
 
+        # DHCP requests lost while STP was settling: ask again.
+        dhcp_lines: list[str] = []
+        dhcp_hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
+        if dhcp_hosts:
+            time.sleep(stp_wait_seconds(ctx.last_link_change, time.monotonic()))
+            dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(
+                lambda js, t: _bridge_send_and_wait(js, timeout=t), dhcp_hosts))
+
         report = [
             "Topology deployed to Packet Tracer!",
             f"  Commands sent: {sent}",
@@ -531,6 +541,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             report.append("  FAILED links:")
             for f in link_fail:
                 report.append(f"    - {f}")
+        report += dhcp_lines
 
         return "\n".join(report)
 

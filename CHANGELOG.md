@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **DHCP with static hosts (#31).** Reproduced on PT 9 with `three_router_triangle`, OSPF, 2 PCs per LAN,
+  1 server and DHCP:
+  - The pools only excluded the gateway, so the server and each LAN's static fallback host stayed
+    leasable. A new client on R1's LAN was offered SRV1's 192.168.0.4, and only IOS's ping check stopped
+    it (`show ip dhcp conflict`). Each pool now gets `ip dhcp excluded-address` for every static host in
+    its subnet. `static_host_ips(plan)` is the one place that decides which hosts are static.
+  - DHCP hosts asked for their lease while their switch port was still in STP listening/learning; the
+    DISCOVER was lost and PC1, PC2, PC3 and PC5 stayed at 0.0.0.0. `pt_live_deploy` now waits for STP,
+    re-requests the lease of every host still without an address (2 rounds of 15 s) and reports which
+    were renewed or are still unleased.
+  - `pt_health_check` said "Healthy topology." with those hosts at 0.0.0.0. The summary now counts the
+    cabled ports without an IP.
+
+  Patch by @Gabo8v.
+
 ## 0.10.1
 
 Found by building a 24-branch, 116-device enterprise WAN (multi-area OSPF, NAT, DHCP, SSH) on PT 9.0.1

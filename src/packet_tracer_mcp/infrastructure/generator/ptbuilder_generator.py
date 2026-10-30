@@ -73,30 +73,13 @@ def generate_executable_script(plan: TopologyPlan) -> str:
     from ...shared.utils import prefix_to_mask
     import ipaddress
 
+    from .cli_config_generator import static_host_ips
+
     pcs = [d for d in plan.devices if d.category in ("pc", "server", "laptop")]
 
-    # Fix F17: with DHCP active, the LAST wired host on a LAN sometimes does not
-    # complete the DHCP DISCOVER. As a deterministic fallback we assign it a static IP
-    # (the one the planner already calculated). We identify the last host per /24
-    # subnet (the one with the highest IP).
-    last_host_per_subnet: dict[str, str] = {}
-    if plan.dhcp_pools:
-        host_ip: dict[str, str] = {}
-        by_subnet: dict[str, list[str]] = {}
-        for pc in pcs:
-            iface_ip = next(iter(pc.interfaces.values()), None) if pc.interfaces else None
-            if not iface_ip:
-                continue
-            host_ip[pc.name] = iface_ip.split("/")[0]
-            net = str(ipaddress.ip_interface(iface_ip).network)
-            by_subnet.setdefault(net, []).append(pc.name)
-        for net, names in by_subnet.items():
-            names_sorted = sorted(
-                names, key=lambda n: tuple(int(o) for o in host_ip[n].split("."))
-            )
-            last_host_per_subnet[net] = names_sorted[-1]
-
-    last_names = set(last_host_per_subnet.values())
+    # Servers and the last host of each subnet keep their planned IP (Fix F17);
+    # the router pools exclude those same addresses.
+    static_names = set(static_host_ips(plan))
     pool_nets = [(ipaddress.ip_network(f"{p.network}/{p.mask}", strict=False), p) for p in plan.dhcp_pools]
 
     for pc in pcs:
@@ -109,7 +92,7 @@ def generate_executable_script(plan: TopologyPlan) -> str:
                 pool = next((p for net, p in pool_nets if ipaddress.ip_address(ip) in net), None)
                 # DHCP only where a pool serves the host's subnet; servers keep the
                 # planned address (DNS/web need a fixed one).
-                use_dhcp = pc.category != "server" and pc.name not in last_names and pool is not None
+                use_dhcp = pc.name not in static_names and pool is not None
                 if use_dhcp:
                     lines.append(f'configurePcIp({json.dumps(pc.name)}, true);')
                 else:
