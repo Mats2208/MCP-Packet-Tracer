@@ -22,6 +22,8 @@ from typing import Callable, Optional
 
 from ...domain.services.activity import is_modal_title
 from . import win32
+from contextlib import nullcontext
+
 from .presenter import is_available, pid_js
 from .uia import Uia
 
@@ -196,6 +198,11 @@ class WizardDriver:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def keep_focus(self):
+        """Guards the user's keyboard while PT opens a window (off Windows, nothing)."""
+        ok, _why = self._available()
+        return self._win.keep_user_focus(self.pid()) if ok else nullcontext()
 
     def show_answer_page(self) -> None:
         self.require_gui()

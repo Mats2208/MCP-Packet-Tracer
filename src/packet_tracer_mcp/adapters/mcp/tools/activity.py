@@ -90,7 +90,9 @@ class ActivityOps:
             raise ActivityError(f"Not opened: {exc}") from None
         if self.call(js.wizard_state_js()).get("wizard"):
             raise ActivityError("The Activity Wizard is open: pt_activity_exit_wizard first.")
-        raw = self.ctx.send_and_wait(file_open_js(target), timeout=30.0)
+        # Opening a .pka pops up the "PT Activity" window, which takes the keyboard.
+        with self.wizard.keep_focus():
+            raw = self.ctx.send_and_wait(file_open_js(target), timeout=30.0)
         if raw is None:
             raise ActivityError("No answer from PT while opening (a dialog may be waiting).")
         try:

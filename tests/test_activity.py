@@ -221,6 +221,10 @@ def test_values_reach_js_through_json_dumps():
 # --- tools ----------------------------------------------------------------------
 
 class FakeWizard:
+    def keep_focus(self):
+        from contextlib import nullcontext
+        return nullcontext()
+
     def __init__(self, source=""):
         self.calls = []
         self.source = source
@@ -248,7 +252,10 @@ def test_open_refuses_a_non_pka_before_touching_pt(tmp_path):
     assert out.startswith("Not opened") and ".pka" in out
 
 
-def test_open_confirms_the_password_without_echoing_it(tmp_path):
+def test_open_confirms_the_password_without_echoing_it(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from src.packet_tracer_mcp.infrastructure.ui import wizard as wizard_module
+    monkeypatch.setattr(wizard_module.WizardDriver, "keep_focus", lambda self: nullcontext())
     lab = tmp_path / "e.pka"
     lab.write_bytes(b"x")
     target = str(lab.resolve()).replace("\\", "/")
