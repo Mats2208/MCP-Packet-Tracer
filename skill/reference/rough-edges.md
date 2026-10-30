@@ -217,10 +217,12 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **Consoles update live; state panels don't.** IP Configuration and Services pages read their values
   when shown, so the tools re-open them after applying a change.
 
-- **An open device window takes the user's keyboard.** With `show=True` / `pt_ui_mode("ui")`, what a person types
-  elsewhere lands in the CLI tab and corrupts commands sent through it (seen: `Translating "intenable"`,
-  `configure terminal` rejected). With `show=False` the same commands were clean. Stay headless unless the
-  window is the point.
+- **An open device window can take the user's keyboard.** Qt activates a dialog when it opens, so what a person
+  types elsewhere could land in the CLI tab and corrupt commands (seen: `Translating "intenable"`). The MCP now
+  gives the foreground back on Windows (`keyboard focus given back` in the reply's GUI steps; measured 3 of 3
+  after an empty SendInput, AttachThreadInput alone failed). A few keys can still slip in the tens of ms before
+  the restore, and if the person was already in PT nothing is restored. Stay headless (`show=False`) unless the
+  window is the point. macOS and Linux have no UI mode: always headless, so this cannot happen there.
 - A laptop has two MACs: `Bluetooth` comes first in its port list, `Wireless0` is the one a MAC filter needs.
 - `pt_send_pdu` trace `failures` include ordinary drops (ARP broadcasts, OSPF hellos on hosts): read the ICMP
   frames, not the count.

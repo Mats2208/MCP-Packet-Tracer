@@ -95,6 +95,7 @@ def _load() -> None:
         (user32, "SetForegroundWindow"): ([wt.HWND], wt.BOOL),
         (user32, "IsWindow"): ([wt.HWND], wt.BOOL),
         (user32, "AttachThreadInput"): ([wt.DWORD, wt.DWORD, wt.BOOL], wt.BOOL),
+        (user32, "SendInput"): ([wt.UINT, ctypes.c_void_p, ctypes.c_int], wt.UINT),
         (user32, "SetWindowPos"): ([wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
                                     ctypes.c_int, ctypes.c_int, wt.UINT], wt.BOOL),
         (gdi32, "CreateCompatibleDC"): ([H], H),
@@ -181,17 +182,39 @@ def window_pid(hwnd: int) -> int:
     return owner.value
 
 
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", wt.LONG), ("dy", wt.LONG), ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
+                ("time", wt.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _INPUT(ctypes.Structure):
+    # type + the union of MOUSEINPUT (its largest member).
+    _fields_ = [("type", wt.DWORD), ("mi", _MOUSEINPUT)]
+
+
+def _send_empty_input() -> None:
+    """A mouse event that moves nothing: this process then "received the last input event"."""
+    event = _INPUT()  # type 0 = INPUT_MOUSE, every field zero
+    user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(_INPUT))
+
+
 def _take_foreground(target: int, current: int) -> bool:
     """Give the foreground to `target` while `current` holds it.
 
-    A background process is normally refused by SetForegroundWindow, so a refusal
-    is retried with this thread attached to the foreground window's input queue
-    (what Windows Terminal does to summon itself). The attachment resets the key
-    state, hence only when needed and only for this call.
+    A background process is normally refused by SetForegroundWindow. A refusal is
+    retried after an empty SendInput (PowerToys does this): one of the documented
+    conditions is having received the last input event, and it moves nothing and
+    types nothing. Measured live on PT 9.0.1 that AttachThreadInput alone is not
+    enough, but it stays as the last resort, attached to the foreground window's
+    input queue (what Windows Terminal does to summon itself). The attachment
+    resets the key state, hence only when needed and only for this call.
 
     A synthetic ALT would also unlock it, but it's deliberately not used: the
     letters the user is typing at that instant would become Alt chords.
     """
+    if user32.SetForegroundWindow(target):
+        return True
+    _send_empty_input()
     if user32.SetForegroundWindow(target):
         return True
     mine = threading.get_native_id()

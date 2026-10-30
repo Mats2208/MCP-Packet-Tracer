@@ -22,9 +22,12 @@ OWNERS = {PT_MAIN: PT_PID, PT_DIALOG: PT_PID, USER_WINDOW: 200, OTHER_WINDOW: 30
 class FakeUser32:
     """A desktop where a background process can be refused the foreground."""
 
-    def __init__(self, foreground: int, *, needs_attach: bool = False, refuse: bool = False):
+    def __init__(self, foreground: int, *, needs_attach: bool = False, refuse: bool = False,
+                 needs_input: bool = False):
         self.foreground = foreground
         self.needs_attach = needs_attach
+        self.needs_input = needs_input
+        self.got_input = False
         self.refuse = refuse
         self.attached = False
         self.events: list[str] = []
@@ -38,7 +41,8 @@ class FakeUser32:
 
     def SetForegroundWindow(self, hwnd):
         self.events.append(f"set_foreground:{hwnd}")
-        if self.refuse or (self.needs_attach and not self.attached):
+        if self.refuse or (self.needs_attach and not self.attached) or (
+                self.needs_input and not self.got_input):
             return 0
         self.foreground = hwnd
         return 1
@@ -50,6 +54,11 @@ class FakeUser32:
 
     def IsWindow(self, hwnd):
         return hwnd in OWNERS and hwnd not in self.closed
+
+    def SendInput(self, count, inputs, size):
+        self.events.append("input")
+        self.got_input = True
+        return count
 
     def AttachThreadInput(self, mine, theirs, attach):
         self.events.append(f"attach:{bool(attach)}")
@@ -110,6 +119,15 @@ def test_restores_during_the_block_not_only_at_the_end(desktop):
     with win32.keep_user_focus(PT_PID):
         fake.steal()
         wait_until(lambda: fake.foreground == USER_WINDOW)
+
+
+def test_empty_input_unlocks_a_refused_restore(desktop):
+    """Measured live on PT 9.0.1: AttachThreadInput alone left PT with the foreground."""
+    fake = desktop(USER_WINDOW, needs_input=True)
+    with win32.keep_user_focus(PT_PID):
+        fake.foreground = PT_DIALOG
+        time.sleep(0.15)
+    assert fake.foreground == USER_WINDOW and "input" in fake.events
 
 
 def test_refused_restore_is_retried_attached_and_detaches(desktop):
