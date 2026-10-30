@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from src.packet_tracer_mcp.adapters.mcp.tools import acl, nat, switching
+from src.packet_tracer_mcp.adapters.mcp.tools import acl, nat, routing, switching
 from src.packet_tracer_mcp.adapters.mcp.tools.acl import acl_object_outcome
 from tests._fake_ctx import FakeCtx, ok_reply, rejected_reply, tools
 
@@ -33,6 +33,16 @@ TOOL_CASES = [
     (switching, "pt_apply_hardening", dict(device="R1", hostname="R1")),
     (switching, "pt_apply_interface_tuning", dict(router="R1", interface="GigabitEthernet0/0",
                                                   bandwidth=1000)),
+    (switching, "pt_apply_etherchannel", dict(switch="SW1",
+                                              ports=["FastEthernet0/10", "FastEthernet0/11"])),
+    (routing, "pt_apply_hsrp", dict(router="R1", interface="GigabitEthernet0/0", group=1,
+                                    virtual_ip="192.168.1.254")),
+    (routing, "pt_apply_bgp", dict(router="R1", asn=65001,
+                                   neighbors=[{"ip": "10.0.0.2", "remote_as": 65002}])),
+    (routing, "pt_apply_qos", dict(router="R1", interface="GigabitEthernet0/1",
+                                   policy_name="WAN-OUT",
+                                   classes=[{"name": "VOICE", "match_protocol": "rtp",
+                                             "priority_kbps": 512}])),
 ]
 IDS = [c[1] for c in TOOL_CASES]
 

@@ -1,4 +1,4 @@
-"""Device-config tools sent as IOS CLI: VLANs, STP, port security, hardening, interface tuning, VLAN read-back."""
+"""Device-config tools sent as IOS CLI: VLANs, STP, port security, hardening, interface tuning, EtherChannel, VLAN read-back."""
 
 from __future__ import annotations
 
@@ -10,9 +10,51 @@ from ....domain.models.switch_security import STPConfig, PortSecurityConfig
 from ....application.use_cases.apply_hardening import build_hardening_config, apply_hardening_uc
 from ....application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ....domain.models.interface_tuning import InterfaceTuning
+from ....application.use_cases.apply_etherchannel import apply_etherchannel_uc
+from ....domain.models.etherchannel import EtherChannelConfig
 from ....infrastructure.execution.ios_verify import IosApplyCheck, verification_summary
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
+
+
+def apply_reply(result: dict, label: str, bridge_ok: bool, dry_run: bool,
+                check: IosApplyCheck) -> str:
+    """Reply of a verified CLI apply tool: validation, then what IOS accepted."""
+    summary = []
+    summary.append(f"✅ {label} valid." if result["valid"]
+                   else f"❌ {label}: {len(result['errors'])} error(s).")
+    verification = check.report()
+    if dry_run:
+        summary.append("dry_run mode — NOT sent to the bridge.")
+    elif result["valid"] and not bridge_ok:
+        summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
+    elif result["valid"]:
+        summary.append(verification_summary(verification))
+    return reply_json({
+        "summary": "\n".join(summary),
+        "valid": result["valid"],
+        "errors": result["errors"],
+        "warnings": result["warnings"],
+        "cli_lines": result["cli_lines"],
+        "js_payload": result["js_payload"],
+        "sent": result["sent"],
+        "dry_run": result["dry_run"],
+        **verification,
+    })
+
+
+def invalid_input_reply(label: str, exc: Exception) -> str:
+    """Reply for arguments that do not even fit the model (e.g. a dict missing a key)."""
+    message = str(exc).splitlines()
+    return reply_json({
+        "summary": f"❌ {label}: invalid arguments.",
+        "valid": False,
+        "errors": [{"error_code": "VALIDATION_ERROR", "device": "",
+                    "message": " ".join(m.strip() for m in message[:6]),
+                    "suggestion": "Check the parameter shapes in the tool description."}],
+        "warnings": [], "cli_lines": [], "sent": False,
+        "verified": False, "verification": "not_sent",
+    })
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -64,32 +106,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _apply_response(result, f"VLAN config ({len(plan.vlans)} VLAN(s))",
+        return apply_reply(result, f"VLAN config ({len(plan.vlans)} VLAN(s))",
                                bridge_ok, dry_run, check)
-
-    def _apply_response(result: dict, label: str, bridge_ok: bool, dry_run: bool,
-                        check: IosApplyCheck) -> str:
-        summary = []
-        summary.append(f"✅ {label} valid." if result["valid"]
-                       else f"❌ {label}: {len(result['errors'])} error(s).")
-        verification = check.report()
-        if dry_run:
-            summary.append("dry_run mode — NOT sent to the bridge.")
-        elif result["valid"] and not bridge_ok:
-            summary.append("⚠ Bridge not connected — payload generated but NOT sent.")
-        elif result["valid"]:
-            summary.append(verification_summary(verification))
-        return reply_json({
-            "summary": "\n".join(summary),
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "cli_lines": result["cli_lines"],
-            "js_payload": result["js_payload"],
-            "sent": result["sent"],
-            "dry_run": result["dry_run"],
-            **verification,
-        })
 
     @mcp.tool()
     def pt_apply_stp(
@@ -133,7 +151,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _apply_response(result, "STP", bridge_ok, dry_run, check)
+        return apply_reply(result, "STP", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_port_security(
@@ -172,7 +190,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _apply_response(result, "Port-security", bridge_ok, dry_run, check)
+        return apply_reply(result, "Port-security", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_hardening(
@@ -221,7 +239,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _apply_response(result, "Hardening", bridge_ok, dry_run, check)
+        return apply_reply(result, "Hardening", bridge_ok, dry_run, check)
 
     @mcp.tool()
     def pt_apply_interface_tuning(
@@ -282,7 +300,52 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             bridge_send=check.send if bridge_ok and not dry_run else None,
             dry_run=dry_run,
         )
-        return _apply_response(result, "Interface tuning", bridge_ok, dry_run, check)
+        return apply_reply(result, "Interface tuning", bridge_ok, dry_run, check)
+
+    @mcp.tool()
+    def pt_apply_etherchannel(
+        switch: str,
+        ports: list[str],
+        group: int = 1,
+        mode: str = "active",
+        trunk: bool = False,
+        allowed_vlans: list[int] | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Bundles switch ports into an EtherChannel (Port-channel<group>) through IOS CLI,
+        each line verified. Measured on a 2960-24TT in PT 9; other models are not verified.
+
+        - switch: switch name in PT.
+        - ports: 2-8 full port names of one speed, e.g. ["FastEthernet0/10", "FastEthernet0/11"].
+          A contiguous run is sent as `interface range FastEthernet0/10 - 11`.
+        - group: channel-group number (1-6 on a 2960).
+        - mode: "active"|"passive" (LACP), "desirable"|"auto" (PAgP) or "on" (static).
+          At least one side must be active/desirable: passive+passive or auto+auto never forms.
+          Configure the peer switch the same way (same group mode family, same ports count).
+        - trunk: True puts Port-channel<group> in `switchport mode trunk`.
+        - allowed_vlans: trunk only, e.g. [10, 20] (`switchport trunk allowed vlan`).
+        - dry_run: validate and return the CLI/payload without sending.
+
+        Check it with pt_cli(device=switch, commands=["show etherchannel summary"]).
+        Example: pt_apply_etherchannel(switch="SW1", ports=["FastEthernet0/10",
+          "FastEthernet0/11"], group=1, mode="active", trunk=True)
+        """
+        try:
+            cfg = EtherChannelConfig(switch=switch, ports=list(ports or []), group=group,
+                                     mode=mode, trunk=trunk, allowed_vlans=allowed_vlans)
+        except ValueError as exc:
+            return invalid_input_reply("EtherChannel", exc)
+        bridge_ok = _pick_channel() != ""
+        check = IosApplyCheck(_bridge_send_and_wait)
+        result = apply_etherchannel_uc(
+            cfg,
+            query_pt_topology=_query_pt_devices if bridge_ok else None,
+            bridge_send=check.send if bridge_ok and not dry_run else None,
+            dry_run=dry_run,
+        )
+        return apply_reply(result, f"EtherChannel Port-channel{group} ({cfg.protocol()})",
+                           bridge_ok, dry_run, check)
 
     # ------------------------------------------------------------------
     # VLANs — read from the switch's VlanManager, not from the plan
