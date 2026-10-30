@@ -26,7 +26,15 @@ def _tool_source(name: str) -> str:
 def test_pt_add_module_does_not_return_instead_of_reporting():
     body = _tool_source("pt_add_module")
     assert "return JSON.stringify" not in body
-    assert "add_module_js(" in body
+    # The JS now comes from module_change_js (one power-cycle generator), which reports.
+    assert "module_change_js(" in body
+
+
+def test_module_change_js_reports():
+    from src.packet_tracer_mcp.infrastructure.generator.module_js import module_change_js
+    js = module_change_js("add", [{"device": 'R"1', "slot": "0/0", "module": "HWIC-2T"}])
+    assert "reportResult(JSON.stringify(" in js
+    assert "return JSON.stringify" not in js
 
 
 def test_add_module_js_reports_and_escapes():

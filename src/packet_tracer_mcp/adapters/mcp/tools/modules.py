@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from mcp.server.fastmcp import FastMCP
-from ....infrastructure.generator.host_js import add_module_js
+from ....infrastructure.generator.module_js import (
+    module_change_js, parse_module_change, power_cycle_notes,
+)
 from ..bridge_context import BridgeContext
 from ....infrastructure.catalog.modules import ALL_MODULES, resolve_module, ports_for_slot
-from ....shared.utils import js_escape
 from ....shared.utils import reply_json
 
 
@@ -34,7 +35,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     _bridge_send_and_wait = ctx.send_and_wait
     _check_bridge = ctx.check_bridge
     _query_pt_devices = ctx.live_devices
-    _js_escape = js_escape
 
     # ------------------------------------------------------------------
     # MODULES — install expansion modules on live devices
@@ -96,8 +96,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Installs an expansion module on a device in the active topology.
 
-        The runtime patch already injected in PT powers the device off, installs the
-        module and powers it back on (with skipBoot). You do NOT need to power it off by hand.
+        PT powers the device off, installs the module and powers it back on (with
+        skipBoot). A restart reloads the startup-config, so routers/switches are saved
+        first (write memory); the reply says whether the device restarted and was saved.
 
         Parameters:
         - device_name: exact device name in PT (e.g. "R1"). Use
@@ -133,10 +134,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"Call pt_list_modules to see the valid names."
             )
 
-        # Build the JS payload
-        safe_name = _js_escape(device_name)
-        safe_module = _js_escape(spec.name)
-        safe_slot = _js_escape(slot_s)
+        # One generator does the power-cycle for every module tool (module_js.py):
+        # it saves IOS running-configs first, since the restart reloads startup-config.
+        js = module_change_js("add", [{"device": device_name, "slot": slot_s, "module": spec.name}])
         # Ports carry the slot in their name, so they have to be computed
         # for THIS slot: the catalog lists them for the family's first slot.
         slot_ports = ports_for_slot(spec, slot_s)
@@ -157,7 +157,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 "description": spec.description,
                 "ports_added": slot_ports,
                 "compatible_with": list(spec.compatible_with) if spec.compatible_with else "any",
-                "js_payload": f'addModule("{safe_name}", "{safe_slot}", "{safe_module}")',
+                "js_payload": js,
                 "sent": False,
                 "dry_run": True,
             })
@@ -174,10 +174,6 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if err:
                 return err
 
-        # Send to the bridge — the extension's helper handles the power cycle.
-        # The JS must REPORT the result: it used to return it, and the tool
-        # always ended in a timeout even when the module was installed.
-        js = add_module_js(device_name, slot_s, spec.name)
         result = _bridge_send_and_wait(js, timeout=15.0)
 
         if result is None:
@@ -189,19 +185,19 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 f"Check by hand with pt_query_topology."
             )
 
-        try:
-            data = json.loads(result)
-            success = bool(data.get("success"))
-        except Exception:
+        data = parse_module_change(result)
+        if data is None:
             return f"Unexpected reply from PT: {result}"
+        success = any(r.get("ok") for r in data["results"])
+        notes = "".join(f"\n  {n}" for n in power_cycle_notes(data.get("devices", [])))
 
         if success:
             return (
                 f"Module installed on {device_name}.\n"
                 f"  Slot: {slot_s}\n"
                 f"  Module: {spec.name} — {spec.description}\n"
-                f"  Ports added: {ports_added}\n"
-                f"  PT powered the device off and on automatically."
+                f"  Ports added: {ports_added}"
+                + notes
             )
         return (
             f"PT refused to install '{spec.name}' on {device_name} slot '{slot_s}'.\n"
@@ -209,6 +205,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             f"  - Slot taken by another module\n"
             f"  - Module not compatible with the device's model\n"
             f"  - Slot out of range or in the wrong format (HWIC: '0/0', NM: '1', NIM: '0/1')"
+            + notes
         )
 
     @mcp.tool()
@@ -217,7 +214,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dry_run: bool = False,
     ) -> str:
         """
-        Installs N modules in a single runCode JS — power-off → addModule×N → power-on.
+        Installs N modules in a single runCode JS — save → power-off → addModule×N → power-on.
 
         Useful when several serial modules (HWIC-2T, NIM-2T, etc.) have to go into
         several routers at once. PREFER this tool over multiple calls to
@@ -296,45 +293,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                 seen.add(v["device"])
                 unique_devs.append(v["device"])
 
-        # JS literal arrays for devices and modules
-        devs_js = "[" + ",".join(f'"{_js_escape(d)}"' for d in unique_devs) + "]"
-        mods_js = "[" + ",".join(
-            f'["{_js_escape(v["device"])}","{_js_escape(v["slot"])}","{_js_escape(v["module"])}"]'
-            for v in validated
-        ) + "]"
-
-        js = (
-            f"var DEVS={devs_js};var MODS={mods_js};"
-            "var saved=[];"
-            "for(var i=0;i<DEVS.length;i++){"
-            "var d=ipc.network().getDevice(DEVS[i]);"
-            "if(!d)continue;"
-            "var hp=typeof d.getPower===\"function\";"
-            "var was=hp?d.getPower():false;"
-            "if(hp&&was)d.setPower(false);"
-            "saved.push({n:DEVS[i],hp:hp,was:was});"
-            "}"
-            # addModule returns false when the slot does not exist on that model
-            # (a 1941 has no HWIC 0/2) and PT does not throw: it fails silently. Without
-            # checking the return value, the tool reported ports that were never created.
-            "var res=[];"
-            "for(var j=0;j<MODS.length;j++){"
-            "var m=MODS[j];var dd=ipc.network().getDevice(m[0]);"
-            "if(!dd){res.push(m[0]+'|'+m[1]+'|nodev');continue;}"
-            "var ok=false;"
-            "try{ok=dd.addModule(m[1],allModuleTypes[m[2]],m[2]);}catch(e){ok=false;}"
-            "res.push(m[0]+'|'+m[1]+'|'+(ok?'ok':'fail'));"
-            "}"
-            # Reported BEFORE the power-on on purpose: powering on is what takes
-            # time, and waiting for it was the reason this was fire-and-forget.
-            "reportResult(res.join(';'));"
-            "for(var k=0;k<saved.length;k++){"
-            "var s=saved[k];if(!s.hp||!s.was)continue;"
-            "var dx=ipc.network().getDevice(s.n);if(!dx)continue;"
-            "dx.setPower(true);"
-            "if(typeof dx.skipBoot===\"function\")dx.skipBoot();"
-            "}"
-        )
+        # One power-cycle per device around all its modules (module_js.py), with the
+        # IOS running-config saved first.
+        js = module_change_js("add", validated)
 
         summary = {
             "total_modules": len(validated),
@@ -381,21 +342,23 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             )
             return reply_json(summary)
 
-        # "R1|0/0|ok;R1|0/2|fail" — a slot that doesn't exist on the model returns
-        # false without throwing, so without this phantom ports were reported.
-        status: dict[tuple[str, str], str] = {}
-        for chunk in raw.split(";"):
-            parts = chunk.split("|")
-            if len(parts) == 3:
-                status[(parts[0], parts[1])] = parts[2]
+        data = parse_module_change(raw)
+        if data is None:
+            summary["sent"] = True
+            summary["verified"] = False
+            summary["summary"] = f"Unexpected reply from PT: {raw}"
+            return reply_json(summary)
 
+        # A slot that doesn't exist on the model returns false without throwing,
+        # so without the per-module status phantom ports were reported.
+        status = {(r.get("device"), r.get("slot")): bool(r.get("ok")) for r in data["results"]}
         failed = []
         for v in validated:
-            state = status.get((v["device"], v["slot"]), "unknown")
-            v["installed"] = state == "ok"
-            if state != "ok":
+            v["installed"] = status.get((v["device"], v["slot"]), False)
+            if not v["installed"]:
                 v["ports_added"] = []
                 failed.append(f"{v['device']} slot {v['slot']} ({v['module']})")
+        summary["power_cycle"] = power_cycle_notes(data.get("devices", []))
 
         summary["sent"] = True
         summary["verified"] = True
@@ -412,7 +375,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         summary["summary"] = (
             f"Batch sent: {len(validated)} module(s) on {len(unique_devs)} device(s).\n"
-            f"PT is powering off, installing and powering back on in a single step. "
+            f"PT saved, powered off, installed and powered back on in one step (see power_cycle). "
             f"Check with pt_query_topology or by querying getPorts() on each router."
         )
         return reply_json(summary)
