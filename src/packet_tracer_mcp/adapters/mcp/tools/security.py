@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from mcp.server.fastmcp import FastMCP
 from ....domain.services.security_audit import audit_security
+from ....infrastructure.generator.walk_js import WALK_JS
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -39,16 +40,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
     _SECURITY_AUDIT_JS = (
         "try {"
-        + _AUDIT_ALGO_JS +
-        "  var __net = ipc.network();"
+        + _AUDIT_ALGO_JS + WALK_JS +
         "  var __out = [];"
-        "  var __n = __net.getDeviceCount();"
-        "  for (var __i = 0; __i < __n; __i++) {"
-        "    try {"
-        "      var __d = __net.getDeviceAt(__i);"
+        "  __eachDevice(function(__d) {"
         # Hosts (PC/Server/Laptop) expose no IOS configuration: calling
         # these getters there throws and opens a modal that freezes the bridge.
-        "      if (!__d || typeof __d.getEnableSecret !== 'function') continue;"
+        "      if (typeof __d.getEnableSecret !== 'function') return;"
         "      var __users = [];"
         "      try {"
         "        var __uc = __d.getUserPassCount();"
@@ -81,8 +78,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         "        config_register: (typeof __d.getConfigRegister === 'function')"
         "          ? __d.getConfigRegister() : null"
         "      });"
-        "    } catch (__pe) {}"
-        "  }"
+        "  });"
         "  reportResult(JSON.stringify({ devices: __out }));"
         "} catch (__e) { reportResult('ERROR:' + __e); }"
     )

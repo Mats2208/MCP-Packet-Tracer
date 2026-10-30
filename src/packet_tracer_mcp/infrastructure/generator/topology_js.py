@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 
+from .walk_js import WALK_JS
+
 # One link as {cls, cable_raw, a:{device, port}, b:{device, port}} (b is missing
 # on the wireless "Antenna" signal, which only has the AP's port).
 _LINK_JS = (
@@ -45,18 +47,18 @@ _NOT_FOUND = "if(!d){reportResult(JSON.stringify({ok:false,error:'device_not_fou
 def topology_snapshot_js() -> str:
     """Every device (model, x/y, ports with IP and link flag) and every link with its cable."""
     return _wrap({}, (
-        _LINK_JS +
+        _LINK_JS + WALK_JS +
         "var n=net.getDeviceCount();var lc=net.getLinkCount();var devs=[];"
-        "for(var i=0;i<n;i++){try{var d=net.getDeviceAt(i);if(!d){continue;}"
-        "var ports=[];var pc=d.getPortCount();"
-        "for(var j=0;j<pc;j++){try{var p=d.getPortAt(j);if(!p){continue;}"
+        "__eachDevice(function(d){"
+        "var ports=[];"
+        "__eachPort(d,function(p){"
         "var e={name:String(p.getName()),ip:'',mask:'',linked:false};"
         "try{var ip=p.getIpAddress();if(ip&&String(ip)!=='0.0.0.0'){e.ip=String(ip);"
         "e.mask=String(p.getSubnetMask());}}catch(x){}"
-        "try{e.linked=p.getLink()!=null;}catch(x){}ports.push(e);}catch(x){}}"
+        "try{e.linked=p.getLink()!=null;}catch(x){}ports.push(e);});"
         "var px=null,py=null;try{px=d.getXCoordinate();py=d.getYCoordinate();}catch(x){}"
         "devs.push({name:String(d.getName()),model:String(d.getModel()),x:px,y:py,ports:ports});"
-        "}catch(x){}}"
+        "});"
         "var links=[];for(var k=0;k<lc;k++){try{links.push(__link(net.getLinkAt(k)));}catch(x){}}"
         "reportResult(JSON.stringify({ok:true,device_count:n,link_count:lc,devices:devs,links:links}));"
     ))

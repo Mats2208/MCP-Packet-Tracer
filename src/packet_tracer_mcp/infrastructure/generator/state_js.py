@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 
+from .walk_js import WALK_JS
+
 # Shared helpers. `__proc` turns a missing or throwing getProcess into null;
 # `__call` is a guarded getter for methods that are documented but not probed live.
 _HELPERS_JS = (
@@ -45,11 +47,10 @@ def _sweep_js(reader_js: str, cfg: dict) -> str:
     return (
         "(function(){try{"
         f"var c={json.dumps(cfg)};"
-        + _HELPERS_JS + reader_js +
+        + _HELPERS_JS + reader_js + WALK_JS +
         "var net=ipc.network();var names=[];"
-        "if(c.device){names=[c.device];}else{var n=net.getDeviceCount();"
-        "for(var i=0;i<n;i++){try{var dd=net.getDeviceAt(i);if(dd){names.push(String(dd.getName()));}}"
-        "catch(e){}}}"
+        "if(c.device){names=[c.device];}else{"
+        "__eachDevice(function(dd){names.push(String(dd.getName()));});}"
         "var out=[];"
         "for(var k=0;k<names.length;k++){var d=null;try{d=net.getDevice(names[k]);}catch(e){}"
         "if(!d){if(c.device){reportResult(JSON.stringify({found:false}));return;}continue;}"

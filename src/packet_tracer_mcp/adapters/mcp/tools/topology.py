@@ -13,6 +13,7 @@ from ....infrastructure.generator.topology_js import (
 from ....domain.services.topology_view import format_export, format_query
 from ....domain.rules.text_rules import has_control_chars
 from ....infrastructure.generator.ptbuilder_generator import add_device_call, add_link_call
+from ....infrastructure.generator.walk_js import WALK_JS
 from ....shared.utils import reply_json
 
 # Reader error codes -> the words a caller sees.
@@ -258,15 +259,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             return err
 
         js = (
-            "try {"
+            "try {" + WALK_JS +
             f"  var N = {json.dumps(name.strip())};"
-            "  var net = ipc.network();"
-            "  var n = net.getDeviceCount();"
-            "  for (var i = 0; i < n; i++) {"
-            "    if (net.getDeviceAt(i).getName() === N) {"
-            "      reportResult('ERROR:DUPLICATE:Device \\'' + N + '\\' already exists');"
-            "      throw 'dup';"
-            "    }"
+            "  var dup = false;"
+            "  __eachDevice(function(d) { if (d.getName() === N) { dup = true; } });"
+            "  if (dup) {"
+            "    reportResult('ERROR:DUPLICATE:Device \\'' + N + '\\' already exists');"
+            "    throw 'dup';"
             "  }"
             # The deploy's creation path (lwAddDevice, with its addDevice fallback),
             # then the IOS boot skip core.js's addDevice used to do.

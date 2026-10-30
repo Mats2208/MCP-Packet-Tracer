@@ -31,14 +31,14 @@ from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exporte
     dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
     console_ping_arm_js, console_ping_poll_js,
 )
+from ....infrastructure.generator.walk_js import WALK_JS
 from ....shared.enums import RoutingProtocol, TopologyTemplate
 from ....shared.utils import safe_name_component, resolve_within, resolve_open_path, resolve_save_dir, classify_ping as _classify_ping, name_collisions, read_plan_source
 
 
 # Names of the devices on the canvas, as a JSON array.
 _LIVE_NAMES_JS = (
-    "try{var net=ipc.network();var n=net.getDeviceCount();var a=[];"
-    "for(var i=0;i<n;i++){a.push(net.getDeviceAt(i).getName());}"
+    "try{" + WALK_JS + "var a=[];__eachDevice(function(d){a.push(d.getName());});"
     "reportResult(JSON.stringify(a));}catch(e){reportResult('[]');}"
 )
 

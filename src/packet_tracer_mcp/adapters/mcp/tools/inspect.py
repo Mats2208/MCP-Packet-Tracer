@@ -9,6 +9,7 @@ from ....domain.services.topology_diff import diff as topology_diff, health_chec
 from ....domain.services.port_inspect import nat_mode_label, summarize_ports
 from ....infrastructure.catalog.cables import cable_type_name
 from ....infrastructure.generator.topology_js import PORT_LINK_JS
+from ....infrastructure.generator.walk_js import WALK_JS
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -97,23 +98,14 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         want = json.dumps(device.strip())
         return (
             "try {"
-            + PORT_LINK_JS +
+            + PORT_LINK_JS + WALK_JS +
             f"  var __want = {want};"
-            "  var __net = ipc.network();"
             "  var __out = [];"
-            "  var __n = __net.getDeviceCount();"
-            "  for (var __i = 0; __i < __n; __i++) {"
-            "    try {"
-            "      var __d = __net.getDeviceAt(__i);"
-            "      if (!__d) continue;"
+            "  __eachDevice(function(__d) {"
             "      var __dn = __d.getName();"
-            "      if (__want && __dn !== __want) continue;"
+            "      if (__want && __dn !== __want) return;"
             "      var __ports = [];"
-            "      var __pc = __d.getPortCount();"
-            "      for (var __j = 0; __j < __pc; __j++) {"
-            "        try {"
-            "          var __p = __d.getPortAt(__j);"
-            "          if (!__p) continue;"
+            "      __eachPort(__d, function(__p) {"
             "          __ports.push({"
             "            name: __p.getName(),"
             "            up: !!__p.isPortUp(),"
@@ -135,15 +127,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "            acl_in: (typeof __p.getAclInID === 'function') ? __p.getAclInID() : '',"
             "            acl_out: (typeof __p.getAclOutID === 'function') ? __p.getAclOutID() : ''"
             "          });"
-            "        } catch (__pe) {}"
-            "      }"
+            "      });"
             "      __out.push({"
             "        name: __dn,"
             "        model: (typeof __d.getModel === 'function') ? __d.getModel() : '',"
             "        ports: __ports"
             "      });"
-            "    } catch (__de) {}"
-            "  }"
+            "  });"
             "  reportResult(JSON.stringify({ devices: __out }));"
             "} catch (__e) { reportResult('ERROR:' + __e); }"
         )
