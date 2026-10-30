@@ -15,6 +15,8 @@ import json
 
 import pytest
 
+from src.packet_tracer_mcp.domain.rules.text_rules import bad_device_name
+
 from src.packet_tracer_mcp.adapters.mcp.tools import topology
 from src.packet_tracer_mcp.application.use_cases.apply_acl import _build_js_call
 from src.packet_tracer_mcp.infrastructure.generator.hardening_cli_generator import (
@@ -119,9 +121,9 @@ def test_set_port_keeps_names_as_data(name, tmp_path):
 
 
 @requires_node
-@pytest.mark.parametrize("name", [n for n in HOSTILE if n.isprintable()])
+@pytest.mark.parametrize("name", [n for n in HOSTILE if n.isprintable() and not bad_device_name(n)])
 def test_add_device_keeps_the_name_as_data(name, tmp_path):
-    # Names with line breaks never reach JS: pt_add_device refuses them first.
+    # Names with line breaks, quotes or backslashes never reach JS: pt_add_device refuses them.
     js = _tool_js("pt_add_device", tmp_path, name=name, model="2911")
     seen = _seen(js[0], tmp_path)
     assert "INJECTED" not in seen and name in seen

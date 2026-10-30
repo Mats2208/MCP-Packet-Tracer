@@ -11,7 +11,7 @@ from ....infrastructure.generator.topology_js import (
     delete_link_js, move_device_js, rename_device_js, topology_snapshot_js,
 )
 from ....domain.services.topology_view import format_export, format_query
-from ....domain.rules.text_rules import has_control_chars
+from ....domain.rules.text_rules import bad_device_name, has_control_chars
 from ....infrastructure.generator.ptbuilder_generator import add_device_call, add_link_call
 from ....infrastructure.generator.walk_js import WALK_JS
 from ....shared.utils import reply_json
@@ -142,10 +142,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - old_name: current device name
         - new_name: new name to assign
         """
-        if not new_name.strip():
-            return "Error: new_name cannot be empty."
-        if has_control_chars(new_name):
-            return "Error: new_name contains a line break; use a single-line name."
+        why = bad_device_name(new_name)
+        if why:
+            return f"Error: new_name refused: {why}."
         if old_name == new_name:
             return f"Device '{old_name}' already has that name — no changes."
         data = _edit(rename_device_js(old_name, new_name))
@@ -242,10 +241,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - x: X coordinate on canvas (default 200)
         - y: Y coordinate on canvas (default 200)
         """
-        if not name or not name.strip():
-            return "ERROR: Device name cannot be empty."
-        if has_control_chars(name):
-            return "ERROR: Device name contains a line break; use a single-line name."
+        why = bad_device_name(name)
+        if why:
+            return f"ERROR: Device name refused: {why}."
 
         device_model = resolve_model(model)
         if device_model is None:
