@@ -228,6 +228,122 @@
    "type": "object"
   }
  },
+ "pt_apply_bgp": {
+  "description": "Configures BGP on a router through IOS CLI, each line verified (`router bgp`,\n`neighbor <ip> remote-as`, `network <net> mask <mask>`). Measured on a 2911 in PT 9.\n\n- router: router name in PT.\n- asn: local AS, 1-65535 (4-byte ASNs were not measured).\n- neighbors: [{\"ip\": \"10.0.0.2\", \"remote_as\": 65002}]; remote_as == asn is iBGP.\n  With PT connected, a neighbor off every connected subnet is a warning.\n- networks: CIDR list, host bits zero, e.g. [\"192.168.1.0/24\"]. BGP only advertises\n  a network that is in the routing table with that exact mask. `show running-config`\n  prints a classful one without `mask`.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_bgp(router=\"R1\", asn=65001,\n  neighbors=[{\"ip\": \"10.0.0.2\", \"remote_as\": 65002}], networks=[\"192.168.1.0/24\"])\nCheck: pt_cli(device=\"R1\", commands=[\"show ip bgp summary\"]).",
+  "inputSchema": {
+   "properties": {
+    "asn": {
+     "title": "Asn",
+     "type": "integer"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "neighbors": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Neighbors"
+    },
+    "networks": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Networks"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "asn"
+   ],
+   "title": "pt_apply_bgpArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_etherchannel": {
+  "description": "Bundles switch ports into an EtherChannel (Port-channel<group>) through IOS CLI,\neach line verified. Measured on a 2960-24TT in PT 9; other models are not verified.\n\n- switch: switch name in PT.\n- ports: 2-8 full port names of one speed, e.g. [\"FastEthernet0/10\", \"FastEthernet0/11\"].\n  A contiguous run is sent as `interface range FastEthernet0/10 - 11`.\n- group: channel-group number (1-6 on a 2960).\n- mode: \"active\"|\"passive\" (LACP), \"desirable\"|\"auto\" (PAgP) or \"on\" (static).\n  At least one side must be active/desirable: passive+passive or auto+auto never forms.\n  Configure the peer switch the same way (same group mode family, same ports count).\n- trunk: True puts Port-channel<group> in `switchport mode trunk`.\n- allowed_vlans: trunk only, e.g. [10, 20] (`switchport trunk allowed vlan`).\n- dry_run: validate and return the CLI/payload without sending.\n\nCheck it with pt_cli(device=switch, commands=[\"show etherchannel summary\"]).\nExample: pt_apply_etherchannel(switch=\"SW1\", ports=[\"FastEthernet0/10\",\n  \"FastEthernet0/11\"], group=1, mode=\"active\", trunk=True)",
+  "inputSchema": {
+   "properties": {
+    "allowed_vlans": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allowed Vlans"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "group": {
+     "default": 1,
+     "title": "Group",
+     "type": "integer"
+    },
+    "mode": {
+     "default": "active",
+     "title": "Mode",
+     "type": "string"
+    },
+    "ports": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Ports",
+     "type": "array"
+    },
+    "switch": {
+     "title": "Switch",
+     "type": "string"
+    },
+    "trunk": {
+     "default": false,
+     "title": "Trunk",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "switch",
+    "ports"
+   ],
+   "title": "pt_apply_etherchannelArguments",
+   "type": "object"
+  }
+ },
  "pt_apply_hardening": {
   "description": "Hardens a router/switch in the active topology.\n\nApplies via CLI: hostname, MOTD banner, enable secret, local users, SSH\n(domain-name + RSA keys + `ip ssh version`), service password-encryption, and\nrestricts the vty lines to SSH with local login.\n\nParameters:\n- device: device name in PT.\n- hostname: new hostname (optional).\n- banner_motd: MOTD banner text (without the '#' character).\n- enable_secret: enable password (it is encrypted).\n- users: list of {username, secret, privilege?}. Needed for SSH/local login.\n- ssh: dict {domain?, modulus?, version?, enable?} to enable SSH. Requires\n  at least one user. modulus<768 raises a warning.\n- service_password_encryption: applies `service password-encryption` (default True).\n- dry_run: if True, only validates and returns the CLI/payload.\n\nExample: full hardening of R1 with SSH:\n  pt_apply_hardening(device=\"R1\", hostname=\"R1\", enable_secret=\"cisco123\",\n    users=[{\"username\":\"admin\",\"secret\":\"adminpass\",\"privilege\":15}],\n    ssh={\"domain\":\"lab.local\",\"modulus\":1024}, dry_run=True)",
   "inputSchema": {
@@ -295,6 +411,57 @@
     "device"
    ],
    "title": "pt_apply_hardeningArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_hsrp": {
+  "description": "Configures one HSRP group on a router interface through IOS CLI, each line verified\n(`standby version`, `standby <g> ip|priority|preempt`). Measured on a 2911 in PT 9.\n\n- router / interface: e.g. \"R1\", \"GigabitEthernet0/0\" (pt_query_topology).\n- group: 0-4095 with version 2. Both routers use the same group and virtual_ip.\n- virtual_ip: the hosts' gateway. With PT connected it must be a free host address\n  in the interface's live subnet, not the interface's own IP.\n- priority: 0-255, default 100; the higher one becomes active.\n- preempt: take over again when this router comes back (default True).\n- version: 2 (measured). 1 is accepted but NOT verified.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample (active router; repeat on R2 with priority=100):\n  pt_apply_hsrp(router=\"R1\", interface=\"GigabitEthernet0/0\", group=1,\n                virtual_ip=\"192.168.1.254\", priority=110)\nCheck: pt_cli(device=\"R1\", commands=[\"show standby brief\"]).",
+  "inputSchema": {
+   "properties": {
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "group": {
+     "title": "Group",
+     "type": "integer"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "preempt": {
+     "default": true,
+     "title": "Preempt",
+     "type": "boolean"
+    },
+    "priority": {
+     "default": 100,
+     "title": "Priority",
+     "type": "integer"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "version": {
+     "default": 2,
+     "title": "Version",
+     "type": "integer"
+    },
+    "virtual_ip": {
+     "title": "Virtual Ip",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "interface",
+    "group",
+    "virtual_ip"
+   ],
+   "title": "pt_apply_hsrpArguments",
    "type": "object"
   }
  },
@@ -672,6 +839,51 @@
     "port"
    ],
    "title": "pt_apply_port_securityArguments",
+   "type": "object"
+  }
+ },
+ "pt_apply_qos": {
+  "description": "Configures QoS (MQC) on a router through IOS CLI, each line verified: one\n`class-map match-any` per class, a `policy-map` whose class-default gets\n`fair-queue`, and `service-policy output` on the interface. Measured on a 2911.\n\n- router / interface: e.g. \"R1\", \"GigabitEthernet0/1\" (the WAN side).\n- policy_name: one word, e.g. \"WAN-OUT\".\n- classes: [{\"name\", \"match_dscp\"?, \"match_protocol\"?, \"priority_kbps\"|\"bandwidth_kbps\"}].\n  At least one match per class (both = match-any); exactly one action.\n  Measured: match_protocol \"rtp\", match_dscp \"ef\", priority_kbps. Other DSCP values,\n  other protocols and bandwidth_kbps are accepted but NOT verified (warning).\n- direction: \"output\" only (queuing actions are outbound in IOS).\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_qos(router=\"R1\", interface=\"GigabitEthernet0/1\", policy_name=\"WAN-OUT\",\n  classes=[{\"name\": \"VOICE\", \"match_protocol\": \"rtp\", \"match_dscp\": \"ef\",\n            \"priority_kbps\": 512}])\nCheck: pt_read_qos(device=\"R1\").",
+  "inputSchema": {
+   "properties": {
+    "classes": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Classes",
+     "type": "array"
+    },
+    "direction": {
+     "default": "output",
+     "title": "Direction",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "interface": {
+     "title": "Interface",
+     "type": "string"
+    },
+    "policy_name": {
+     "title": "Policy Name",
+     "type": "string"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    }
+   },
+   "required": [
+    "router",
+    "interface",
+    "policy_name",
+    "classes"
+   ],
+   "title": "pt_apply_qosArguments",
    "type": "object"
   }
  },

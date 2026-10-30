@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (79)
+## Tool catalog (83)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -21,7 +21,9 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 `pt_apply_nat`, `pt_remove_nat` — all accept `dry_run=True` to preview CLI without touching PT.
 **Config-driven (live, dry_run):** `pt_apply_vlan` (VLAN/trunk/inter-VLAN subinterfaces),
 `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
-`pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs).
+`pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs),
+`pt_apply_etherchannel` (switch), `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` (router) —
+each IOS line verified. CME voice (`telephony-service`) is not supported (no UC license in PT).
 **Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
 `pt_verify_connectivity` gives **three** verdicts, not two: `CONNECTIVITY OK` (every packet returned),
 `PARTIAL CONNECTIVITY (packet loss)` (some loss — normal on a first ping because of ARP, so re-run once before

@@ -111,6 +111,11 @@ device once each.
 - STP: `pt_apply_stp`. Port-security: `pt_apply_port_security`.
 - Hardening (hostname/banner/enable-secret/users/SSH): `pt_apply_hardening`.
 - Serial clock-rate + per-interface OSPF/EIGRP knobs: `pt_apply_interface_tuning`.
+- HSRP, BGP and QoS (class-map/policy-map/service-policy) on a router: `pt_apply_hsrp`,
+  `pt_apply_bgp`, `pt_apply_qos`. EtherChannel (LACP/PAgP/on, optional trunk) on a switch:
+  `pt_apply_etherchannel`. Each IOS line is verified; measured on a 2911 / 2960-24TT in PT 9.
+- NOT supported: CME voice (`telephony-service`, `ephone-dn`). A 2911 without the UC
+  license answers status 2 (invalid input), so there is no tool for it.
 - IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers via CLI, hosts via SLAAC).
 - WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC
   + AP auto-associated on the default SSID). NOTE: the AP's custom SSID/WPA2 is NOT configurable
@@ -164,9 +169,9 @@ device once each.
 - `pt_apply_netflow(device, name, destination_ip, ...)`: configures the exporter
   directly (not via CLI) and reads it back to confirm. If the name already exists it
   reconfigures it instead of duplicating it. Accepts `remove=True` and `dry_run=True`.
-- `pt_read_qos(device)`: READ ONLY. QoS cannot be created programmatically, so
-  to CONFIGURE it you send IOS CLI with `configureIosDevice`; this tool is for
-  checking that it was applied.
+- `pt_read_qos(device)`: READ ONLY. QoS cannot be created through PT's object API;
+  configure it with `pt_apply_qos` (IOS CLI, verified line by line) and use this
+  tool to read back what landed.
 
 ## Step-by-step simulation
 Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_send_pdu` or `pt_verify_connectivity`)
@@ -214,7 +219,7 @@ PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 82 tools. Use `pt_full_build` for the general case (new topology with configs).
+- The MCP has 94 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.

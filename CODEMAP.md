@@ -45,10 +45,11 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/tools/nat.py` | pt_apply_nat, pt_remove_nat |
 | `adapters/mcp/tools/planning.py` | pt_deploy, pt_estimate_plan, pt_explain_plan, pt_export, pt_fix_plan, pt_generate_configs, pt_generate_script, pt_get_device_details, pt_list_devices, pt_list_projects, pt_list_templates, pt_load_project, pt_plan_topology, pt_validate_plan |
 | `adapters/mcp/tools/project.py` | pt_backup_config, pt_project_metadata, pt_workspace_options |
+| `adapters/mcp/tools/routing.py` | pt_apply_bgp, pt_apply_hsrp, pt_apply_qos |
 | `adapters/mcp/tools/security.py` | pt_audit_security |
 | `adapters/mcp/tools/services.py` | pt_apply_netflow, pt_configure_dhcp_server, pt_read_qos |
 | `adapters/mcp/tools/simulation.py` | pt_read_packet_trace, pt_simulation_mode, pt_simulation_step |
-| `adapters/mcp/tools/switching.py` | pt_apply_hardening, pt_apply_interface_tuning, pt_apply_port_security, pt_apply_stp, pt_apply_vlan, pt_read_vlans |
+| `adapters/mcp/tools/switching.py` | pt_apply_etherchannel, pt_apply_hardening, pt_apply_interface_tuning, pt_apply_port_security, pt_apply_stp, pt_apply_vlan, pt_read_vlans |
 | `adapters/mcp/tools/topology.py` | pt_add_device, pt_add_link, pt_delete_device, pt_delete_link, pt_export_topology, pt_move_device, pt_query_topology, pt_rename_device, pt_send_raw, pt_set_port |
 | `adapters/mcp/tools/traffic.py` | pt_fast_forward, pt_send_pdu |
 | `adapters/mcp/tools/wireless.py` | pt_wireless_ap |
