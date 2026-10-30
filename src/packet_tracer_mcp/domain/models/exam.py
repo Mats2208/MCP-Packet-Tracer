@@ -18,6 +18,11 @@ class SubRequirement(BaseModel):
     details: list[str] = Field(default_factory=list)
 
 
+class ItemPoints(BaseModel):
+    path: list[str]
+    points: int
+
+
 class ConnectivityTest(BaseModel):
     source: str
     destination: str
@@ -48,6 +53,8 @@ class ExamSpec(BaseModel):
     answer_commands: dict[str, list[str]] = Field(default_factory=dict)
     # IOS config lines per device that strip the initial network ("no ...").
     initial_commands: dict[str, list[str]] = Field(default_factory=dict)
+    # Items worth more than the default 1 point (a path from `items`).
+    points: list[ItemPoints] = Field(default_factory=list)
     # Ping tests graded by PT (the Wizard's Connectivity Test tab).
     connectivity: list[ConnectivityTest] = Field(default_factory=list)
     # Hosts left with no address in the initial network, for the student to configure.

@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from ....domain.models.exam import ExamSpec
 from ....domain.rules.activity_rules import validate_exam_spec
 from ....domain.services.activity import (
-    check_report, create_blockers, has_markup, html_to_text, run_steps, same_html, wrap_ios,
+    check_report, create_blockers, has_markup, html_to_text, points_targets, run_steps, same_html, wrap_ios,
 )
 from ....domain.services.exam_html import render_exam_html
 from ....infrastructure.execution.live_checks import file_open_js, file_open_outcome
@@ -140,6 +140,8 @@ class ActivityOps:
         touched = self.refresh() if refresh else None
         out = check_report(self.call(js.assessed_tree_js(), timeout=45.0), only_incorrect)
         try:
+            score = self.call(js.status_js())
+            out["score"] = {k: score.get(k) for k in ("correct_points", "points", "percent_score")}
             tests = self.call(js.connectivity_results_js(), timeout=45.0)
         except ActivityError as exc:  # the item tree is still worth returning
             tests = {}
@@ -153,6 +155,22 @@ class ActivityOps:
         else:
             out["note"] = STALE_NOTE
         return out
+
+    def set_points(self, points: list[dict]) -> dict:
+        rows = self.call(js.checked_rows_js(), timeout=30.0).get("rows", [])
+        targets, missing = points_targets(rows, points)
+        if missing:
+            raise ActivityError(f"Not checked, so no points can be set: {json.dumps(missing)[:800]}")
+        wanted = {tuple(rows[i]["path"]): v for i, v in targets.items()}
+        left = self.wizard.set_points(wanted)
+        after = {tuple(r["path"]): r for r in
+                 self.call(js.checked_rows_js(), timeout=30.0).get("rows", [])}
+        wrong = [list(path) for path, v in wanted.items()
+                 if path not in left and after.get(path, {}).get("points") != str(v)]
+        total = sum(int(r["points"] or 0) for r in after.values() if r.get("leaf"))
+        return {"set": len(wanted) - len(left) - len(wrong),
+                "not_reached": [list(p) for p in left], "not_applied": wrong,
+                "total_points": total}
 
     def create(self, force: bool) -> dict:
         state = self.call(js.wizard_state_js())
@@ -244,6 +262,14 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
             raise ActivityError(f"Items not found: {json.dumps(out['missing'])[:1500]}")
         return f"{out['marked']} item(s), {out['checked_leaves']} checked leaves"
 
+    def points() -> str:
+        if not spec.points:
+            return "default (1 each)"
+        out = ops.set_points([p.model_dump() for p in spec.points])
+        if out["not_reached"] or out["not_applied"]:
+            raise ActivityError(f"Points not set: {json.dumps(out)[:800]}")
+        return f"{out['set']} item(s), {out['total_points']} points in total"
+
     def connectivity() -> str:
         if not spec.connectivity:
             return "none"
@@ -272,6 +298,7 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
         ("build_answer", build_answer),
         ("set_instructions", instructions),
         ("mark", mark),
+        ("points", points),
         ("connectivity", connectivity),
         ("copy_to_initial", lambda: str(ops.build_initial().get("copied"))),
         ("clear_initial", clear_initial),
@@ -430,10 +457,23 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         return guarded(ops.reset)
 
     @mcp.tool()
+    def pt_activity_points(points: list[dict]) -> str:
+        """
+        Sets how many points checked items are worth, with the Activity Wizard open.
+        PT's API can only read points, so this drives the Wizard's window: Windows only.
+
+        - points: [{"path": ["SW1", "Ports", "FastEthernet0/1", "Access VLAN"], "points": 5}].
+          Every path must be checked already (pt_activity_mark).
+
+        Reply: set, not_reached, not_applied (read back from PT) and total_points.
+        """
+        return guarded(lambda: ops.set_points(points))
+
+    @mcp.tool()
     def pt_activity_create_exam(spec: dict, start_at: str = "", force: bool = False,
                                 dry_run: bool = False) -> str:
         """
-        Builds a whole exam: create, build_answer, set_instructions, mark, connectivity,
+        Builds a whole exam: create, build_answer, set_instructions, mark, points, connectivity,
         copy_to_initial, clear_initial, save, exit_wizard.
 
         Parameters:
@@ -441,7 +481,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
           requirements [{text, items, note}] (**word** = bold), language (es/en),
           items (paths for pt_activity_mark), plan or plan_path (the answer network),
           answer_commands and initial_commands ({device: [config lines]}, typed between
-          configure terminal and end), connectivity [{source, destination, reachable}]
+          configure terminal and end), points [{path, points}] (default 1 each; Windows),
+          connectivity [{source, destination, reachable}]
           (ping tests PT grades), initial_hosts (hosts left with no address),
           output_path (.pka), overwrite.
         - start_at: step to resume from, after a failure.

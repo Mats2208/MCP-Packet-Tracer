@@ -668,7 +668,7 @@ def test_exam_runs_every_step_in_order():
 
     out = activity.run_exam(ops, ExamSpec.model_validate(SPEC), tool, force=False, start_at="")
     assert out["ok"] and [s["step"] for s in out["steps"]] == [
-        "create", "build_answer", "set_instructions", "mark", "connectivity", "copy_to_initial",
+        "create", "build_answer", "set_instructions", "mark", "points", "connectivity", "copy_to_initial",
         "clear_initial", "save", "exit_wizard"]
     assert ops.log == ["create", "instructions", "answer_page", "mark", "initial", "save", "exit"]
     cli = [kw for name, kw in tool_calls if name == "pt_cli"]
@@ -716,7 +716,7 @@ def test_connectivity_step_adds_one_pdu_per_test_then_sets_conditions():
     out = activity.run_exam(ops, ExamSpec.model_validate(spec), lambda *a, **k: "Topology deployed\nok",
                             force=False, start_at="connectivity")
     assert '[["A", "B"], ["A", "C"]]' in sent[0] and conditions == [True, False]
-    assert out["steps"][4] == {"step": "connectivity", "status": "ok", "detail": "2 test(s)"}
+    assert out["steps"][5] == {"step": "connectivity", "status": "ok", "detail": "2 test(s)"}
 
 
 def test_a_refused_pdu_stops_the_exam():
@@ -741,3 +741,32 @@ def test_initial_hosts_are_zeroed_without_touching_other_devices():
     js_text = activity_js.clear_hosts_js(['PC"1'])
     assert '["PC\\"1"]' in js_text and "setIpSubnetMask('0.0.0.0','0.0.0.0')" in js_text
     assert "setDefaultGateway('0.0.0.0')" in js_text
+
+
+def test_row_paths_come_from_the_indentation():
+    from src.packet_tracer_mcp.infrastructure.ui.wizard import row_paths
+    rows = [("Network", 0, "n"), ("R1", 20, "r"), ("Ports", 40, "p"), ("G0/0", 60, "g0"),
+            ("Encapsulation: 10", 80, "a"), ("G0/1", 60, "g1"), ("Encapsulation: 20", 80, "b"),
+            ("R2", 20, "r2"), ("Ports", 40, "p2"), ("G0/0", 60, "x"), ("Encapsulation: 30", 80, "c")]
+    out = row_paths(rows)
+    assert out[("R1", "Ports", "G0/1", "Encapsulation")] == "b"
+    assert out[("R2", "Ports", "G0/0", "Encapsulation")] == "c"
+
+
+def test_points_targets_reports_items_that_are_not_checked():
+    rows = [{"path": [], "leaf": False}, {"path": ["R1", "A"], "leaf": True}]
+    targets, missing = logic.points_targets(rows, [
+        {"path": ["R1", "A"], "points": 5}, {"path": ["R1", "B"], "points": 2}])
+    assert targets == {1: 5} and missing == [["R1", "B"]]
+
+
+def test_points_are_read_back_after_writing():
+    ops = ScriptedOps()
+    rows = [{"name": "A", "path": ["A"], "leaf": True, "points": "1"}]
+    done = [{"name": "A", "path": ["A"], "leaf": True, "points": "5"}]
+    replies = iter([{"rows": rows}, {"rows": done}])
+    ops = activity.ActivityOps.__new__(activity.ActivityOps)
+    ops.call = lambda source, **kw: next(replies)
+    ops.wizard = type("W", (), {"set_points": lambda self, wanted: {}})()
+    assert ops.set_points([{"path": ["A"], "points": 5}]) == {
+        "set": 1, "not_reached": [], "not_applied": [], "total_points": 5}

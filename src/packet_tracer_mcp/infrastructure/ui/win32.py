@@ -378,6 +378,31 @@ def post_key(hwnd: int, vk: int) -> None:
     user32.PostMessageW(hwnd, 0x0101, vk, lp | 0xC0000000)
 
 
+def post_double_click(hwnd: int, screen_x: int, screen_y: int) -> None:
+    """Double click posted to `hwnd`: Qt then opens a cell's inline editor."""
+    _load()
+    pt = wt.POINT(int(screen_x), int(screen_y))
+    user32.ScreenToClient(hwnd, ctypes.byref(pt))
+    lp = ((pt.y & 0xFFFF) << 16) | (pt.x & 0xFFFF)
+    user32.PostMessageW(hwnd, _WM_MOUSEMOVE, 0, lp)
+    user32.PostMessageW(hwnd, _WM_LBUTTONDOWN, _MK_LBUTTON, lp)
+    user32.PostMessageW(hwnd, _WM_LBUTTONUP, 0, lp)
+    user32.PostMessageW(hwnd, 0x0203, _MK_LBUTTON, lp)  # WM_LBUTTONDBLCLK
+    user32.PostMessageW(hwnd, _WM_LBUTTONUP, 0, lp)
+
+
+def post_text(hwnd: int, text: str) -> None:
+    """Characters posted to `hwnd`; the user's keyboard is not involved."""
+    _load()
+    native = ctypes.windll.user32
+    for ch in text:
+        vk = native.VkKeyScanW(ch) & 0xFF
+        lp = 1 | (native.MapVirtualKeyW(vk, 0) << 16)
+        user32.PostMessageW(hwnd, 0x0100, vk, lp)
+        user32.PostMessageW(hwnd, 0x0102, ord(ch), lp)
+        user32.PostMessageW(hwnd, 0x0101, vk, lp | 0xC0000000)
+
+
 def capture(hwnd: int) -> tuple[int, int, bytes]:
     """(width, height, top-down BGRA) of the window, even when it is covered."""
     _load()

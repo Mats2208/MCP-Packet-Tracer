@@ -249,3 +249,16 @@ def connectivity_results_js() -> str:
         "reportResult(JSON.stringify({ok:true,count:n,"
         "correct:f.getLastConnectivityTestCorrectCount(),results:r}));"
     )
+
+
+def checked_rows_js() -> str:
+    """The checked tree in display order: one {name, path, points} per row."""
+    return _activity(
+        "var t=f.getComparatorTree().getCheckOnlyTree();var out=[];"
+        "var walk=function(x,path){var kids=x.getChildCount();var p='';"
+        "if(kids===0){try{p=String(x.getCompPointPair().second);}catch(e){}}"
+        "out.push({name:String(x.getNodeName()),path:path,leaf:kids===0,points:p});"
+        "for(var i=0;i<kids;i++){var k=x.getChildNodeAt(i);"
+        "walk(k,path.concat([String(k.getNodeName())]));}};"
+        "walk(t,[]);reportResult(JSON.stringify({ok:true,rows:out}));"
+    )

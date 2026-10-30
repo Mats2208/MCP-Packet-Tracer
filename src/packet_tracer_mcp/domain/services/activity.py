@@ -144,3 +144,18 @@ def run_steps(steps: list[Step], start_at: str = "") -> dict:
 def wrap_ios(commands: list[str]) -> list[str]:
     """Config lines as pt_cli must type them, ending with the config saved."""
     return ["enable", "configure terminal", *commands, "end", "write memory"]
+
+
+def points_targets(rows: list[dict], points: list[dict]) -> tuple[dict[int, int], list[list[str]]]:
+    """Maps [{path, points}] onto row indexes: ({row: points}, paths not checked)."""
+    index = {tuple(r["path"]): i for i, r in enumerate(rows) if r.get("leaf")}
+    targets: dict[int, int] = {}
+    missing: list[list[str]] = []
+    for entry in points:
+        row = index.get(tuple(entry["path"]))
+        if row is None:
+            missing.append(entry["path"])
+        else:
+            targets[row] = int(entry["points"])
+    return targets, missing
+

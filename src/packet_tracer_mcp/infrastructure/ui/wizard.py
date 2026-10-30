@@ -41,6 +41,9 @@ _POLL_S = 0.15
 _PAGE_SETTLE_S = 0.8
 _KEY_SETTLE_S = 0.25
 TAB_ITEM_CONTROL = 50019
+TREE_ITEM_CONTROL = 50024
+TREE_COLUMNS = 4
+_TREE_SETTLE_S = 2.0
 DATA_ITEM_CONTROL = 50029
 # m_PDUTable: one row is Condition, Points, Last Status, Source, Destination, Type,
 # Color, Time, Periodic, Num.
@@ -51,6 +54,24 @@ CONDITION_OFFSET_PX = 150
 
 class WizardError(RuntimeError):
     pass
+
+
+def row_paths(rows: list[tuple[str, int, object]]) -> dict[tuple[str, ...], object]:
+    """{path below the root: Points cell} from rows (name, left edge, cell) in screen order."""
+    out: dict[tuple[str, ...], object] = {}
+    if len(rows) < 2:
+        return out
+    root = rows[0][1]
+    step = rows[1][1] - root
+    if step <= 0:
+        return out
+    stack: list[str] = []
+    for name, left, cell in rows[1:]:
+        depth = round((left - root) / step)
+        del stack[depth - 1:]
+        stack.append(name.split(":")[0])
+        out[tuple(stack)] = cell
+    return out
 
 
 def open_modals(win=win32) -> list[tuple[int, int, str]]:
@@ -242,6 +263,71 @@ class WizardDriver:
                     self._sleep(_KEY_SETTLE_S)
                 self._win.post_key(hwnd, self._win.VK_RETURN)
                 self._sleep(_PAGE_SETTLE_S)
+
+    def _tree_rows(self, hwnd: int) -> list[tuple[str, int, object]]:
+        """Rows on screen: (name, left edge, Points cell). Each row is four cells in UIA."""
+        cells = [e for e in self._uia.descendants(hwnd)
+                 if "m_comparatorTreeLV" in e.automation_id and e.control_type == TREE_ITEM_CONTROL]
+        rows = []
+        for i in range(0, len(cells) - 3, TREE_COLUMNS):
+            if cells[i].name and not cells[i].offscreen and not cells[i + 1].offscreen:
+                rows.append((cells[i].name, cells[i].rect()[0], cells[i + 1]))
+        return rows
+
+    def set_points(self, targets: dict[tuple[str, ...], int]) -> dict[tuple[str, ...], int]:
+        """Writes the Points cell of each path ({path: points}); returns what was not reached.
+
+        UIA only sees the rows on screen, the names repeat and the tree collapses
+        whenever its filter changes. So each item name gets its own filter, which
+        leaves few rows, and a row's path comes from its indentation.
+        """
+        self.require_gui()
+        pending = dict(targets)
+        pid = self.pid()
+        with self._win.keep_user_focus(pid):
+            hwnd = self._window(pid)
+            self._page(hwnd, "m_answerNetworkBtn")
+            tab = next((e for e in self._uia.descendants(hwnd)
+                        if e.control_type == TAB_ITEM_CONTROL and e.name == "Assessment Tree"), None)
+            if tab is None:
+                raise WizardError("The Assessment Tree tab was not found.")
+            self._uia.select(tab)
+            self._sleep(_PAGE_SETTLE_S)
+            self._set_checked_only(hwnd, True)
+            for leaf in sorted({path[-1] for path in pending}):
+                self._uia.set_value(self._find(hwnd, "m_keywordTF"), leaf)
+                self._uia.invoke(self._find(hwnd, "m_filterBtn"))
+                self._sleep(_PAGE_SETTLE_S)
+                rows: list[tuple[str, int, object]] = []
+                for _ in range(3):  # the button toggles and the tree may start either way
+                    rows = self._tree_rows(hwnd)
+                    if any(name == leaf or name.startswith(f"{leaf}:") for name, _l, _c in rows):
+                        break
+                    self._uia.invoke(self._find(hwnd, "m_btnExpCollapseAllAns"))
+                    self._sleep(_TREE_SETTLE_S)
+                for path, cell in row_paths(rows).items():
+                    points = pending.pop(path, None)
+                    if points is None:
+                        continue
+                    left, top, right, bottom = cell.rect()
+                    self._win.post_double_click(hwnd, (left + right) // 2, (top + bottom) // 2)
+                    self._sleep(_KEY_SETTLE_S * 2)
+                    self._win.post_text(hwnd, str(points))
+                    self._sleep(_KEY_SETTLE_S)
+                    self._win.post_key(hwnd, self._win.VK_RETURN)
+                    self._sleep(_KEY_SETTLE_S * 2)
+            self._uia.set_value(self._find(hwnd, "m_keywordTF"), "")
+            self._uia.invoke(self._find(hwnd, "m_filterBtn"))
+            self._sleep(_KEY_SETTLE_S)
+            self._set_checked_only(hwnd, False)
+        return pending
+
+    def _set_checked_only(self, hwnd: int, on: bool) -> None:
+        box = self._find(hwnd, "m_checkedOnlyCB")
+        if bool(self._uia.toggle_state(box)) != on:
+            left, top, _right, bottom = box.rect()
+            self._win.post_click(hwnd, left + 8, (top + bottom) // 2)
+            self._sleep(_PAGE_SETTLE_S)
 
     def build_initial(self) -> None:
         """Copy the answer network to the initial one and show it on the canvas."""
