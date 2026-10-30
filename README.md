@@ -202,6 +202,11 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 | File-bridge (extension window closed) | ✅ | ✅ | not tested yet |
 | Device panel (`pt_cli`, `pt_host_command`, services…) | ✅ | ✅ | not tested yet |
 | UI mode (open/capture device windows) | ✅ | — | — |
+| Activities: open, grade, mark, save | ✅ | ✅ | not tested yet |
+| Activities: create and exam (Wizard) | ✅ | ✅ HTML instructions need `PT_UI_ALLOW_FOREGROUND=1`; no points or connectivity tests | — |
+| Activities: grade a password-protected `.pka` | not measured | ❌ the API rejects the right password | — |
+
+Activities, limits and Cisco's terms: see [PKA Builder](docs/pka-builder.md).
 
 macOS was verified end to end on Packet Tracer 9.0.1: all 79 tools were run against a live
 canvas, and the bugs that run found are fixed in this release. Windows 11 was verified the same

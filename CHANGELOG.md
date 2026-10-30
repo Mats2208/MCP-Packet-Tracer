@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **PKA Builder:** `pt_activity_*` and `pt_activity_create_exam` (see `docs/pka-builder.md` for the platform
+  matrix, limits and terms). The Wizard now runs on macOS through Accessibility (`macax.py`), without points or
+  connectivity conditions; HTML instructions need `PT_UI_ALLOW_FOREGROUND=1`.
+- `pt_activity_save` no longer reports a same-second overwrite as a failure, and `pt_activity_reset` waits for
+  the new score.
+
 ## 0.11.0
 
 Everything below was run against a live PT 9.0 on 2026-10-30. Several things this repo called
