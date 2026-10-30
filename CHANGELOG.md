@@ -1,5 +1,72 @@
 # Changelog
 
+## Unreleased
+
+Everything below was run against a live PT 9.0 on 2026-10-30. Several things this repo called
+impossible turned out to work through the Script-Engine API: a simple PDU, an AP's SSID, a static
+IPv6 on a host, the EMAIL domain and SMTP/POP3 switches, and Fast Forward Time. Each now has a tool.
+94 tools.
+
+### Added
+
+- **Structured convergence reads.** `pt_read_routes`, `pt_read_ospf`, `pt_read_arp`, `pt_read_cdp`,
+  `pt_read_stp`, `pt_read_acl`, `pt_read_nat` and `pt_read_mac_table` ask each device's processes
+  (`RoutingProcess`, `OspfMainProcess`, `StpMainProcess`, ...) instead of parsing `show` output, take one
+  device or sweep them all, and flag what has not converged: prefixes one router lacks, OSPF neighbours
+  not FULL, duplicate router-ids, switches that disagree on the STP root, ports bound to a missing ACL,
+  NAT without an inside and an outside interface. Live, the routes, OSPF FULL, STP root and ARP matched
+  the CLI.
+- `pt_read_vlans` lists each VLAN's access ports, the trunks with their native VLAN, the ports with port
+  security, and access ports left in a VLAN missing from the database.
+- `pt_send_pdu`: the GUI's *Add Simple PDU* (`getUserCreatedPDU().addSimplePdu`, 0 added, 30 destination
+  missing); with `steps > 0` it steps the simulation and returns the trace. Live, a PDU PC1→PC4 died at
+  R1 on an ACL deny and the trace gave that exact reason.
+- `pt_fast_forward`: Realtime's *Fast Forward Time* (~30 ms). STP converges at once, so a link cabled
+  moments ago answers a ping right away.
+- `pt_wireless_ap`: an AccessPoint-PT's SSID, SSID broadcast and MAC filter through
+  `WirelessServerProcess`, read back; associations are reset after a change. WPA/WEP stay out: the
+  client side has no working profile API.
+- `pt_host_ip_config(ipv6_address="2001:db8::10/64")`: a static IPv6 on a host
+  (`addIpv6Address` with four arguments), validated and read back.
+- `pt_server_service(service="email")` takes `domain`, `smtp` and `pop3` (`SmtpServer` / `Pop3Server`),
+  read back.
+- `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` (class-maps by DSCP or NBAR protocol, a policy-map with
+  priority/bandwidth and fair-queue, attached outbound) and `pt_apply_etherchannel` (LACP, PAgP or
+  static, optionally a trunk). Typed models, validation against the live topology (a HSRP virtual IP
+  must be a free host of the interface's subnet, BGP neighbours and networks on connected subnets) and
+  `dry_run`. All four answered `verified: true` live; a QoS class with `match protocol notaprotocol`
+  came back `verified: false` with that line in `rejected_lines`.
+- The packet trace names every documented traffic type (STP was `type11`, OSPF `type12`) and fills an
+  ICMP frame's empty source/destination from its PDU (`endpoints_from: "pdu"`).
+
+### Fixed
+
+- **CLI tools reported success for lines IOS refused.** The extension's `configureIosDevice` discards
+  `enterCommand`'s status. `pt_apply_acl`, `pt_apply_nat`, `pt_apply_vlan`, `pt_apply_stp`,
+  `pt_apply_port_security`, `pt_apply_hardening` and `pt_apply_interface_tuning` now send each line
+  through a local wrapper that keeps it, and reply with `verified`, `verification`
+  (`verified` / `rejected` / `error` / `unverified` / `not_sent`), `rejected_lines` and `saved`. No answer
+  from PT is `unverified`, never success.
+- **Named ACLs were invalid IOS.** `access-list NAME ...` only takes numbers, so every named ACL was
+  rejected line by line, silently. A name now opens `ip access-list standard|extended NAME`; removal
+  uses `no ip access-list`. Live, ACL `WEB` was verified and read back with `pt_read_acl`.
+- `pt_apply_acl_object` counted an ACL with statements PT refused as applied; fewer statements than
+  requested is now `verified: false`.
+- `pt_full_build` deployed a plan that failed validation, and `pt_live_deploy` never validated. Both
+  refuse an invalid plan.
+- `pt_health_check` called a failed canvas read healthy (no answer became an empty, healthy topology).
+  It now answers with an error; a really empty canvas is reported as empty.
+- `pt_save_project` overwrote an existing `.pkt` without asking. New `overwrite` parameter, default
+  `False`.
+- A NAT mode PT sends as the string `"0"` read as `unknown(0)` instead of `none`.
+
+### Changed
+
+- The deploy's DHCP renewal and `pt_verify_connectivity` press Fast Forward Time instead of sleeping up
+  to 32 s for STP; they only sleep when that is not possible (Simulation mode, a timeout, a PT error).
+- CME voice (`telephony-service`, `ephone-dn`) is documented as unsupported: a 2911 answers status 2
+  (invalid) without the UC license.
+
 ## 0.10.2
 
 ### Fixed
