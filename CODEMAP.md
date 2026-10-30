@@ -45,7 +45,7 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/tools/nat.py` | pt_apply_nat, pt_remove_nat |
 | `adapters/mcp/tools/planning.py` | pt_deploy, pt_estimate_plan, pt_explain_plan, pt_export, pt_fix_plan, pt_generate_configs, pt_generate_script, pt_get_device_details, pt_list_devices, pt_list_projects, pt_list_templates, pt_load_project, pt_plan_topology, pt_validate_plan |
 | `adapters/mcp/tools/project.py` | pt_backup_config, pt_project_metadata, pt_workspace_options |
-| `adapters/mcp/tools/routing.py` | pt_apply_bgp, pt_apply_hsrp, pt_apply_qos |
+| `adapters/mcp/tools/routing.py` | pt_apply_bgp, pt_apply_hsrp, pt_apply_qos, pt_apply_voice |
 | `adapters/mcp/tools/security.py` | pt_audit_security |
 | `adapters/mcp/tools/services.py` | pt_apply_netflow, pt_configure_dhcp_server, pt_read_qos |
 | `adapters/mcp/tools/simulation.py` | pt_read_packet_trace, pt_simulation_mode, pt_simulation_step |

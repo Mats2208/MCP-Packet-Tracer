@@ -114,8 +114,12 @@ device once each.
 - HSRP, BGP and QoS (class-map/policy-map/service-policy) on a router: `pt_apply_hsrp`,
   `pt_apply_bgp`, `pt_apply_qos`. EtherChannel (LACP/PAgP/on, optional trunk) on a switch:
   `pt_apply_etherchannel`. Each IOS line is verified; measured on a 2911 / 2960-24TT in PT 9.
-- NOT supported: CME voice (`telephony-service`, `ephone-dn`). A 2911 without the UC
-  license answers status 2 (invalid input), so there is no tool for it.
+- CME voice (IP phones): `pt_apply_voice` — ONLY on a 2811 (`pt_full_build(router_model="2811")`
+  or pt_add_device "2811"). Measured there: `telephony-service`, `max-ephones`, `max-dn`,
+  `ip source-address`, `auto assign`, `ephone-dn` + `number`. A 2911 answers status 2
+  (invalid input) to `telephony-service`, even after `license boot module c2900
+  technology-package uck9` + reload. Not measured yet: `ephone`/`mac-address`, DHCP
+  `option 150`, `switchport voice vlan`, phone registration.
 - IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers via CLI, hosts via SLAAC).
 - WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC
   + AP auto-associated on the default SSID). NOTE: the AP's custom SSID/WPA2 is NOT configurable
@@ -219,7 +223,7 @@ PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 94 tools. Use `pt_full_build` for the general case (new topology with configs).
+- The MCP has 95 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.
@@ -431,7 +435,7 @@ Parameters:
 - has_wan: Include WAN
 - dhcp: Configure DHCP
 - routing: static, ospf, eigrp, rip, none
-- router_model: 1941, 2901, 2911, ISR4321
+- router_model: 1941, 2901, 2911, ISR4321, 2811 (FastEthernet only; the CME voice router)
 - switch_model: 2960-24TT, 3560-24PS
 - template: single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
   branch_office, router_on_a_stick, three_router_triangle, custom

@@ -177,7 +177,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         - has_wan: Include a WAN connection (Cloud)
         - dhcp: Configure DHCP automatically
         - routing: Routing protocol (static, ospf, eigrp, rip, none)
-        - router_model: Router model (1941, 2901, 2911, ISR4321)
+        - router_model: Router model (1941, 2901, 2911, ISR4321; 2811 for CME voice)
         - switch_model: Switch model (2960-24TT, 3560-24PS)
         - template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,
           branch_office, router_on_a_stick, three_router_triangle, custom)

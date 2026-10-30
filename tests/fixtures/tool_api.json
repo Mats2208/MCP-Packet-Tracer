@@ -1059,6 +1059,116 @@
    "type": "object"
   }
  },
+ "pt_apply_voice": {
+  "description": "Cisco CME voice (IP phones) through IOS CLI, each line verified. The router MUST be a\n2811: PT's 2911 rejects `telephony-service` even with the uck9 license; other models\nare not measured and are refused.\n\nMEASURED on a 2811 in PT 9 (status 0): telephony-service, max-ephones, max-dn,\nip source-address <ip> port 2000, auto assign 1 to N, ephone-dn N + number.\nNOT measured yet (the reply warns): ephone + mac-address + button, DHCP option 150,\nswitchport voice vlan, real phone registration.\n\n- source_ip: the router's IP on the phones' LAN (checked against PT).\n- extensions: [\"1001\", \"1002\"] or [{\"number\": \"1001\", \"mac\"?: \"0001.4321.ABCD\"}];\n  unique digits, at most max_dn. A mac adds a static ephone on button 1.\n- max_ephones 1-36, max_dn 1-144 (5 measured). auto_assign: `auto assign 1 to N`.\n- voice_vlan + switch + access_ports: `switchport voice vlan` on those ports.\n- dhcp_pool: adds `option 150 ip <source_ip>` (the phones' TFTP); with\n  dhcp_network (\"10.10.10.0/24\") it also sets network + default-router.\n- dry_run: validate and return the CLI/payload without sending.\n\nExample: pt_apply_voice(router=\"R1\", source_ip=\"10.10.10.1\", extensions=[\"1001\",\"1002\"],\n  dhcp_pool=\"VOICE\", dhcp_network=\"10.10.10.0/24\", voice_vlan=1, switch=\"SW1\",\n  access_ports=[\"FastEthernet0/2\", \"FastEthernet0/3\"])\nCheck: pt_cli(device=\"R1\", commands=[\"show ephone\", \"show ephone-dn summary\"]).",
+  "inputSchema": {
+   "properties": {
+    "access_ports": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Access Ports"
+    },
+    "auto_assign": {
+     "default": true,
+     "title": "Auto Assign",
+     "type": "boolean"
+    },
+    "dhcp_network": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Dhcp Network"
+    },
+    "dhcp_pool": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Dhcp Pool"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "extensions": {
+     "items": {},
+     "title": "Extensions",
+     "type": "array"
+    },
+    "max_dn": {
+     "default": 5,
+     "title": "Max Dn",
+     "type": "integer"
+    },
+    "max_ephones": {
+     "default": 5,
+     "title": "Max Ephones",
+     "type": "integer"
+    },
+    "router": {
+     "title": "Router",
+     "type": "string"
+    },
+    "source_ip": {
+     "title": "Source Ip",
+     "type": "string"
+    },
+    "switch": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Switch"
+    },
+    "voice_vlan": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Voice Vlan"
+    }
+   },
+   "required": [
+    "router",
+    "source_ip",
+    "extensions"
+   ],
+   "title": "pt_apply_voiceArguments",
+   "type": "object"
+  }
+ },
  "pt_audit_security": {
   "description": "Audits the REAL security posture of the live devices in PT.\n\nIt does not read the plan: it reads the effective configuration of each router/switch\non the canvas and reports findings with a severity (high/medium/low). Detects\na missing `enable secret`, credentials stored reversibly\n(type 7), `service password-encryption` off, no local\nusers, a missing MOTD banner and config-register at 0x2142 (which discards\nthe startup-config on the next reboot).\n\nPasswords and hashes NEVER leave the device: only the label of the\nalgorithm they are stored with is transmitted.\n\nHosts (PC/Server/Laptop) are skipped: they have no IOS configuration.\n\nParameters:\n- device: if given, audits only that device; empty = all of them.\n\nExample: audit the whole topology:\n  pt_audit_security()",
   "inputSchema": {
@@ -2145,7 +2255,7 @@
   }
  },
  "pt_plan_topology": {
-  "description": "Generates a complete network topology plan for Packet Tracer.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router (0-4)\n- servers: Number of servers\n- access_points: Number of Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include a WAN connection (Cloud)\n- dhcp: Configure DHCP automatically\n- routing: Routing protocol (static, ospf, eigrp, rip, none)\n- router_model: Router model (1941, 2901, 2911, ISR4321)\n- switch_model: Switch model (2960-24TT, 3560-24PS)\n- template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom)\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n  over alternative paths (needs a topology with multiple paths)\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP\n  auto-associated per LAN) instead of a cable.\n\nReturns the full plan JSON.",
+  "description": "Generates a complete network topology plan for Packet Tracer.\n\nParameters:\n- routers: Number of routers (1-20)\n- pcs_per_lan: PCs per LAN\n- laptops_per_lan: Laptops per LAN (Laptop-PT)\n- switches_per_router: Switches per router (0-4)\n- servers: Number of servers\n- access_points: Number of Access Points (AccessPoint-PT), one per LAN\n- has_wan: Include a WAN connection (Cloud)\n- dhcp: Configure DHCP automatically\n- routing: Routing protocol (static, ospf, eigrp, rip, none)\n- router_model: Router model (1941, 2901, 2911, ISR4321; 2811 for CME voice)\n- switch_model: Switch model (2960-24TT, 3560-24PS)\n- template: Template (single_lan, multi_lan, multi_lan_wan, star, hub_spoke,\n  branch_office, router_on_a_stick, three_router_triangle, custom)\n- floating_routes: If True with routing=static, adds backup routes with AD=254\n  over alternative paths (needs a topology with multiple paths)\n- ospf_process_id: OSPF process ID (1-65535, default 1)\n- eigrp_as: EIGRP AS number (1-65535, default 100)\n- vlans: router_on_a_stick template only. Number of VLANs to spread across the PCs (0 = default 2).\n- dual_stack: If True, adds IPv6 addressing (routers via CLI, hosts via SLAAC).\n- ipv6_base: Base IPv6 prefix for dual-stack (default \"2001:db8::/32\").\n- wireless_laptops: If True, laptops connect over WiFi (wireless NIC + an AP\n  auto-associated per LAN) instead of a cable.\n\nReturns the full plan JSON.",
   "inputSchema": {
    "properties": {
     "access_points": {
