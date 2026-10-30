@@ -85,6 +85,15 @@ Everything a student does inside a device's window, done through PT's own API: n
 mouse, no keyboard, nothing taken over on screen. What you type with `pt_cli` shows
 up in the device's real CLI tab, so the user can watch or take over at any time.
 
+Headless is the default and the safe choice while you type elsewhere. With a window
+open (`show=True`, `capture=True` or `pt_ui_mode("ui")`), Windows can hand it the
+keyboard: Qt activates the dialog it opens. The server gives the foreground back to
+your window within tens of milliseconds, but keys pressed in that gap reach PT. In a
+console they join the line the API is about to send, so `int` typed by accident
+turns `enable` into `intenable`. `PT_UI_KEEP_FOCUS=0` turns the restore off. The
+GUI is Windows only: on macOS and Linux no window is ever opened, so nothing can
+take the keyboard.
+
 | Tool | Window it drives | What it does |
 |------|------------------|--------------|
 | `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
