@@ -213,10 +213,12 @@ class TestToolPayload:
         out = json.loads(self._send()[0])
         assert "js_payload" not in out and out["sent"] is True
 
-    def test_does_not_use_the_undocumented_add_new_pool(self):
-        """addNewPool has 8 unnamed arguments in the reference: don't guess."""
-        assert "addNewPool(" not in self._js()
-        assert "addNewPool(" not in registry_source()
+    def test_add_new_pool_only_with_its_eight_measured_arguments(self):
+        """addNewPool(name, gateway, dns, start, mask, max, tftp, wlc), measured live on
+        PT 9.0.1, is the only call that stores TFTP/WLC; it is never called otherwise."""
+        js = self._js()
+        assert "dp.addNewPool(ar[0],ar[1],ar[2],ar[3],ar[4],ar[5],ar[6],ar[7])" in js
+        assert "if(c.pool&&(c.tftp||c.wlc))" in js
 
     def _js(self, **kw) -> str:
         args = dict(port="FastEthernet0", pool="LAN", network="192.168.10.0",

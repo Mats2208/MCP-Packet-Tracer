@@ -194,14 +194,18 @@ class TestUseCase:
 
 class TestTool:
     def test_verified(self):
-        ctx = FakeCtx(replies=[ok_reply("R1"), ok_reply("SW1")], live_devices=LIVE)
+        ctx = FakeCtx(replies=[ok_reply("R1"), ok_reply("SW1"),
+                               json.dumps({"restarted": ["TEL1"], "fast_forwarded": True})],
+                      live_devices=LIVE)
         out = json.loads(tools(routing, ctx)["pt_apply_voice"](
             router="R1", source_ip="10.10.10.1", extensions=["1001", "1002"],
             voice_vlan=1, switch="SW1", access_ports=["FastEthernet0/2", "FastEthernet0/3"],
             dhcp_pool="VOICE", dhcp_network="10.10.10.0/24"))
         assert out["valid"] and out["verified"], out
-        assert len(ctx.sent) == 2 and "telephony-service" in ctx.sent[0]
+        assert len(ctx.sent) == 3 and "telephony-service" in ctx.sent[0]
         assert "switchport voice vlan 1" in ctx.sent[1]
+        assert "d.getType()===12" in ctx.sent[2]
+        assert out["phones"] == {"restarted": ["TEL1"], "fast_forwarded": True}
 
     def test_rejected_line_is_reported(self):
         ctx = FakeCtx(replies=[rejected_reply("R1", "telephony-service")], live_devices=LIVE)
@@ -239,3 +243,14 @@ class TestPlanner2811:
         plan, _ = plan_from_request(TopologyRequest(template="single_lan", routers=1))
         assert any(l.port_a.startswith("GigabitEthernet") for l in plan.links
                    if l.device_a == "R1")
+
+
+def test_restart_js_power_cycles_only_ip_phones_then_fast_forwards():
+    """Phones already on keep 0.0.0.0 after CME is configured (measured live): the tool
+    power-cycles every IP phone (getType 12) and fast-forwards PT's clock."""
+    from src.packet_tracer_mcp.infrastructure.generator.voice_cli_generator import restart_ip_phones_js
+    js = restart_ip_phones_js()
+    assert "d.getType()===12" in js
+    assert "d.setPower(false);d.setPower(true)" in js
+    assert "fastForwardTime()" in js and "resetNetwork" not in js
+    assert js.startswith("(function(){try{") and "\n" not in js

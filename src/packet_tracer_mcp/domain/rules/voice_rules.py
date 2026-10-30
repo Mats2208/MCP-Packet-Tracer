@@ -176,9 +176,7 @@ def _validate_dhcp_part(cfg: VoiceConfig, src: ipaddress.IPv4Address | None,
         errors.append(_err(ErrorCode.VOICE_INVALID_DHCP, r,
                            f"DHCP pool name '{cfg.dhcp_pool}' is not one IOS word.",
                            "Use letters, digits, '_', '-' or '.', e.g. 'VOICE'."))
-    warnings.append(_err(ErrorCode.VOICE_INVALID_DHCP, r,
-                         "`option 150 ip` was NOT measured in PT yet.",
-                         "Check rejected_lines and `show running-config`."))
+    # `option 150 ip` was measured end to end on PT 9.0.1: the 7960s got it and registered.
     if not cfg.dhcp_network:
         warnings.append(_err(ErrorCode.VOICE_INVALID_DHCP, r,
                              f"Only `option 150` is added to pool '{cfg.dhcp_pool}': the pool "

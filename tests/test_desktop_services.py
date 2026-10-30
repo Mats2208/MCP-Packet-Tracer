@@ -190,7 +190,7 @@ class TestServiceJs:
         for m in ("getDhcpServerProcessByPortName", "addPool", "setDefaultRouter",
                   "setDnsServerIp", "setStartIp", "removePool", "addExcludedAddress", "setEnable"):
             assert m in js
-        assert "addNewPool" not in js  # eight unnamed arguments: the reference says avoid it
+        assert "dp.addNewPool(ar[0]" in js  # only with TFTP/WLC; 8 arguments measured live
         assert '"exclude": [["1.1.1.1", "1.1.1.9"]]' in js
         assert '"enable": true' in js
 
@@ -623,6 +623,9 @@ var dp = {
   addPool: function (n) { if (arguments.length !== 1) { throw new Error('Invalid arguments'); }
     if (!dp.getPool(n)) { __pools.push(__Pool(n, '0.0.0.0', '0.0.0.0', '0.0.0.0', '0.0.0.0', 256,
                                               '0.0.0.0', '0.0.0.0')); } },
+  addNewPool: function (n, gw, dns, start, mask, max, tftp, wlc) {
+    if (arguments.length !== 8) { throw new Error('Invalid arguments'); }
+    __pools.push(__Pool(n, gw, dns, start, mask, max, tftp, wlc)); },
   removePool: function (n) { __pools = __pools.filter(function (p) {
     return p.getDhcpPoolName() !== n; }); },
   getPoolCount: function () { return __pools.length; },
@@ -674,8 +677,8 @@ class TestDhcpTouchesOnlyWhatWasAsked:
         assert out["created"] is True
         assert (lan["gateway"], lan["start"], lan["mask"], lan["network"]) == \
             ("10.0.10.1", "10.0.10.10", "255.255.255.0", "10.0.10.0")
-        # addPool + setters: PT has no TFTP setter, so it is reported, not faked.
-        assert out["not_applied"] == ["tftp"]
+        # TFTP has no setter: the pool is created with addNewPool, which stores it.
+        assert out["not_applied"] == [] and lan["tftp"] == "10.0.10.5"
 
     def test_existing_pool_applies_mask_without_start(self, tmp_path):
         out = _run_dhcp(tmp_path, mask="255.255.0.0")
@@ -690,10 +693,13 @@ class TestDhcpTouchesOnlyWhatWasAsked:
             ("192.168.1.1", "192.168.1.20", "192.168.1.100", "255.255.255.0", 50)
         assert pool["network"] == "192.168.1.0"
 
-    def test_existing_pool_reports_tftp_and_wlc_as_not_applied(self, tmp_path):
+    def test_existing_pool_gets_tftp_and_wlc_and_keeps_its_fields(self, tmp_path):
+        """Measured live on PT 9.0.1: addNewPool is the only call that stores TFTP/WLC."""
         out = _run_dhcp(tmp_path, tftp="192.168.1.5", wlc="192.168.1.6", gateway="192.168.1.1")
-        assert set(out["not_applied"]) == {"tftp", "wlc"}
-        assert out["pools"][0]["gateway"] == "192.168.1.1"
+        pool = {p["name"]: p for p in out["pools"]}["serverPool"]
+        assert out["not_applied"] == []
+        assert (pool["tftp"], pool["wlc"], pool["gateway"]) == ("192.168.1.5", "192.168.1.6", "192.168.1.1")
+        assert pool["mask"] == "255.255.255.0" and pool["start"] == "192.168.1.0"
 
 
 class TestDhcpRemoveRules:

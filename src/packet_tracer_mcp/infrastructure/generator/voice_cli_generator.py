@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 
 from ...domain.models.voice import VoiceConfig, normalize_mac
+from .walk_js import WALK_JS
 
 
 def _ip(text: str) -> str:
@@ -74,3 +75,21 @@ def generate_voice_switch_cli(cfg: VoiceConfig) -> list[str]:
                   f" switchport voice vlan {cfg.voice_vlan}",
                   " exit"]
     return lines
+
+
+def restart_ip_phones_js() -> str:
+    """Power-cycles every IP phone on the canvas, then fast-forwards PT's clock.
+
+    Measured live on PT 9.0.1: phones that were already on when CME and its DHCP
+    pool were configured stay at 0.0.0.0 (their DHCP request was lost and is never
+    retried); a power-cycle plus fastForwardTime gets them a lease, and they
+    register (`show ephone`: REGISTERED). IP phones report getType() 12.
+    """
+    return (
+        "(function(){try{" + WALK_JS +
+        "var n=[];__eachDevice(function(d){if(d.getType()===12){"
+        "d.setPower(false);d.setPower(true);n.push(String(d.getName()));}});"
+        "var ff=false;try{ipc.appWindow().getRealtimeToolbar().fastForwardTime();ff=true;}catch(e){}"
+        "reportResult(JSON.stringify({restarted:n,fast_forwarded:ff}));"
+        "}catch(e){reportResult(JSON.stringify({error:String(e)}));}})();"
+    )

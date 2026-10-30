@@ -104,9 +104,10 @@ def server_dhcp_js(
     skill/reference/script-engine-api.md, "DHCP server"): pools are created with
     `addPool(name)` (a repeated name does not duplicate) and filled with the
     setters, network + two-argument `setNetworkMask` first and `setStartIp`
-    before `setMaxUsers` (it recomputes the end from the start). `addNewPool`
-    (eight unnamed arguments) is not used, so TFTP and WLC, which have no
-    setter, always come back in `not_applied`.
+    before `setMaxUsers` (it recomputes the end from the start). TFTP and WLC
+    have no setter: a pool that asks for either is (re)created with
+    `addNewPool(name, gateway, dns, start, mask, max, tftp, wlc)` (measured live
+    on PT 9.0.1), keeping the fields of the pool it replaces, then read back.
 
     `pool` is only created or edited when at least one pool field (network,
     gateway, dns, start_ip, mask, max_users, tftp, wlc) is given: a bare name, a
@@ -138,6 +139,17 @@ def server_dhcp_js(
         "var done=[];var skipped=[];var created=false;var dropped=false;var fail='';"
         "if(c.remove){if(dp.getPool(c.remove)){dp.removePool(c.remove);done.push('pool '+c.remove+' deleted');}"
         "else{done.push('pool '+c.remove+' did not exist');}}"
+        # TFTP and WLC have no setter: only addNewPool (eight arguments, measured
+        # live on PT 9.0.1) stores them, so a pool that needs one is (re)created
+        # with it, keeping the fields of the pool it replaces.
+        "if(c.pool&&(c.tftp||c.wlc)){var o=dp.getPool(c.pool);"
+        "var g=function(f,d){try{return o?String(o[f]()):d;}catch(e){return d;}};"
+        "var mx=c.max||(o?o.getMaxUsers():0);"
+        "var ar=[c.pool,c.gateway||g('getDefaultRouter','0.0.0.0'),c.dns||g('getDnsServerIp','0.0.0.0'),"
+        "c.start||g('getStartIp','0.0.0.0'),c.mask||g('getSubnetMask','255.255.255.0'),mx,"
+        "c.tftp||g('getTftpAddress','0.0.0.0'),c.wlc||g('getWlcAddress','0.0.0.0')];"
+        "if(o){dp.removePool(c.pool);}dp.addNewPool(ar[0],ar[1],ar[2],ar[3],ar[4],ar[5],ar[6],ar[7]);"
+        "created=!o&&!!dp.getPool(c.pool);}"
         "if(c.pool){var p=dp.getPool(c.pool);"
         "if(!p){dp.addPool(c.pool);p=dp.getPool(c.pool);created=!!p;}"
         "if(!p){fail='PT did not create the pool';}else{"
@@ -148,8 +160,8 @@ def server_dhcp_js(
         "if(c.dns){p.setDnsServerIp(c.dns);}"
         "if(c.start){p.setStartIp(c.start);}"
         "if(c.max){p.setMaxUsers(c.max);}"
-        # PT's DhcpPool has no setter for TFTP or WLC.
-        "if(c.tftp){skipped.push('tftp');}if(c.wlc){skipped.push('wlc');}"
+        "if(c.tftp&&String(p.getTftpAddress())!==c.tftp){skipped.push('tftp');}"
+        "if(c.wlc&&String(p.getWlcAddress())!==c.wlc){skipped.push('wlc');}"
         "done.push('pool '+c.pool+(created?' created':' updated'));}}"
         "for(var k=0;k<c.exclude.length;k++){dp.addExcludedAddress(c.exclude[k][0],c.exclude[k][1]);"
         "done.push('excluded '+c.exclude[k][0]+'-'+c.exclude[k][1]);}"
