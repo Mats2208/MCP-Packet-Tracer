@@ -365,6 +365,19 @@ def keep_user_focus(pid: int) -> Iterator[FocusGuard]:
         _guard_lock.release()
 
 
+VK_RETURN = 0x0D
+VK_DOWN = 0x28
+
+
+def post_key(hwnd: int, vk: int) -> None:
+    """A key posted to `hwnd`: it never touches the user's keyboard."""
+    _load()
+    scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+    lp = 1 | (scan << 16)
+    user32.PostMessageW(hwnd, 0x0100, vk, lp)
+    user32.PostMessageW(hwnd, 0x0101, vk, lp | 0xC0000000)
+
+
 def capture(hwnd: int) -> tuple[int, int, bytes]:
     """(width, height, top-down BGRA) of the window, even when it is covered."""
     _load()

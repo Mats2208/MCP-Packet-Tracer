@@ -229,3 +229,23 @@ def clear_hosts_js(names: list[str]) -> str:
         "reportResult(JSON.stringify({ok:true,cleared:done,missing:miss}));"
         "}catch(e){reportResult(JSON.stringify({ok:false,error:String(e)}));}})();"
     )
+
+
+def add_pdus_js(pairs: list[list[str]]) -> str:
+    """Simple PDUs in the current network: the answer network's become connectivity tests."""
+    return (
+        "(function(){try{var c=" + json.dumps(pairs) + ";var u=ipc.appWindow().getUserCreatedPDU();"
+        "var codes=[];for(var i=0;i<c.length;i++){codes.push(u.addSimplePdu(c[i][0],c[i][1]));}"
+        "reportResult(JSON.stringify({ok:true,codes:codes}));"
+        "}catch(e){reportResult(JSON.stringify({ok:false,error:String(e)}));}})();"
+    )
+
+
+def connectivity_results_js() -> str:
+    """Runs the activity's connectivity tests and reads each verdict."""
+    return _activity(
+        "f.runConnectivityTests();var n=f.getConnectivityCount();var r=[];"
+        "for(var i=0;i<n;i++){r.push(String(f.getLastConnectivityTestResultAt(i)));}"
+        "reportResult(JSON.stringify({ok:true,count:n,"
+        "correct:f.getLastConnectivityTestCorrectCount(),results:r}));"
+    )

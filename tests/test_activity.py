@@ -661,7 +661,7 @@ def test_exam_runs_every_step_in_order():
 
     out = activity.run_exam(ops, ExamSpec.model_validate(SPEC), tool, force=False, start_at="")
     assert out["ok"] and [s["step"] for s in out["steps"]] == [
-        "create", "build_answer", "set_instructions", "mark", "copy_to_initial",
+        "create", "build_answer", "set_instructions", "mark", "connectivity", "copy_to_initial",
         "clear_initial", "save", "exit_wizard"]
     assert ops.log == ["create", "instructions", "answer_page", "mark", "initial", "save", "exit"]
     cli = [kw for name, kw in tool_calls if name == "pt_cli"]
@@ -696,3 +696,41 @@ def test_exam_tool_reaches_other_tools_through_the_registry():
     registered = _exam_registry(ctx, calls)
     out = json.loads(registered["pt_activity_create_exam"](spec=SPEC, start_at="build_answer"))
     assert calls[0] == "deploy" and out["failed_step"] == "set_instructions"
+
+
+def test_connectivity_step_adds_one_pdu_per_test_then_sets_conditions():
+    ops = ScriptedOps()
+    sent, conditions = [], []
+    ops.call = lambda source, **kw: sent.append(source) or {"codes": [0, 0]}
+    ops.wizard = type("W", (), {"set_connectivity": lambda self, r: conditions.extend(r),
+                                "show_answer_page": lambda self: None})()
+    spec = dict(SPEC, connectivity=[{"source": "A", "destination": "B"},
+                                    {"source": "A", "destination": "C", "reachable": False}])
+    out = activity.run_exam(ops, ExamSpec.model_validate(spec), lambda *a, **k: "Topology deployed\nok",
+                            force=False, start_at="connectivity")
+    assert '[["A", "B"], ["A", "C"]]' in sent[0] and conditions == [True, False]
+    assert out["steps"][4] == {"step": "connectivity", "status": "ok", "detail": "2 test(s)"}
+
+
+def test_a_refused_pdu_stops_the_exam():
+    ops = ScriptedOps()
+    ops.call = lambda source, **kw: {"codes": [30]}
+    spec = dict(SPEC, connectivity=[{"source": "A", "destination": "NOPE"}])
+    out = activity.run_exam(ops, ExamSpec.model_validate(spec), lambda *a, **k: "ok",
+                            force=False, start_at="connectivity")
+    assert out["failed_step"] == "connectivity"
+
+
+def test_dialog_titles_lose_the_pt_suffix():
+    """PT titles a message box 'New -- Cisco Packet Tracer'; the wizard asks for 'New'."""
+    win = FakeWin()
+    win.windows[300] = "Exit? -- Cisco Packet Tracer"
+    from src.packet_tracer_mcp.infrastructure.ui import wizard as wizard_module
+    assert wizard_module.open_modals(win) == [(1, 300, "Exit?")]
+
+
+def test_initial_hosts_are_zeroed_without_touching_other_devices():
+    from src.packet_tracer_mcp.infrastructure.generator import activity_js
+    js_text = activity_js.clear_hosts_js(['PC"1'])
+    assert '["PC\\"1"]' in js_text and "setIpSubnetMask('0.0.0.0','0.0.0.0')" in js_text
+    assert "setDefaultGateway('0.0.0.0')" in js_text

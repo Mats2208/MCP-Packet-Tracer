@@ -137,6 +137,13 @@ class ActivityOps:
     def check(self, only_incorrect: bool, refresh: bool) -> dict:
         touched = self.refresh() if refresh else None
         out = check_report(self.call(js.assessed_tree_js(), timeout=45.0), only_incorrect)
+        try:
+            tests = self.call(js.connectivity_results_js(), timeout=45.0)
+        except ActivityError as exc:  # the item tree is still worth returning
+            tests = {}
+            out["connectivity_error"] = str(exc)
+        if tests.get("count"):
+            out["connectivity"] = {k: tests.get(k) for k in ("count", "correct", "results")}
         if touched:
             out["refreshed"] = (f"Gateway of {touched['device']} set to its own value "
                                 f"({touched['gateway']}): nothing changed in the network, "
@@ -235,6 +242,16 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
             raise ActivityError(f"Items not found: {json.dumps(out['missing'])[:1500]}")
         return f"{out['marked']} item(s), {out['checked_leaves']} checked leaves"
 
+    def connectivity() -> str:
+        if not spec.connectivity:
+            return "none"
+        pairs = [[t.source, t.destination] for t in spec.connectivity]
+        codes = ops.call(js.add_pdus_js(pairs)).get("codes", [])
+        if any(c != 0 for c in codes):
+            raise ActivityError(f"addSimplePdu refused some tests: {codes}")
+        ops.wizard.set_connectivity([t.reachable for t in spec.connectivity])
+        return f"{len(pairs)} test(s)"
+
     def clear_initial() -> str:
         done = _configure(spec.initial_commands)
         if spec.initial_hosts:
@@ -253,6 +270,7 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
         ("build_answer", build_answer),
         ("set_instructions", instructions),
         ("mark", mark),
+        ("connectivity", connectivity),
         ("copy_to_initial", lambda: str(ops.build_initial().get("copied"))),
         ("clear_initial", clear_initial),
         ("save", lambda: str(ops.save(spec.output_path, spec.overwrite).get("saved"))),
@@ -413,7 +431,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
     def pt_activity_create_exam(spec: dict, start_at: str = "", force: bool = False,
                                 dry_run: bool = False) -> str:
         """
-        Builds a whole exam: create, build_answer, set_instructions, mark,
+        Builds a whole exam: create, build_answer, set_instructions, mark, connectivity,
         copy_to_initial, clear_initial, save, exit_wizard.
 
         Parameters:
@@ -421,7 +439,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
           requirements [{text, items, note}] (**word** = bold), language (es/en),
           items (paths for pt_activity_mark), plan or plan_path (the answer network),
           answer_commands and initial_commands ({device: [config lines]}, typed between
-          configure terminal and end), initial_hosts (hosts left with no address),
+          configure terminal and end), connectivity [{source, destination, reachable}]
+          (ping tests PT grades), initial_hosts (hosts left with no address),
           output_path (.pka), overwrite.
         - start_at: step to resume from, after a failure.
         - force: passed to pt_activity_create.

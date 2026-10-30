@@ -37,6 +37,14 @@ DIALOG_WAIT_S = 8.0
 EXIT_WAIT_S = 15.0
 _POLL_S = 0.15
 _PAGE_SETTLE_S = 0.8
+_KEY_SETTLE_S = 0.25
+TAB_ITEM_CONTROL = 50019
+DATA_ITEM_CONTROL = 50029
+# m_PDUTable: one row is Condition, Points, Last Status, Source, Destination, Type,
+# Color, Time, Periodic, Num.
+CELLS_PER_ROW = 10
+STATUS_CELL = 2
+CONDITION_OFFSET_PX = 150
 
 
 class WizardError(RuntimeError):
@@ -194,6 +202,39 @@ class WizardDriver:
         pid = self.pid()
         with self._win.keep_user_focus(pid):
             self._page(self._window(pid), "m_answerNetworkBtn")
+
+    def set_connectivity(self, reachable: list[bool]) -> None:
+        """One Test Condition per PDU row: Successful if reachable, else Fail.
+
+        The combo lives inside the cell and UIA doesn't expose it, so it is reached
+        from the row's Last Status cell, CELLS_PER_ROW cells apart. Down keys walk
+        "Do Not Test" -> "Successful" -> "Fail".
+        """
+        self.require_gui()
+        pid = self.pid()
+        with self._win.keep_user_focus(pid):
+            hwnd = self._window(pid)
+            self._page(hwnd, "m_answerNetworkBtn")
+            tab = next((e for e in self._uia.descendants(hwnd)
+                        if e.control_type == TAB_ITEM_CONTROL and e.name == "Connectivity Test"), None)
+            if tab is None:
+                raise WizardError("The Connectivity Test tab was not found.")
+            self._uia.select(tab)
+            self._sleep(_PAGE_SETTLE_S)
+            cells = [e for e in self._uia.descendants(hwnd)
+                     if "m_PDUTable" in e.automation_id and e.control_type == DATA_ITEM_CONTROL]
+            for row, ok in enumerate(reachable):
+                index = row * CELLS_PER_ROW + STATUS_CELL
+                if index >= len(cells) or not cells[index].name:
+                    raise WizardError(f"Connectivity row {row + 1} is missing: did the PDU get created?")
+                left, top, _right, bottom = cells[index].rect()
+                self._win.post_click(hwnd, left - CONDITION_OFFSET_PX, (top + bottom) // 2)
+                self._sleep(_PAGE_SETTLE_S)
+                for _ in range(1 if ok else 2):
+                    self._win.post_key(hwnd, self._win.VK_DOWN)
+                    self._sleep(_KEY_SETTLE_S)
+                self._win.post_key(hwnd, self._win.VK_RETURN)
+                self._sleep(_PAGE_SETTLE_S)
 
     def build_initial(self) -> None:
         """Copy the answer network to the initial one and show it on the canvas."""

@@ -104,7 +104,8 @@ Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
 One call: `pt_activity_create_exam(spec)` (`dry_run=True` first; on failure repeat with `start_at=`). By hand:
 `pt_activity_create` → build the answer network → `pt_activity_set_instructions(html)` → `pt_activity_tree` /
 `pt_activity_mark(items)` → `pt_activity_build_initial` → strip config → `pt_activity_save(path)` →
-`pt_activity_exit_wizard` → `pt_activity_open(path)` → `pt_activity_check(refresh=True)`. See rough-edges.
+`pt_activity_exit_wizard` → `pt_activity_open(path)` → `pt_activity_check(refresh=True)`.
+Spec: `items` (paths graded), `connectivity` ([{source, destination, reachable}]), `initial_commands`, `initial_hosts`. See rough-edges.
 
 ## What is NOT possible (do not try, say so)
 

@@ -47,7 +47,7 @@
   }
  },
  "pt_activity_create_exam": {
-  "description": "Builds a whole exam: create, build_answer, set_instructions, mark,\ncopy_to_initial, clear_initial, save, exit_wizard.\n\nParameters:\n- spec: title, situation, addressing [{device, interface, ip, mask, gateway}],\n  requirements [{text, items, note}] (**word** = bold), language (es/en),\n  items (paths for pt_activity_mark), plan or plan_path (the answer network),\n  answer_commands and initial_commands ({device: [config lines]}, typed between\n  configure terminal and end), initial_hosts (hosts left with no address),\n  output_path (.pka), overwrite.\n- start_at: step to resume from, after a failure.\n- force: passed to pt_activity_create.\n- dry_run: validate and render the HTML, sending nothing.\n\nReply: one entry per step, failed_step and how to retry.",
+  "description": "Builds a whole exam: create, build_answer, set_instructions, mark, connectivity,\ncopy_to_initial, clear_initial, save, exit_wizard.\n\nParameters:\n- spec: title, situation, addressing [{device, interface, ip, mask, gateway}],\n  requirements [{text, items, note}] (**word** = bold), language (es/en),\n  items (paths for pt_activity_mark), plan or plan_path (the answer network),\n  answer_commands and initial_commands ({device: [config lines]}, typed between\n  configure terminal and end), connectivity [{source, destination, reachable}]\n  (ping tests PT grades), initial_hosts (hosts left with no address),\n  output_path (.pka), overwrite.\n- start_at: step to resume from, after a failure.\n- force: passed to pt_activity_create.\n- dry_run: validate and render the HTML, sending nothing.\n\nReply: one entry per step, failed_step and how to retry.",
   "inputSchema": {
    "properties": {
     "dry_run": {

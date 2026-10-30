@@ -241,3 +241,7 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - A laptop has two MACs: `Bluetooth` comes first in its port list, `Wireless0` is the one a MAC filter needs.
 - `pt_send_pdu` trace `failures` include ordinary drops (ARP broadcasts, OSPF hellos on hosts): read the ICMP
   frames, not the count.
+- Exams: `{{DeviceConfig.isInConfig:...}}` templates save but never grade; mark real tree items instead. `setCheck` needs
+  the whole chain from the root, and a graded tree is fixed when the file loads: save and reopen. A score stays stale
+  until the network changes (`pt_activity_check(refresh=True)`). Items matching a default value and "must not reach"
+  tests start as correct, so a fresh exam opens above 0 %. Connectivity tests come from the answer network's PDUs.

@@ -18,6 +18,13 @@ class SubRequirement(BaseModel):
     details: list[str] = Field(default_factory=list)
 
 
+class ConnectivityTest(BaseModel):
+    source: str
+    destination: str
+    # True: the ping must arrive; False: it must not.
+    reachable: bool = True
+
+
 class Requirement(BaseModel):
     """`**word**` in any text renders bold."""
 
@@ -41,6 +48,8 @@ class ExamSpec(BaseModel):
     answer_commands: dict[str, list[str]] = Field(default_factory=dict)
     # IOS config lines per device that strip the initial network ("no ...").
     initial_commands: dict[str, list[str]] = Field(default_factory=dict)
+    # Ping tests graded by PT (the Wizard's Connectivity Test tab).
+    connectivity: list[ConnectivityTest] = Field(default_factory=list)
     # Hosts left with no address in the initial network, for the student to configure.
     initial_hosts: list[str] = Field(default_factory=list)
     output_path: str
