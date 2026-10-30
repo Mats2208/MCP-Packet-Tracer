@@ -12,6 +12,7 @@ from ....infrastructure.generator.topology_js import (
 )
 from ....domain.services.topology_view import format_export, format_query
 from ....domain.rules.text_rules import has_control_chars
+from ....infrastructure.generator.ptbuilder_generator import add_device_call, add_link_call
 from ....shared.utils import reply_json
 
 # Reader error codes -> the words a caller sees.
@@ -267,8 +268,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             "      throw 'dup';"
             "    }"
             "  }"
-            f"  addDevice(N, {json.dumps(device_model.pt_type)}, {int(x)}, {int(y)});"
+            # The deploy's creation path (lwAddDevice, with its addDevice fallback),
+            # then the IOS boot skip core.js's addDevice used to do.
+            f"  {add_device_call(name.strip(), device_model.pt_type, device_model.category, x, y)};"
             "  var check = ipc.network().getDevice(N);"
+            "  if (check && typeof check.skipBoot === 'function') {"
+            "    var t = check.getType(); if (t === 0 || t === 1 || t === 16) { check.skipBoot(); }"
+            "  }"
             "  if (check) {"
             "    reportResult('OK:' + check.getName() + '|' + check.getModel());"
             "  } else {"
@@ -369,7 +375,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         js_link = (
             "try {" + names +
-            f"  addLink(D1, P1, D2, P2, {json.dumps(resolved_cable)});"
+            f"  {add_link_call(device1, port1, device2, port2, resolved_cable)};"
             "  var pCheck = ipc.network().getDevice(D1).getPort(P1);"
             "  if (pCheck && pCheck.getLink() != null) {"
             "    reportResult('OK:link created');"
