@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from typing import Callable
 
 
 # New switch ports spend ~30 s in STP listening/learning before they forward, so the
@@ -46,3 +48,68 @@ def ping_no_result_message(from_device: str, to_ip: str, timeout_s: float) -> st
         "switch ports may still be in STP listening/learning (~30 s): wait and retry, "
         "or raise timeout_s."
     )
+
+
+def dhcp_host_ports(plan, static_names: set[str]) -> dict[str, str]:
+    """{host: port} of the plan's hosts that take their address from a DHCP pool."""
+    hosts: dict[str, str] = {}
+    if not plan.dhcp_pools:
+        return hosts
+    for dev in plan.devices:
+        if dev.category not in ("pc", "server", "laptop") or dev.name in static_names:
+            continue
+        if dev.interfaces:
+            hosts[dev.name] = next(iter(dev.interfaces))
+        elif getattr(dev, "wireless", False):
+            hosts[dev.name] = "Wireless0"
+    return hosts
+
+
+def renew_dhcp_leases(
+    send: Callable[[str, float], str | None],
+    hosts: dict[str, str],
+    *,
+    rounds: int = 2,
+    round_s: float = 15.0,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[list[str], list[str]]:
+    """Re-request the lease of every host still at 0.0.0.0: (renewed, still_without_ip).
+
+    A DHCP host asks for its lease while its switch port is still in STP
+    listening/learning: the DISCOVER is lost and PT does not retry, so the host stays
+    at 0.0.0.0. Call this once STP has settled.
+    """
+    from ..generator.host_js import host_ip_config_js, port_state_js
+
+    def has_ip(name: str) -> bool:
+        try:
+            state = json.loads(send(port_state_js(name, hosts[name]), 8.0) or "{}").get("state") or {}
+        except (ValueError, AttributeError):
+            return False
+        return (state.get("ip") or "0.0.0.0") != "0.0.0.0"
+
+    renewed: list[str] = []
+    pending = [n for n in hosts if not has_ip(n)]
+    for _ in range(rounds):
+        if not pending:
+            break
+        for name in pending:
+            send(host_ip_config_js(name, hosts[name], mode="dhcp"), 8.0)
+        deadline = clock() + round_s
+        while pending and clock() < deadline:
+            sleep(1.0)
+            leased = [n for n in pending if has_ip(n)]
+            renewed += leased
+            pending = [n for n in pending if n not in leased]
+    return renewed, pending
+
+
+def dhcp_lease_report(renewed: list[str], without_ip: list[str]) -> list[str]:
+    """pt_live_deploy's report lines for renew_dhcp_leases' result."""
+    lines = []
+    if renewed:
+        lines.append(f"  ♻ DHCP lease re-requested after STP: {', '.join(renewed)}")
+    if without_ip:
+        lines.append(f"  ⚠ Hosts still without a DHCP lease: {', '.join(without_ip)}")
+    return lines
