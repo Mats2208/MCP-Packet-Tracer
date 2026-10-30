@@ -17,7 +17,7 @@ from .bridge_context import BridgeContext
 from .device_panel_tools import register_device_panel_tools
 
 # Registration order of tools/<name>.py.
-TOOL_MODULES: tuple[str, ...] = ("planning", "live", "topology", "modules", "acl", "nat", "switching", "security", "inspect", "simulation", "canvas", "project", "services",)
+TOOL_MODULES: tuple[str, ...] = ("planning", "live", "topology", "modules", "acl", "nat", "switching", "security", "inspect", "convergence", "simulation", "canvas", "project", "services",)
 
 
 def register_tools(mcp: FastMCP, ctx: BridgeContext | None = None) -> None:
