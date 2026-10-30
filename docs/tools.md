@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **94 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **96 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -8,6 +8,13 @@ a running Packet Tracer require the [live bridge](live-deploy.md) to be connecte
     so the LLM uses real model names, ports and cables from the catalog. Most
     NAT/ACL/module tools accept `dry_run=True` to preview the generated CLI/JS
     without touching PT.
+
+!!! tip "Verify, then read back"
+    Every configuration tool replies `verified`, `verification` and `rejected_lines`:
+    only `verified: true` means IOS accepted every line. Then read the device back with
+    the matching reader (`pt_read_vlans`, `pt_read_acl`, `pt_read_routes`, `pt_read_qos`,
+    `pt_read_dhcp_leases`, ...). To find out *why* traffic fails, `pt_send_pdu` with
+    `steps > 0` returns PT's own per-layer reason.
 
 ## Catalog & discovery
 
@@ -51,10 +58,10 @@ still open. Every tool below works over either. See [Live deploy](live-deploy.md
 |------|--------------|
 | `pt_bridge_status` | Which channel is connected (HTTP, file-bridge, or both). |
 | `pt_live_deploy` | Stream a plan into a running PT (devices, links, configs). |
-| `pt_query_topology` | List devices currently in PT with ports and per-port IPs. |
-| `pt_export_topology` | Full snapshot: positions, per-interface IPs, links, cable info. |
-| `pt_save_project` | Save the running topology as a real `.pkt` file. |
-| `pt_open_project` | Open a `.pkt` in PT (replaces the current topology). |
+| `pt_query_topology` | List devices currently in PT with ports, per-port IPs and each link's real cable type. |
+| `pt_export_topology` | Full snapshot: positions, per-interface IPs, links with the real cable type (`Link.getConnectionType()`). |
+| `pt_save_project` | Save the running topology as a real `.pkt` file (`overwrite=True` to replace one). |
+| `pt_open_project` | Open a `.pkt` in PT (replaces the current topology). Judged by `fileOpen`'s return (0 = opened) and the active file. |
 | `pt_send_raw` | Run arbitrary JS in PT's Script Engine (`wait_result` injects `reportResult`). |
 
 ## Live editing
@@ -63,12 +70,12 @@ still open. Every tool below works over either. See [Live deploy](live-deploy.md
 |------|--------------|
 | `pt_add_device` | Add one device (validates name, model, no duplicates). |
 | `pt_add_link` | Link two devices; validates ports are free; infers cable if omitted. |
-| `pt_delete_link` | Remove the link on a given interface. |
+| `pt_delete_link` | Remove the link on a given interface; `verified` when both ends read back free (reports the far end and cable). |
 | `pt_delete_device` | Delete a device (via `getLogicalWorkspace().removeDevice()`). |
-| `pt_rename_device` | Rename a device. |
-| `pt_move_device` | Move a device to new canvas coordinates. |
+| `pt_rename_device` | Rename a device; `verified` when the new name resolves and the old one is gone. |
+| `pt_move_device` | Move a device to new canvas coordinates; `verified` when PT reads back exactly (x, y). |
 | `pt_set_port` | Low-level port attributes (bandwidth, duplex, description, MAC, power). |
-| `pt_add_module` | Install one expansion module (auto power-cycle). Reports `installed`/`failed` directly; it used to always time out. |
+| `pt_add_module` | Install one expansion module (auto power-cycle; IOS devices `write memory` first). Reports `installed`/`failed`. |
 | `pt_remove_module` | Remove the module in a slot (auto power-cycle) and report which ports disappeared. |
 | `pt_install_modules_batch` | Install several modules in one power-cycle (preferred for many). |
 
@@ -83,16 +90,16 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
 | `pt_host_command` | Desktop › Command Prompt | `ping`, `ipconfig`, `tracert`, `arp -a`, `nslookup`, `telnet`/`ssh` (answers via `inputs`). |
 | `pt_terminal` | PC Desktop › Terminal | Find the router at the other end of the PC's console cable and type on its console, as from the PC's Terminal app. |
-| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig or a static IPv6 (`ipv6_address="2001:db8::10/64"`, read back). |
+| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway (read back from `HostIpProcess`), DNS, IPv6 autoconfig or a static IPv6 (`ipv6_address="2001:db8::10/64"`, read back). |
 | `pt_host_firewall` | Desktop › Firewall | Inbound IPv4/IPv6 firewall on or off. |
 | `pt_web_browser` | Desktop › Web Browser | Open a URL and return the page as text; in UI mode the window's own browser navigates. |
 | `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |
-| `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
+| `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools (TFTP and WLC options included), exclude ranges, switch the service on/off. |
 | `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
 | `pt_server_http` | Services › HTTP | Replace existing pages (it cannot create new ones), switch HTTP/HTTPS. Refuses to turn either back on or write pages while both are off (PT 9.0.0 crashes); turn one on in the GUI first. |
-| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts; EMAIL's Domain Name and SMTP/POP3 on/off, read back. |
+| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts; EMAIL's Domain Name and SMTP/POP3 on/off, read back; SYSLOG's received messages. |
 | `pt_wireless_ap` | AccessPoint-PT Config › Port 1 | SSID, SSID broadcast, MAC filter (allow or deny the listed MACs), applied and read back; resets associations so clients re-associate. No WPA/WEP: the client side has no working profile API. |
-| `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
+| `pt_read_device_panel` | all tabs, read-only | Model, power, a host's default gateway, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
 
 ### Headless or UI mode
 
@@ -115,9 +122,9 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
     mode works everywhere.
 
 !!! warning "What PT 9.0.1 does not let an extension do"
-    PC Wireless profiles (the API throws `invalid vector subscript` on every
-    call), the Text Editor (no file API on PCs), the EMAIL service's *Domain
-    Name* and individual host-firewall rules. Open the window with `pt_ui_open`
+    PC Wireless profiles, so WPA/WEP on a client (the API throws `invalid vector
+    subscript` on every call), the Text Editor and IoT programs as files (no
+    usable file API) and individual host-firewall rules. Open the window with `pt_ui_open`
     and set those by hand.
 
 ## NAT & ACL
@@ -144,10 +151,16 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
 | `pt_apply_hsrp` | One HSRP group on a router interface: virtual IP, priority, preempt (version 2). |
 | `pt_apply_bgp` | `router bgp`: neighbors with their remote AS and advertised networks (CIDR). |
 | `pt_apply_qos` | class-maps (DSCP / NBAR protocol), a policy-map with priority or bandwidth per class and fair-queue on class-default, attached outbound. |
+| `pt_apply_voice` | Cisco CME on a **2811**: `telephony-service`, one `ephone-dn` per extension, DHCP `option 150`, optional voice VLAN, then restarts the IP phones so they register. |
 
 All accept `dry_run=True` to preview the generated CLI without touching PT, and
-report which IOS lines were rejected. CME voice (`telephony-service`) is not
-supported: PT's 2911 rejects it without the UC license.
+report which IOS lines were rejected.
+
+!!! note "CME voice needs a 2811"
+    Measured end to end on PT 9.0.1: a 2811, a 3560-24PS (PoE) and two 7960 phones
+    cabled on their `Switch` port got their leases and showed `REGISTERED` in
+    `show ephone`. A 2911 rejects `telephony-service` even with the uck9 license and a
+    reload. A phone's address lives on its `Vlan1`.
 
 ## Server services
 
@@ -188,7 +201,7 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810; the read
 | Tool | What it does |
 |------|--------------|
 | `pt_audit_security` | Security posture of every IOS device, graded high/medium/low: missing `enable secret`, reversibly-stored credentials (type 7), `service password-encryption` off, no local users, no MOTD banner, config-register left at `0x2142`. |
-| `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
+| `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode, applied ACLs, the real cable type and the far end. Flags cabled-but-down and line-up-protocol-down. |
 | `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005), with each VLAN's access ports, the trunk ports and their native VLAN, the ports with port security, and access ports left in a VLAN missing from the database. |
 | `pt_read_routes` | The real routing table (what `show ip route` shows): prefix, protocol (C, L, S, O, D, R), next hop, interface, AD and metric. Across routers it lists `convergence_gaps`: prefixes a router running a dynamic protocol lacks while the others know them. |
 | `pt_read_ospf` | OSPF per process: router-id, areas and neighbours with state by name (FULL, 2WAY, INIT...), DR/BDR role, local port and address. Flags neighbours not FULL, duplicate router-ids and routers with OSPF but no neighbours. |
@@ -198,6 +211,7 @@ understand a topology you didn't build. Verified against PT 9.0.0.0810; the read
 | `pt_read_acl` | Each ACL on a router with its commands, and which ports apply which ACL in which direction. Flags ports that reference a missing ACL. |
 | `pt_read_nat` | The NAT translation table, NAT counters (inside source lists, statics, pools) and the inside/outside interfaces. Flags NAT without both an inside and an outside interface. |
 | `pt_read_mac_table` | A switch's MAC address table per VLAN: MAC, port, dynamic or static. |
+| `pt_read_dhcp_leases` | The real DHCP leases per pool: IP, MAC, port, lease time. Router pools from `DhcpServerProcess` (measured); a Server-PT pool whose leases cannot be read says `lease_api: false`. |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
 
 ## Canvas: capture & annotations
@@ -248,8 +262,8 @@ describing the network and starts showing it.
 
 | Tool | What it does |
 |------|--------------|
-| `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. |
-| `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
+| `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. Exported flows cannot be read. |
+| `pt_read_qos` | Read the device's real class-maps and policy-maps: per policy-map each class with its name, priority, bandwidth, fair-queue and class-default. PT gives a class no name, so names come from the running-config. |
 
 !!! note "NetFlow is configured natively; QoS through IOS CLI"
     These two look symmetric but are not. `pt_apply_netflow` configures the
