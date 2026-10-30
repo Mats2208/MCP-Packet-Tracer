@@ -14,6 +14,7 @@ from src.packet_tracer_mcp.domain.services.port_inspect import (
     nat_mode_label,
     summarize_ports,
 )
+from src.packet_tracer_mcp.infrastructure.generator.state_js import vlans_js
 
 
 def _port(**overrides) -> dict:
@@ -135,13 +136,14 @@ class TestPhase1Readers:
         assert "typeof __d.isBooting === 'function'" in src
 
     def test_vlan_reader_guards_each_entry(self):
-        src = self._src()
-        assert "getProcess('VlanManager')" in src
-        assert "catch (__ve) {}" in src
+        """pt_read_vlans' JS moved to state_js.vlans_js (tests/test_convergence.py runs it)."""
+        js = vlans_js("SW1")
+        assert "__proc(d,'VlanManager')" in js
+        assert "var v=vm.getVlanAt(i);if(!v){continue;}" in js
+        assert "vlans_js(switch.strip())" in self._src()
 
     def test_device_names_go_through_json_dumps(self):
         """Regla de AGENTS.md: nunca interpolar un nombre crudo en el JS."""
         src = self._src()
-        assert "name = json.dumps(switch.strip())" in src
         assert "name = json.dumps(device.strip())" in src
         assert "want = json.dumps(device.strip())" in src

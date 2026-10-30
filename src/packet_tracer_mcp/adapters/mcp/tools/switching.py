@@ -10,6 +10,8 @@ from ....domain.models.switch_security import STPConfig, PortSecurityConfig
 from ....application.use_cases.apply_hardening import build_hardening_config, apply_hardening_uc
 from ....application.use_cases.apply_interface_tuning import apply_interface_tuning_uc
 from ....domain.models.interface_tuning import InterfaceTuning
+from ....domain.services.convergence import select_devices, vlans_report
+from ....infrastructure.generator.state_js import vlans_js
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
 
@@ -307,51 +309,24 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         Reads a switch's REAL VLAN database in PT.
 
-        Returns each VLAN with its number, name and whether it is one of PT's
-        factory ones (1, 1002-1005). Use it to confirm that a pt_apply_vlan
-        was applied, or to discover what is in a topology you didn't build.
+        Returns each VLAN with its number, name, whether it is one of PT's
+        factory ones (1, 1002-1005) and its access ports; plus the trunk ports
+        (with native VLAN), the ports with port security, and access ports left
+        in a VLAN missing from the database. Use it to confirm that a
+        pt_apply_vlan was applied, or to discover a topology you didn't build.
 
         Parameters:
         - switch: switch name in PT.
 
         Example: pt_read_vlans(switch="SW1")
         """
+        if not switch.strip():
+            return "Pass the switch name. Use pt_query_topology to see the real names."
         err = _check_bridge()
         if err:
             return err
 
-        name = json.dumps(switch.strip())
-        js = (
-            "try {"
-            f"  var __d = ipc.network().getDevice({name});"
-            "  if (!__d) { reportResult(JSON.stringify({ found: false })); } else {"
-            "    var __vm = (typeof __d.getProcess === 'function') ? __d.getProcess('VlanManager') : null;"
-            "    if (!__vm) { reportResult(JSON.stringify({ found: true, supported: false })); } else {"
-            "      var __vs = [];"
-            "      var __n = __vm.getVlanCount();"
-            "      for (var __i = 0; __i < __n; __i++) {"
-            "        try {"
-            "          var __v = __vm.getVlanAt(__i);"
-            "          if (!__v) continue;"
-            "          __vs.push({"
-            "            number: __v.getVlanNumber(),"
-            "            name: __v.getName(),"
-            "            is_default: !!__v.isDefault()"
-            "          });"
-            "        } catch (__ve) {}"
-            "      }"
-            "      reportResult(JSON.stringify({"
-            "        found: true, supported: true,"
-            "        max_vlans: __vm.getMaxVlans(),"
-            "        vlan_interfaces: __vm.getVlanIntCount(),"
-            "        vlans: __vs"
-            "      }));"
-            "    }"
-            "  }"
-            "} catch (__e) { reportResult('ERROR:' + __e); }"
-        )
-
-        raw = _bridge_send_and_wait(js, timeout=10.0)
+        raw = _bridge_send_and_wait(vlans_js(switch.strip()), timeout=10.0)
         if raw is None:
             return _TIMEOUT_MSG
         if raw.startswith("ERROR:"):
@@ -361,22 +336,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         except Exception as exc:
             return f"Unreadable reply from PT: {exc}"
 
-        if not data.get("found"):
-            return (
-                f"'{switch}' does not exist in the active topology. "
-                "Use pt_query_topology to see the real names."
-            )
-        if not data.get("supported"):
-            return (
-                f"'{switch}' does not expose VlanManager: it is not a switch or the model does not "
-                "handle VLANs. Use pt_get_device_details to see what it is."
-            )
-
-        vlans = data.get("vlans", [])
-        custom = [v for v in vlans if not v.get("is_default")]
-        data["summary"] = (
-            f"{len(vlans)} VLAN(s): {len(custom)} custom, "
-            f"{len(vlans) - len(custom)} factory. "
-            f"Model maximum: {data.get('max_vlans')}."
-        )
-        return reply_json(data)
+        devices = select_devices(data, switch.strip(), "VlanManager")
+        if isinstance(devices, str):
+            return devices
+        return reply_json(vlans_report(devices[0]))
