@@ -5,7 +5,8 @@
 Everything below was run against a live PT 9.0 on 2026-10-30. Several things this repo called
 impossible turned out to work through the Script-Engine API: a simple PDU, an AP's SSID, a static
 IPv6 on a host, the EMAIL domain and SMTP/POP3 switches, and Fast Forward Time. Each now has a tool.
-94 tools.
+Later the same day CME voice was measured end to end on a 2811, and the canvas edits, DHCP leases,
+host gateway and per-class QoS gained read-backs. 96 tools.
 
 ### Added
 
@@ -36,6 +37,28 @@ IPv6 on a host, the EMAIL domain and SMTP/POP3 switches, and Fast Forward Time. 
   must be a free host of the interface's subnet, BGP neighbours and networks on connected subnets) and
   `dry_run`. All four answered `verified: true` live; a QoS class with `match protocol notaprotocol`
   came back `verified: false` with that line in `rejected_lines`.
+- `pt_apply_voice`: Cisco CME (`telephony-service`, one `ephone-dn` per extension, optional static
+  ephones by MAC, DHCP `option 150`, optional voice VLAN on the access switch), each line verified. Only
+  a 2811 is accepted: PT's 2911 rejects `telephony-service` even with the uck9 license and a reload.
+  Afterwards it power-cycles every IP phone and fast-forwards (`restart_phones=True`), because phones
+  already on stay at 0.0.0.0. Measured end to end: 2811 + 3560-24PS (PoE) + two 7960 got leases and
+  showed `REGISTERED` in `show ephone`.
+- `pt_read_dhcp_leases`: per pool, each lease's IP, MAC, port and lease time. Router pools come from
+  `DhcpServerProcess` (`getLeaseAt` walked until it throws, there is no count); a Server-PT pool whose
+  leases cannot be read says `lease_api: false` (unknown, not zero). Live: 2 real leases after a 2811 build.
+- `pt_move_device`, `pt_rename_device` and `pt_delete_link` read the canvas back and reply `verified`
+  (the exact position, the new name resolving and the old one gone, both ends of the link free).
+- `pt_query_topology`, `pt_export_topology` and `pt_inspect_ports` report each link's real cable
+  (`Link.getConnectionType()`: `"8100"` straight, `"8101"` cross); `pt_inspect_ports` also names the far
+  end (`peer`, e.g. `"R2:FastEthernet0/0"`).
+- `pt_read_device_panel` and `pt_host_ip_config` read a host's default gateway from
+  `HostIpProcess`; `pt_host_ip_config` warns when the gateway it set does not read back.
+- `pt_server_service(service="syslog")` returns the newest 200 messages, not only the count.
+- `pt_read_qos` lists each policy-map class with its name, priority, bandwidth, fair-queue and
+  class-default flag. PT does not name a class, so names come from the running-config by position.
+- `pt_server_dhcp(tftp=..., wlc=...)` stores both through `addNewPool`'s eight arguments (measured).
+- `pt_full_build(router_model="2811")` works: routers without Gigabit get FastEthernet uplinks.
+  Live: deploy, OSPF FULL and DHCP leases.
 - The packet trace names every documented traffic type (STP was `type11`, OSPF `type12`) and fills an
   ICMP frame's empty source/destination from its PDU (`endpoints_from: "pdu"`).
 
@@ -59,13 +82,36 @@ IPv6 on a host, the EMAIL domain and SMTP/POP3 switches, and Fast Forward Time. 
 - `pt_save_project` overwrote an existing `.pkt` without asking. New `overwrite` parameter, default
   `False`.
 - A NAT mode PT sends as the string `"0"` read as `unknown(0)` instead of `none`.
+- `pt_read_qos` called `PolicyMap.toString()`, which throws, and lost every policy-map; the
+  `?default-policy-map?` entry is filtered out.
+- Installing or removing a module power-cycled the device without saving: anything only in the
+  running-config was lost. IOS devices now get `write memory` first and the reply says which devices
+  restarted and whether the save worked. The power-cycle has one generator for the three module tools.
+- `pt_open_project` called any outcome "opened". It now judges `fileOpen`'s return (0 = opened,
+  measured) and whether the active file is the one asked; a missing file is refused before PT.
+- `pt_health_check` flagged a registered IP phone's `Switch` port as cabled without an IP; a phone's
+  address lives on `Vlan1`.
+- Security: `pt_export`, `pt_deploy`, `pt_list_projects` and `pt_load_project` wrote or listed any folder
+  given as `output_dir` (`../x`, absolute paths); every path is now confined to the MCP working
+  directory (`workdir_subdir`). `pt_save_project`/`pt_open_project` still accept the user's own existing
+  absolute folders. Every value reaching PT's JS goes through `json.dumps` (a `\r` or U+2028 in a name
+  used to end the string literal), and device names and other single-line fields with control
+  characters or line breaks are rejected.
 
 ### Changed
 
 - The deploy's DHCP renewal and `pt_verify_connectivity` press Fast Forward Time instead of sleeping up
   to 32 s for STP; they only sleep when that is not possible (Simulation mode, a timeout, a PT error).
-- CME voice (`telephony-service`, `ephone-dn`) is documented as unsupported: a 2911 answers status 2
-  (invalid) without the UC license.
+- `pt_live_deploy` checks the whole plan with one canvas read (it used to make one round trip per
+  device and link, with retries), retries only that read on a timeout and reads once more after the
+  reconcile. An unreadable canvas is reported as unverified and re-sends nothing.
+- One creation path: `pt_add_device`/`pt_add_link` and the deploy script all use
+  `lwAddDevice`/`lwAddLink`. One device/port walk (`walk_js.py`) for every canvas reader, each item in
+  its own try/catch. One JS backend for both Server-PT DHCP tools.
+- The skill (`skill/SKILL.md`), `pt://guide` and the server instructions describe the verify-and-read-back
+  workflow, diagnosis with the readers and `pt_send_pdu`, `pt_fast_forward` after cabling, recipes for
+  HSRP, EtherChannel, BGP, QoS for voice, CME, Wi-Fi and IPv6, and what PT does not allow (WPA on a
+  client, CME on a 2911, IoT programs as files, NetFlow flows).
 
 ## 0.10.2
 
