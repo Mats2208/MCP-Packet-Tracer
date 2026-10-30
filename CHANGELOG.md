@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 Everything below was run against a live PT 9.0 on 2026-10-30. Several things this repo called
 impossible turned out to work through the Script-Engine API: a simple PDU, an AP's SSID, a static
