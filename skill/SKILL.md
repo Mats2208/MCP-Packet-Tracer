@@ -10,7 +10,7 @@ description: >-
 
 # Packet Tracer MCP — operating guide
 
-The `packet-tracer` MCP (108 tools) plans, deploys, configures and **reads back** a *running* Packet
+The `packet-tracer` MCP (109 tools) plans, deploys, configures and **reads back** a *running* Packet
 Tracer. The `pt_*` tools are your only interface, plus raw JS via `pt_send_raw`.
 
 ## ⛔ Prime directive: DISCOVER, never invent
@@ -128,7 +128,7 @@ returns strings, wrap everything in `try/catch`; `getProcess("Aaa")` and `Policy
 
 | Read | When |
 |---|---|
-| [reference/tools.md](reference/tools.md) | full catalog (108 tools) with arguments, advanced builds, more recipes |
+| [reference/tools.md](reference/tools.md) | full catalog (109 tools) with arguments, advanced builds, more recipes |
 | [reference/script-engine-api.md](reference/script-engine-api.md) | raw JS for `pt_send_raw`, modules, plans too big for a parameter |
 | [reference/rough-edges.md](reference/rough-edges.md) | something behaves oddly: measured PT 9 traps and workarounds |
 

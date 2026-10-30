@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **108 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **109 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -135,6 +135,26 @@ prompts `/mcp__packet-tracer__ui_on`, `ui_off` and `ui_status`.
     subscript` on every call), the Text Editor and IoT programs as files (no
     usable file API) and individual host-firewall rules. Open the window with `pt_ui_open`
     and set those by hand.
+
+## Activities (PKA Builder)
+
+Open, grade and build `.pka` activities. Platform limits are in [PKA Builder](pka-builder.md).
+
+| Tool | What it does |
+|------|--------------|
+| `pt_activity_open` | Opens a `.pka`; `password` for a protected one |
+| `pt_activity_status` | Items, score, time, instructions as text, whether it is locked |
+| `pt_activity_check` | Grades item by item; `refresh=True` recalculates a stale score |
+| `pt_activity_tree` | Lists the assessment tree, to find what to mark |
+| `pt_activity_mark` | Marks items as graded |
+| `pt_activity_reset` | Resets to the initial network, as a student's Reset does |
+| `pt_activity_save` | Saves the `.pka` and verifies the file |
+| `pt_activity_create` | New activity with the Wizard open; the canvas is the answer network |
+| `pt_activity_set_instructions` | Writes the first instruction page |
+| `pt_activity_points` | Sets points per item (not on macOS) |
+| `pt_activity_build_initial` | Copies the answer network to the initial network |
+| `pt_activity_exit_wizard` | Closes the Wizard, answering its dialogs |
+| `pt_activity_create_exam` | Builds a whole exam from one spec; `dry_run=True` validates, `start_at` resumes |
 
 ## NAT & ACL
 

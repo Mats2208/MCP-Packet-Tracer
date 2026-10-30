@@ -4,8 +4,8 @@ The activity tools (`pt_activity_*`) open, grade, create and correct Packet Trac
 `pt_activity_create_exam` builds a whole exam from one spec: answer network, instructions, graded items,
 initial network, saved `.pka`.
 
-This page says what works on each platform, what was measured, and what the project does and does not do
-with Cisco's software. Read [Terms and limits](#terms-and-limits) before using it for anything public.
+The activity is made by Packet Tracer itself: this project creates no `.pka` outside it. This page says what
+works on each platform and what was measured.
 
 ## Platform matrix
 
@@ -99,77 +99,19 @@ finished.
 Testing a bridge command behind a dialog on macOS did not hang Packet Tracer in one run. The gate stays,
 because it did on Windows.
 
-## Terms and limits
+## Scope
 
-!!! danger "This is not legal advice"
-    This section is the project's reading of public documents. Nobody qualified has reviewed it. Before
-    publishing, selling or teaching with this, ask a lawyer or ask Cisco.
-
-### What Cisco's terms say
-
-The Packet Tracer Offer Description (EDCS-19611795, ver. 2.0, modified 2025-09-10), section 4.1, is the key
-text:
-
-> The Cisco Offer and related Documentation can only be used to create, display or run network simulations
-> using files with suffixes ".pkt", ".pkz" or ".pka" in connection with Cisco Networking Academy or for such
-> other purpose(s) approved by Cisco in writing. You may not use the Cisco Offer and related Documentation for
-> any other purpose, including, but not limited to, teaching a course unrelated to the Cisco Networking
-> Academy, creating courseware, videos, books, or any other commercial or non-commercial use, unless
-> previously approved in writing by Cisco.
-
-Cisco's General Terms (EDCS-24218913, ver. 6.0), section 2.2, add that you may not:
-
-> (a) transfer, sell, sublicense, monetize, or provide the functionality of any Software [...] to any third
-> party, except as authorized by Cisco; [...] (d) reverse engineer, decompile, decrypt, disassemble, modify, or
-> make derivative works of Cisco Offers
-
-### What this means in practice
-
-| Use | Reading |
-| --- | --- |
-| Create and grade activities for a Networking Academy course | The case 4.1 allows |
-| A course outside Networking Academy | 4.1 excludes it without written approval |
-| Tutorials, courseware, books | 4.1 excludes them without written approval |
-| **Videos showing Packet Tracer** | **4.1 names them, paid or free. This covers YouTube** |
-| Selling exams, or selling or monetizing access to Packet Tracer's functions | Excluded by 4.1 and 2.2(a) |
-| Redistributing Packet Tracer, its help or its API reference | Not allowed; this repo does not ship them |
-
-Each user of this project accepts those terms with their own copy of Packet Tracer. The MIT license covers
-this repository's code only, and gives no rights over Packet Tracer.
-
-### What this project does
-
-- **It uses the published extension API.** Packet Tracer ships its "Extensions API" reference in
-  `help/default/IpcAPI/` and documents Script Modules as the way to extend it. `ActivityFile`, `TreeNode` and
-  `getUserCreatedPDU` are part of that API.
-- **It does not ship Cisco's software.** No Packet Tracer binaries, help files or `.pka` from Cisco are in this
-  repository. `core.js` is this project's own, written against the API.
-- **It does not read the `.pka` format.** `pt_send_raw` refuses to read `.pka`/`.pkt` bytes and refuses
-  `getHashedPassword`, `getChallengeKeyAsBase64` and `getChallengeKeyAsInts`. Nothing here decrypts a file.
-- **It does not bypass passwords.** A protected activity stays locked without the instructor's password.
-- **It is not affiliated with Cisco.** Cisco, Packet Tracer, CCNA and Networking Academy are Cisco's trademarks.
-
-### What it does outside the API
-
-Cisco's reference says, for `ActivityWizard`:
-
-> In this version of the API, IPC controlled activity creation via the activity wizard is not supported.
-
-So **creating activities is not an API feature**. This project drives the Wizard's window the way accessibility
-tools do, on Windows and macOS. That stays clear of decompiling, but it is automation Cisco does not offer, and
-no document here says Cisco approves of it. Reading, marking, grading and saving do use the API.
-
-### Rules for this project
-
-- Do not use the tools on graded CCNA or Networking Academy assessments. Use them on activities you author.
-- Do not publish answers or solved Cisco activities.
-- Do not sell exams or access to Packet Tracer through this.
-- Do not add code that reads `.pka` bytes or uses the password material.
-- Before publishing videos, courses or any paid offer, get Cisco's written approval.
-
-### Sources
-
-- [Cisco Packet Tracer Offer Description](https://www.cisco.com/c/dam/en_us/about/doing_business/legal/seula/cisco-packet-tracer-software.pdf)
-- [Cisco General Terms](https://www.cisco.com/c/dam/en_us/about/doing_business/legal/eula/cisco_general_terms.pdf)
-- Packet Tracer's own help: `help/default/copyrights.htm`, `help/default/scriptModules.htm`,
-  `help/default/IpcAPI/class_activity_wizard.html`, `help/default/IpcAPI/class_activity_file.html`
+- **Packet Tracer does the work.** Every `.pka` is created and saved by your own copy of Packet Tracer. Nothing
+  here writes, reads or decrypts the file format, and `pt_send_raw` refuses to read `.pka`/`.pkt` bytes.
+- **Published API first.** Packet Tracer ships its "Extensions API" reference in `help/default/IpcAPI/`.
+  Opening, marking, grading and saving use it (`ActivityFile`, `TreeNode`). That reference says activity
+  creation through the Wizard is not supported by the API, so this project operates the Wizard's window the way
+  a user does, through UI Automation and Accessibility.
+- **Passwords are respected.** A protected activity stays locked without the instructor's password, and
+  `pt_send_raw` refuses `getHashedPassword`, `getChallengeKeyAsBase64` and `getChallengeKeyAsInts`.
+- **Your own exams.** Activities built here are yours. They are not Cisco or CCNA content, and they are not
+  attributed to Cisco.
+- **Independent project.** Not affiliated with or endorsed by Cisco. Cisco, Packet Tracer, CCNA and Networking
+  Academy are Cisco's trademarks. The MIT license covers this repository's code, not Packet Tracer, whose use is
+  under Cisco's [Offer Description](https://www.cisco.com/c/dam/en_us/about/doing_business/legal/seula/cisco-packet-tracer-software.pdf)
+  and [General Terms](https://www.cisco.com/c/dam/en_us/about/doing_business/legal/eula/cisco_general_terms.pdf).

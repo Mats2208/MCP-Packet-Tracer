@@ -125,10 +125,10 @@ pip install -e .
 To stream topologies into a **running** Packet Tracer, also install this project's own
 **MCP Control Center** extension:
 
-1. Download **`V5.2.pts`** from
+1. Download **`MCP-Control-Center.pts`** from
    **[Releases (latest)](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**.
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules → Add…**,
-   select `V5.2.pts`, and confirm.
+   select `MCP-Control-Center.pts`, and confirm.
 3. Open **Extensions → MCP BUILDER** — it auto-connects to the bridge.
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.

@@ -20,7 +20,7 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 PT 9.0.1) and by the active file; a relative path is confined to the MCP working directory, a missing file
 is refused before PT is touched. `pt_export`/`pt_deploy`/`pt_list_projects`/`pt_load_project` take an
 `output_dir` that must stay inside the working directory.
-**Activities (.pka):** `pt_activity_open(path, password="")`, `pt_activity_status`,
+**Activities (.pka):** `pt_activity_points(points)` (not on macOS), `pt_activity_open(path, password="")`, `pt_activity_status`,
 `pt_activity_check(only_incorrect=True, refresh=False)`, `pt_activity_create(force=False)`,
 `pt_activity_set_instructions(html)`, `pt_activity_tree(path)`, `pt_activity_mark(items, clear_others=False)`,
 `pt_activity_build_initial(reset_config=True)`, `pt_activity_save(path, overwrite=False)`,
