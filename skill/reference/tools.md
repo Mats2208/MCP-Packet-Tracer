@@ -74,6 +74,9 @@ commands)` types on the router at the other end of the PC's console cable. `pt_h
 `pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS; refuses to re-enable or write pages while HTTP and HTTPS are
 both off, see rough-edges),
 `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts).
+`pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list, reset_associations,
+dry_run)`: an AccessPoint-PT's SSID, SSID broadcast and MAC filter, applied and read back
+(`WirelessServerProcess`). WPA/WEP are not set: the client would need a profile, and that API is broken.
 `pt_read_device_panel(device)` reads every tab at once (read-only).
 **UI mode:** `pt_ui_mode("headless"|"ui"|"status")` — headless (default) does everything through the
 API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
@@ -92,9 +95,9 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
   → `Wireless0`, and adds **one `AccessPoint-PT` per LAN**, each wired to that LAN's own switch.
   ⚠️ **Wireless addressing is NOT deterministic.** Laptops auto-associate on the default SSID and
-  PT exposes **no SSID API** (verified: neither the AP nor its port has `setSsid`), so with more
-  than one AP a laptop can associate to *any* of them and take a DHCP lease from **another LAN's
-  pool**. Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
+  the client side has **no working profile API** (`WirelessClientProcess.addProfile` throws), so with
+  more than one AP a laptop can associate to *any* of them and take a DHCP lease from **another
+  LAN's pool**. The AP side *is* settable: `pt_wireless_ap` renames the SSID (clients drop off it). Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
   the LAN-1 AP and got `192.168.0.13`; only with that AP powered off did it take `192.168.4.25`.
   The planner now emits a `WIRELESS_AMBIGUOUS_ASSOCIATION` **warning** when ≥2 APs coexist.
   Always confirm with `pt_inspect_ports`; for deterministic addressing use `wireless_laptops=False`.

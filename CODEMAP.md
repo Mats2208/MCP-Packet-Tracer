@@ -50,3 +50,4 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/tools/switching.py` | pt_apply_hardening, pt_apply_interface_tuning, pt_apply_port_security, pt_apply_stp, pt_apply_vlan, pt_read_vlans |
 | `adapters/mcp/tools/topology.py` | pt_add_device, pt_add_link, pt_delete_device, pt_delete_link, pt_export_topology, pt_move_device, pt_query_topology, pt_rename_device, pt_send_raw, pt_set_port |
 | `adapters/mcp/tools/traffic.py` | pt_fast_forward, pt_send_pdu |
+| `adapters/mcp/tools/wireless.py` | pt_wireless_ap |

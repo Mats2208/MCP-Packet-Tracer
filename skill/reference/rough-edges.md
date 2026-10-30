@@ -80,9 +80,12 @@ with the default outline.
   canvas and as a down link in `pt_health_check`. Give it an address, even a throwaway `/30`.
 - **PT does not associate a wireless host with the nearest AP.** Measured: a laptop with its own LAN's
   AP right beside it did a *fresh* association and a *fresh* DHCP and still chose the AP of another LAN,
-  taking that LAN's address. Between APs sharing the default SSID the choice is arbitrary, and there is
-  no SSID API to force it (neither the AP nor its port has `setSsid`). If you need deterministic
-  addressing, use `wireless_laptops=False` and cable the laptops.
+  taking that LAN's address. Between APs sharing the default SSID the choice is arbitrary. The AP side
+  is settable (`pt_wireless_ap`: `WirelessServerProcess.setSsid` + `resetAllAssociations`, measured on
+  PT 9.0): renaming an AP's SSID drops its clients and keeps them off it. The client side is not
+  (`WirelessClientProcess.addProfile` throws), so a laptop only ever joins "Default". If you need
+  deterministic addressing, use `wireless_laptops=False` and cable the laptops. A dropped client's
+  port still reads `isPortUp()`/`getLink()` true: confirm association with a ping, not the port.
 - **`PT_MCP_BRIDGE_TOKEN` is validated.** If the server refuses to start with `BridgeTokenError`, the
   variable is set to something shorter than 32 chars or outside `[A-Za-z0-9_-]`. Fix it or unset it so
   the on-disk token is used. It fails loudly on purpose: a bad value there would disable the only real

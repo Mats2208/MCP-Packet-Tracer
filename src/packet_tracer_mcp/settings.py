@@ -194,6 +194,9 @@ Everything in a device's window is driven through the API, without taking the mo
 - Server-PT Services: `pt_server_dhcp` (pools, exclusions), `pt_server_dns` (A/CNAME),
   `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts).
 - `pt_read_device_panel(device)`: reads ports, IPs, MAC, firewall and services in one go.
+- `pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list)`: an AP's SSID,
+  SSID broadcast and MAC filter, applied and read back; resets associations after a change. A
+  dropped client's port still reads up/linked: confirm with a ping. No WPA/WEP (client profiles broken).
 - `pt_remove_module(device, slot)`: the inverse of pt_add_module.
 
 Presentation mode (`pt_ui_mode`):

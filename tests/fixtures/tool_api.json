@@ -3101,6 +3101,88 @@
    "type": "object"
   }
  },
+ "pt_wireless_ap": {
+  "description": "An access point's wireless settings (AccessPoint-PT Config > Port 1),\napplied and read back. With no settings it only reads.\n\nParameters (empty/None = leave alone):\n- ssid: network name (up to 32 bytes). Clients on another SSID drop\n  off; giving each AP its own SSID keeps clients off the APs you rename.\n- broadcast: SSID broadcast on/off.\n- mac_filter: MAC filtering on/off.\n- allow_listed: True = only listed MACs may associate, False = listed\n  MACs are denied.\n- mac_list: REPLACES the filter list (\"0001.63BE.8468\", \"00:01:63:BE:84:68\").\n- reset_associations: after a change, drop every client so they\n  re-associate against the new settings (default True; without it,\n  clients already associated may keep the old association).\n- dry_run: only read and report what would change.\n\nA dropped client's port still reads up/linked: confirm with a ping\n(pt_host_command) or its address, not the port state. WPA/WEP are not\nsettable: clients need a matching profile, and PT's client profile API\nis broken.",
+  "inputSchema": {
+   "properties": {
+    "allow_listed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allow Listed"
+    },
+    "broadcast": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Broadcast"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "mac_filter": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac Filter"
+    },
+    "mac_list": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac List"
+    },
+    "reset_associations": {
+     "default": true,
+     "title": "Reset Associations",
+     "type": "boolean"
+    },
+    "ssid": {
+     "default": "",
+     "title": "Ssid",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_wireless_apArguments",
+   "type": "object"
+  }
+ },
  "pt_workspace_options": {
   "description": "Reads and adjusts PT workspace options that affect how it behaves.\n\nWithout arguments it is read-only. The flags are tri-state: 1 enables,\n0 disables, -1 (default) leaves alone.\n\nParameters:\n- auto_cabling: PT's auto-cabling picks the cable and the port for you.\n  Turn it off before building topologies by script if you want exact\n  control over which port is used.\n- external_network_access: lets PT reach the machine's REAL\n  network. Off by default; turning it on takes traffic out of the simulator.\n- show_port_labels / show_link_lights / show_device_labels: what is shown on\n  the canvas. It matters for a capture to be readable.\n\nExample: turn auto-cabling off before a scripted deploy:\n  pt_workspace_options(auto_cabling=0)",
   "inputSchema": {

@@ -41,7 +41,7 @@ CAPABILITIES = {
                  "simulation_mode", "simulation_step", "packet_trace",
                  "netflow", "qos_read", "dhcp_server_pools",
                  "config_backup", "project_metadata", "workspace_options",
-                 "screenshot", "canvas_annotations", "send_pdu", "fast_forward"],
+                 "screenshot", "canvas_annotations", "send_pdu", "fast_forward", "wireless_ap"],
     # Supported TODAY via raw IOS CLI (configureIosDevice / pt_send_raw) but without a
     # dedicated high-level tool yet — candidates for future expansion, NOT "impossible".
     # vlan/trunk/stp/port_security/ipv6 were removed from here: they have their own tool.
