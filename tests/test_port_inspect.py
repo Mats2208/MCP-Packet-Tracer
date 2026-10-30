@@ -31,6 +31,11 @@ class TestNatModeLabel:
     def test_known_modes(self, raw, label):
         assert nat_mode_label(raw) == label
 
+    @pytest.mark.parametrize("raw,label", [("0", "none"), ("1", "inside")])
+    def test_mode_sent_as_a_string(self, raw, label):
+        """A live PT 9 probe (2026-10-30) got "0", a string, from getNatMode()."""
+        assert nat_mode_label(raw) == label
+
     def test_unknown_mode_keeps_the_raw_value(self):
         """Un valor nuevo de PT no debe perderse ni romper la tool."""
         assert nat_mode_label(7) == "unknown(7)"
