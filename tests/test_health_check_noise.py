@@ -72,3 +72,20 @@ class TestOtherChecksUnaffected:
             {"name": "PC2", "model": "PC-PT", "ports": [_port("FastEthernet0", ip="192.168.0.5")]},
         ]
         assert "192.168.0.5" in health_check(live)["duplicate_ips"]
+
+
+class TestIpPhones:
+    """A 7960's IP lives on its Vlan1 interface; the Switch and PC jacks are layer 2.
+    Measured live on PT 9.0.1: registered phones were flagged "cabled without IP"."""
+
+    def _phone(self, vlan_ip):
+        return [{"name": "TEL1", "model": "7960",
+                 "ports": [_port("Vlan1", ip=vlan_ip, linked=False),
+                           _port("Switch"), _port("PC", linked=False)]}]
+
+    def test_phone_with_an_address_is_not_flagged(self):
+        assert health_check(self._phone("10.10.10.2"))["cabled_without_ip"] == []
+
+    def test_phone_without_an_address_is_flagged_on_vlan1(self):
+        flagged = health_check(self._phone(""))["cabled_without_ip"]
+        assert flagged == [{"device": "TEL1", "port": "Vlan1"}]
