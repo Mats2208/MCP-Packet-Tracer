@@ -41,5 +41,7 @@ class ExamSpec(BaseModel):
     answer_commands: dict[str, list[str]] = Field(default_factory=dict)
     # IOS config lines per device that strip the initial network ("no ...").
     initial_commands: dict[str, list[str]] = Field(default_factory=dict)
+    # Hosts left with no address in the initial network, for the student to configure.
+    initial_hosts: list[str] = Field(default_factory=list)
     output_path: str
     overwrite: bool = False

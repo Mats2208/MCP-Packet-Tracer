@@ -215,3 +215,17 @@ def save_activity_js(directory: str, name: str, overwrite: bool) -> str:
 
 def reset_activity_js() -> str:
     return _activity("f.resetActivity();out({ok:true,percent:f.getPercentageComplete()});")
+
+
+def clear_hosts_js(names: list[str]) -> str:
+    """Zero each host's first Ethernet address and gateway (clear_initial; IOS can't)."""
+    return (
+        "(function(){try{var c=" + json.dumps(list(names)) + ";var done=[];var miss=[];"
+        "for(var i=0;i<c.length;i++){var d=ipc.network().getDevice(c[i]);"
+        "if(!d){miss.push(c[i]);continue;}var ps=d.getPorts();"
+        "for(var k=0;k<ps.length;k++){if(String(ps[k]).indexOf('Ethernet')>=0){"
+        "d.getPort(ps[k]).setIpSubnetMask('0.0.0.0','0.0.0.0');break;}}"
+        "d.setDefaultGateway('0.0.0.0');done.push(c[i]);}"
+        "reportResult(JSON.stringify({ok:true,cleared:done,missing:miss}));"
+        "}catch(e){reportResult(JSON.stringify({ok:false,error:String(e)}));}})();"
+    )

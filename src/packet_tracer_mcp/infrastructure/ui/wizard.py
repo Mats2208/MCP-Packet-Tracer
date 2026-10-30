@@ -47,8 +47,8 @@ def open_modals(win=win32) -> list[tuple[int, int, str]]:
     """(pid, hwnd, title) of the modals open in PT. Never touches the bridge."""
     if not win.is_supported():
         return []
-    return [(pid, hwnd, title) for pid in win.pt_pids()
-            for hwnd, title in win.top_windows(pid) if is_modal_title(title)]
+    return [(pid, hwnd, title.split(" -- ")[0]) for pid in win.pt_pids()
+            for hwnd, title in win.top_windows(pid) if is_modal_title(title.split(" -- ")[0])]
 
 
 def modal_message(modals: list[tuple[int, int, str]]) -> str | None:
@@ -118,10 +118,17 @@ class WizardDriver:
             self._uia.select(el)
         self._sleep(_PAGE_SETTLE_S)
 
+    def _titled(self, pid: int, title: str) -> int | None:
+        """A dialog by title. PT appends " -- Cisco Packet Tracer" to its message boxes."""
+        for hwnd, text in self._win.top_windows(pid):
+            if text == title or text.startswith(f"{title} -- "):
+                return hwnd
+        return None
+
     def _wait_dialog(self, pid: int, title: str, seconds: float = DIALOG_WAIT_S) -> int:
         deadline = self._clock() + seconds
         while True:
-            hwnd = self._win.find_window(pid, title)
+            hwnd = self._titled(pid, title)
             if hwnd:
                 return hwnd
             if self._clock() >= deadline:

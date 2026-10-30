@@ -235,6 +235,15 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
             raise ActivityError(f"Items not found: {json.dumps(out['missing'])[:1500]}")
         return f"{out['marked']} item(s), {out['checked_leaves']} checked leaves"
 
+    def clear_initial() -> str:
+        done = _configure(spec.initial_commands)
+        if spec.initial_hosts:
+            out = ops.call(js.clear_hosts_js(spec.initial_hosts))
+            if out.get("missing"):
+                raise ActivityError(f"Hosts not found: {out['missing']}")
+            done += f"; {len(out.get('cleared', []))} host(s) cleared"
+        return done
+
     def instructions() -> str:
         out = ops.set_instructions(render_exam_html(spec))
         return f"{out['length']} chars, identical={out['identical']}"
@@ -245,7 +254,7 @@ def run_exam(ops: ActivityOps, spec: ExamSpec, tool: Callable[..., str], *, forc
         ("set_instructions", instructions),
         ("mark", mark),
         ("copy_to_initial", lambda: str(ops.build_initial().get("copied"))),
-        ("clear_initial", lambda: _configure(spec.initial_commands)),
+        ("clear_initial", clear_initial),
         ("save", lambda: str(ops.save(spec.output_path, spec.overwrite).get("saved"))),
         ("exit_wizard", lambda: str(ops.exit_wizard().get("answered"))),
     ]
@@ -412,13 +421,13 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
           requirements [{text, items, note}] (**word** = bold), language (es/en),
           items (paths for pt_activity_mark), plan or plan_path (the answer network),
           answer_commands and initial_commands ({device: [config lines]}, typed between
-          configure terminal and end), output_path (.pka), overwrite.
+          configure terminal and end), initial_hosts (hosts left with no address),
+          output_path (.pka), overwrite.
         - start_at: step to resume from, after a failure.
         - force: passed to pt_activity_create.
         - dry_run: validate and render the HTML, sending nothing.
 
-        Reply: one entry per step, failed_step and how to retry. Host IPs are not
-        stripped by clear_initial (IOS only).
+        Reply: one entry per step, failed_step and how to retry.
         """
         try:
             exam = ExamSpec.model_validate(spec)
