@@ -182,13 +182,22 @@ supported: PT's 2911 rejects it without the UC license.
 ## Live-state inspection
 
 These read the **device**, not the plan — useful to confirm a change landed, or to
-understand a topology you didn't build. Verified against PT 9.0.0.0810.
+understand a topology you didn't build. Verified against PT 9.0.0.0810; the readers from
+`pt_read_routes` down were checked on PT 9.0 against the matching `show` commands.
 
 | Tool | What it does |
 |------|--------------|
 | `pt_audit_security` | Security posture of every IOS device, graded high/medium/low: missing `enable secret`, reversibly-stored credentials (type 7), `service password-encryption` off, no local users, no MOTD banner, config-register left at `0x2142`. |
 | `pt_inspect_ports` | Per-port line/protocol status, MAC, IP, duplex, bandwidth, MTU, delay, CDP, DHCP-client, NAT mode and applied ACLs. Flags cabled-but-down and line-up-protocol-down. |
-| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005). |
+| `pt_read_vlans` | The switch's real VLAN database, separating your VLANs from PT's factory ones (1, 1002-1005), with each VLAN's access ports, the trunk ports and their native VLAN, the ports with port security, and access ports left in a VLAN missing from the database. |
+| `pt_read_routes` | The real routing table (what `show ip route` shows): prefix, protocol (C, L, S, O, D, R), next hop, interface, AD and metric. Across routers it lists `convergence_gaps`: prefixes a router running a dynamic protocol lacks while the others know them. |
+| `pt_read_ospf` | OSPF per process: router-id, areas and neighbours with state by name (FULL, 2WAY, INIT...), DR/BDR role, local port and address. Flags neighbours not FULL, duplicate router-ids and routers with OSPF but no neighbours. |
+| `pt_read_arp` | The ARP table (IP, MAC, port) of a router or host. |
+| `pt_read_cdp` | The CDP neighbour table: device id, local and remote port, platform, capability. CDP announces every 60 s, so it is empty right after a deploy. |
+| `pt_read_stp` | Spanning Tree per switch and VLAN: whether it is the root and the root ID. Flags VLANs where switches disagree on the root. PT 9 exposes no per-port STP state or role. |
+| `pt_read_acl` | Each ACL on a router with its commands, and which ports apply which ACL in which direction. Flags ports that reference a missing ACL. |
+| `pt_read_nat` | The NAT translation table, NAT counters (inside source lists, statics, pools) and the inside/outside interfaces. Flags NAT without both an inside and an outside interface. |
+| `pt_read_mac_table` | A switch's MAC address table per VLAN: MAC, port, dynamic or static. |
 | `pt_device_power` | Power a device off/on with read-back — simulate an outage, or force a reboot so a router rereads its startup-config. |
 
 ## Canvas: capture & annotations
@@ -242,7 +251,7 @@ describing the network and starts showing it.
 | `pt_apply_netflow` | Create, reconfigure or remove a NetFlow exporter on a router — collector address, UDP port, version, source interface, monitors — and read the result back. |
 | `pt_read_qos` | Read the device's real class-maps and policy-maps, including each one's CLI form and which features a policy uses (bandwidth, priority, shaping, fair-queue). |
 
-!!! note "NetFlow is configured natively; QoS can only be read"
+!!! note "NetFlow is configured natively; QoS through IOS CLI"
     These two look symmetric but are not. `pt_apply_netflow` configures the
     exporter directly and verifies the result — no CLI involved. QoS, by
     contrast, can be **read** but not created through the object API, so class-maps

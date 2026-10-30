@@ -94,6 +94,30 @@ with the default outline.
   overlap, so you do not need to reposition devices by hand after `pt_full_build` — only if you want a
   specific arrangement.
 
+### Verified against PT 9.0 (2026-10-30)
+
+Several things this skill used to call impossible work through the API and have tools now:
+a simple PDU (`pt_send_pdu`), an AP's SSID and MAC filter (`pt_wireless_ap`), a static IPv6 on a host
+(`pt_host_ip_config(ipv6_address=...)`), the EMAIL domain and SMTP/POP3 switches (`pt_server_service`),
+and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a trap:
+
+- **A wireless client that lost its AP still looks cabled.** After an SSID change its port keeps
+  `isPortUp()` and `getLink()` true while the client is disassociated (100 % loss to the gateway).
+  Judge association by a ping, never by the port.
+- **CME voice needs a license PT does not ship enabled.** On a 2911, `telephony-service`,
+  `max-ephones` and `ephone-dn` come back with status 2 (invalid). It would need the `uck9` technology
+  package and a reload; untested, so there is no voice tool.
+- **`PingProcess` vanishes when the ping ends.** `IcmpProcess.getPingProcess(id)` returns null once it
+  finishes, so a structured ping must be polled while it runs and the last sample can be lost.
+  `pt_verify_connectivity` keeps using the console ping.
+- **The first PDU between two devices can die on ARP**, exactly like a first ping: send it again before
+  calling it a fault. The packet trace's explanation names the real reason (e.g. an ACL deny).
+- **`enterCommand(..., "global")` refuses navigation lines**: `enable` returns 3 and `configure terminal`
+  returns 2 because you are already in config mode. The verified CLI tools ignore those lines; raw JS
+  that checks statuses should too.
+- **CDP is empty for about a minute after a deploy** (it announces every 60 s): an empty `pt_read_cdp`
+  right after building is not a cabling fault.
+
 ### Large networks — verified against PT 9.0.1 (2026-10-26, 116 devices)
 
 - **Changing an ASBR's OSPF interface (e.g. `ip ospf network point-to-point`) flushes its own type-5

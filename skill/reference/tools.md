@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (83)
+## Tool catalog (94)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -23,7 +23,10 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 `pt_apply_stp`, `pt_apply_port_security`, `pt_apply_hardening` (hostname/banner/enable-secret/users/SSH),
 `pt_apply_interface_tuning` (serial clock-rate + OSPF/EIGRP per-interface knobs),
 `pt_apply_etherchannel` (switch), `pt_apply_hsrp`, `pt_apply_bgp`, `pt_apply_qos` (router) —
-each IOS line verified. CME voice (`telephony-service`) is not supported (no UC license in PT).
+each IOS line verified. These and the ACL/NAT tools send the config line by line and reply with
+`verified`, `verification` (`verified` / `rejected` / `error` / `unverified` = PT never answered) and
+`rejected_lines` (device, line, command, IOS reason). Only `verified: true` means it landed.
+CME voice (`telephony-service`) is not supported (no UC license in PT).
 **Verification (live):** `pt_diff` (plan vs live), `pt_health_check` (down links, dup IPs, cabled-no-IP).
 `pt_verify_connectivity` gives **three** verdicts, not two: `CONNECTIVITY OK` (every packet returned),
 `PARTIAL CONNECTIVITY (packet loss)` (some loss — normal on a first ping because of ARP, so re-run once before
@@ -34,7 +37,17 @@ there is a real host that never got its DHCP lease.
 posture with severities; never returns passwords or hashes, only the algorithm label),
 `pt_inspect_ports(device, only_linked)` (per-port line/protocol, MAC, duplex, bandwidth, MTU, CDP,
 NAT mode, applied ACLs; flags cabled-but-down), `pt_read_vlans(switch)` (real VLAN database, separates
-your VLANs from PT's factory ones), `pt_device_power(device, on)` (power-cycle with read-back).
+your VLANs from PT's factory ones; access ports per VLAN, trunks with native VLAN, port-security ports),
+`pt_device_power(device, on)` (power-cycle with read-back).
+**Convergence reads (live, read-only, `device=""` = every device that has the table):**
+`pt_read_routes(device)` (routing table: prefix, protocol C/L/S/O/D/R, next hop, port, AD, metric;
+`convergence_gaps` across routers), `pt_read_ospf(device)` (router-id, areas, neighbours with state name
+and DR/BDR role; flags not-FULL, duplicate router-ids, OSPF without neighbours), `pt_read_arp(device)`,
+`pt_read_cdp(device)` (empty for the first ~60 s after a deploy), `pt_read_stp(switch, vlans)` (root
+bridge per VLAN; flags VLANs where switches disagree; no per-port state/role in PT 9),
+`pt_read_acl(device)` (ACLs with their commands and where each is applied; flags a port pointing at a
+missing ACL), `pt_read_nat(device)` (translations, counters, inside/outside ports),
+`pt_read_mac_table(switch, vlan)`. Use them after a change instead of parsing `show` output.
 **Canvas (capture & annotate):** `pt_screenshot(filename, fmt, output_dir)` writes the image to disk
 and returns the **path** — never the bytes, they would flood the context. `pt_add_note(x, y, text)`
 writes a label; font size is not settable. `pt_clear_annotations(kind)` removes annotations only,
@@ -56,8 +69,8 @@ back. Without `network` it only reads. Router DHCP is a different thing: IOS CLI
 is what `dhcp=True` in the planner emits. Give the server a static IP inside the pool's subnet first.
 **Telemetry / QoS:** `pt_apply_netflow(device, name, destination_ip, udp_port, version, source_port,
 monitors, remove, dry_run)` configures a NetFlow exporter directly (not via CLI) and reads it back to
-confirm. `pt_read_qos(device)` is **read-only**: QoS cannot be created programmatically, so author
-class-maps and policy-maps with IOS CLI and use this to verify.
+confirm. `pt_read_qos(device)` is **read-only**: the object API cannot create QoS, so author
+class-maps and policy-maps with `pt_apply_qos` (IOS CLI) and use this to verify.
 **Simulation:** `pt_simulation_mode(on)` (Realtime ↔ Simulation), `pt_simulation_step(action, times)`
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
