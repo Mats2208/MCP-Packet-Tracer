@@ -15,7 +15,8 @@ Read when something in Packet Tracer behaves oddly.
   with more ports, add a module, or use `multi_lan` (a chain needs only 3 ports per router).
 - **`pt://capabilities` is derived from the live tool registry** (`supported_live.nat/acl/modules/…`) — it
   can no longer drift; trust it *and* the tools.
-- **`pt_live_deploy` "N/N verified" checks device/link existence only** — host IPs may lag a few seconds.
+- **`pt_live_deploy` "N/N verified" checks device/link existence only** (one canvas read for the whole
+  plan) — host IPs may lag a few seconds; confirm with `pt_read_dhcp_leases` / `pt_read_device_panel`.
 - **Invalid `routing=` raises a raw exception**; invalid `router_model` returns a degenerate plan with an
   embedded `errors[]` — always check `plan.errors` before deploying.
 - A harmless phantom `Power Distribution Device` can appear after deploy (off-canvas).
@@ -104,9 +105,6 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **A wireless client that lost its AP still looks cabled.** After an SSID change its port keeps
   `isPortUp()` and `getLink()` true while the client is disassociated (100 % loss to the gateway).
   Judge association by a ping, never by the port.
-- **CME voice needs a license PT does not ship enabled.** On a 2911, `telephony-service`,
-  `max-ephones` and `ephone-dn` come back with status 2 (invalid). It would need the `uck9` technology
-  package and a reload; untested, so there is no voice tool.
 - **`PingProcess` vanishes when the ping ends.** `IcmpProcess.getPingProcess(id)` returns null once it
   finishes, so a structured ping must be polled while it runs and the last sample can be lost.
   `pt_verify_connectivity` keeps using the console ping.
@@ -117,6 +115,37 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
   that checks statuses should too.
 - **CDP is empty for about a minute after a deploy** (it announces every 60 s): an empty `pt_read_cdp`
   right after building is not a cabling fault.
+
+### ☠️ Measured PT crashes (2026-10-30)
+
+- **IoT environment / empty MCU pin.** One call doing `digitalWrite(0, 1023)` on an MCU-PT pin with no
+  component, `getEnvironment().getEnvironmentKeys()` and `setManualAdjustment("Temperature", 15)` did
+  not answer, and PT then closed ("Cisco Packet Tracer has stopped working"). Which of the three does
+  it is not isolated: never call them, and never probe IoT in a session with unsaved work.
+- **Reopening a `.pkt` with a quote in a device name.** `pt_add_device` escapes `R"evil` correctly (the
+  JS does not break), but reopening a `.pkt` holding that device with `pt_open_project` was followed by
+  PT closing. Cause not isolated. Name devices with letters, digits, `-` and `_` only — no quotes,
+  backslashes or slashes.
+
+### Verified against PT 9.0.1 (feat/pending-closeout, 2026-10-30)
+
+- **CME runs on a 2811 only.** A 2911 answers `telephony-service` with status 2 even after
+  `license boot module c2900 technology-package uck9` + `write` + `reload`. `pt_apply_voice` refuses
+  other models.
+- **IP phones that were already on keep 0.0.0.0 after CME and its DHCP pool are configured.** They
+  register only after a power-cycle; `pt_apply_voice(restart_phones=True)` (the default) does it and
+  fast-forwards. Re-applying makes them register again.
+- **An IP phone's address lives on `Vlan1`**, not on its `Switch`/`PC` jacks; `pt_health_check` knows.
+- **A 7960 needs power.** The measured setup used a 3560-24PS (PoE).
+- **A router DHCP pool has no lease count**: `getLeaseAt(k)` is walked until it throws
+  `invalid vector subscript`. Server-PT leases were not measured (`lease_api: false` means unknown).
+- **QoS classes have no API name**, and `PolicyMap.toString()` throws: `pt_read_qos` matches names
+  from the running-config by position. If you edit policy-maps by hand, re-read with `pt_read_qos`.
+- **The host gateway is only in `HostIpProcess`**; `getProcess("HostIp")` throws.
+- **A device's position after creation is not the one asked** (PT adjusts it); after
+  `moveToLocation` it is exact.
+- **Saving twice**: `pt_save_project` refuses an existing file without `overwrite=True`.
+- **NetFlow flows cannot be read**; only the exporter configuration is verified.
 
 ### Large networks — verified against PT 9.0.1 (2026-10-26, 116 devices)
 

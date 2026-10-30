@@ -1,128 +1,125 @@
 ---
 name: packet-tracer
 description: >-
-  Use when building, automating, or debugging Cisco Packet Tracer networks through the
-  `packet-tracer` MCP (the `pt_*` tools) — planning topologies from natural language,
-  live-deploying into a running Packet Tracer, adding devices / links / modules, applying
-  ACL / NAT, exporting configs, or writing raw Script-Engine JS via `pt_send_raw`. This is
-  the authoritative reference for the tool catalog, the mandatory discover→plan→validate→deploy
-  workflow, the EXACT PT Script-Engine API (so you never invent method names), and the known
-  rough edges. Load it before driving the MCP so you act from verified facts, not guesses.
+  Use when building, configuring, or debugging Cisco Packet Tracer networks through the
+  `packet-tracer` MCP (`pt_*` tools): plan and live-deploy topologies, apply ACL / NAT / VLAN /
+  HSRP / BGP / QoS / EtherChannel / CME voice / Wi-Fi, read routes, OSPF, STP, DHCP leases, trace
+  PDUs, or write raw Script-Engine JS. Holds the discover→deploy→verify workflow, measured recipes,
+  the exact PT API and its traps. Load it before driving the MCP.
 ---
 
 # Packet Tracer MCP — operating guide
 
-A Model Context Protocol server (`packet-tracer`) that drives **Cisco Packet Tracer**: plan a
-topology, validate it, generate IOS/PTBuilder artifacts, and **live-deploy** into a *running* PT
-over an HTTP bridge. The `pt_*` tools are your only interface — plus raw JS via `pt_send_raw`.
+The `packet-tracer` MCP (96 tools) plans, deploys, configures and **reads back** a *running* Packet
+Tracer. The `pt_*` tools are your only interface, plus raw JS via `pt_send_raw`.
 
 ## ⛔ Prime directive: DISCOVER, never invent
 
-The single biggest failure mode for a model driving this MCP is **guessing** — a model name, a
-port name, a slot id, a cable type, a module name, or a Script-Engine API method. Every one of
-these is **discoverable**, and a wrong guess either fails validation or (for raw JS) **freezes
-Packet Tracer** (see the modal-freeze rule below).
+Never guess a model, port, slot, cable, module, parameter or Script-Engine method: all are
+discoverable, and a wrong raw-JS guess can **freeze PT**.
 
-Rules:
-1. If you did not read it from a tool result, an MCP resource, or this skill, **you do not know
-   it** — look it up first.
+1. If you did not read it from a tool result, an MCP resource, or this skill, **you do not know it**.
 2. Before planning/deploying: `pt_list_devices`, `pt_list_templates`, `pt_get_device_details`,
-   and `pt_list_modules` (if installing modules).
-3. Before any raw JS: use only methods in the **Verified Script-Engine API** table below. If you
-   need something not listed, probe it **inside a try/catch** before relying on it.
-4. After every mutation, read back with `pt_query_topology` / `pt_export_topology` and confirm.
-5. When something isn't in the catalog, say so — do not fabricate a device/module to fill the gap.
+   `pt_list_modules` (if installing modules). On a live canvas: `pt_query_topology` for real names/ports.
+3. Raw JS: only methods in [reference/script-engine-api.md](reference/script-engine-api.md), each
+   probed inside `try/catch`.
+4. **After every change, check the reply and read the device back** (next section).
+5. When something isn't in the catalog or isn't possible, say so — do not fabricate.
+6. Name devices with letters, digits, `-` and `_` only: no quotes, slashes or line breaks (a `.pkt`
+   holding `R"evil` was followed by a PT crash on reopen; cause not isolated).
 
-## The bridge (mental model)
+## The bridge
 
-```
-LLM ──▶ MCP server ──▶ HTTP bridge :54321 ──▶ MCP Control Center (PT extension) ──▶ PT Script Engine
-```
-
-- The MCP queues JS at `:54321`; the PT extension polls `/next` every 500 ms and runs each command
-  via `$se('runCode', …)` in PT's **Script Engine**, posting results back to `/result`.
-- **`XMLHttpRequest` does NOT exist in the Script Engine** (only in the extension webview). That's
-  why all I/O goes through the bridge.
-- Confirm the link first with **`pt_bridge_status`** → must say *"ACTIVE and CONNECTED"*. If "NOT
-  connected", the user opens **Extensions → MCP BUILDER** in PT (or dismisses a stuck error modal).
+MCP server → HTTP bridge `:54321` → PT extension (MCP BUILDER) → PT Script Engine. Confirm with
+**`pt_bridge_status`** → *"ACTIVE and CONNECTED"*; after an MCP restart call it once before asking the
+user to open **Extensions → MCP BUILDER** (or dismiss a stuck error modal).
 
 ## Mandatory workflow
 
-- New topology, one-shot: **`pt_full_build`**.
-- New topology, stepwise: `pt_list_devices` → `pt_plan_topology` → `pt_validate_plan` → `pt_live_deploy`.
-- Edit a live topology: `pt_bridge_status` → `pt_query_topology` → `pt_add_*`/`pt_rename_device`/….
-- Add modules: `pt_query_topology` → `pt_list_modules(router_model=…)` → `pt_install_modules_batch`.
-- **Large custom design** (dozens of sites, hierarchy, multi-area OSPF): write the plan yourself as a
-  `.json` TopologyPlan file, then `pt_validate_plan(plan_path=…)` → `pt_live_deploy(plan_path=…)`. Do not
-  paste a 100 KB plan as `plan_json`, and do not script around the MCP.
-  - Put addresses in `devices[].interfaces`, OSPF in `ospf_configs` (area per network), pools in
-    `dhcp_pools`, statics in `static_routes`: the MCP validates them and emits the config. A 3560 with
-    addresses becomes layer 3 (routed ports, SVIs). OSPF /30s come out `point-to-point`.
-  - Everything without a field (hardening, `area N range`, timers, NAT, VLANs, port-security) goes in
-    `extra_cli: {"DEVICE": ["ios line", …]}`, typed after the generated config.
-  - Then `pt_server_*` for services and `pt_cli` / `pt_verify_connectivity` / `pt_health_check` /
-    `pt_audit_security` to verify. Verified with a 116-device, 24-branch network on PT 9.0.1.
+- **New topology, one shot:** `pt_full_build(routers=2, routing="ospf")` (refuses an invalid plan). Stepwise:
+  `pt_list_devices` → `pt_plan_topology` → `pt_validate_plan` → `pt_live_deploy`. Read `errors[]` first.
+- **Edit a live topology:** `pt_bridge_status` → `pt_query_topology` → `pt_add_device` / `pt_add_link` /
+  `pt_delete_link` / `pt_move_device` / `pt_rename_device` → **`pt_fast_forward()`** after cabling
+  (STP converges at once instead of ~30 s; measured) → verify.
+- **Modules:** `pt_list_modules(router_model=…)` → `pt_install_modules_batch(modules=[…])`. The
+  device is power-cycled; IOS devices get `write memory` first and the reply says so.
+- **Large design:** a TopologyPlan `.json` → `pt_validate_plan(plan_path=…)` → `pt_live_deploy(plan_path=…)`.
+- **Save:** `pt_save_project(filename="lab1")` (`overwrite=True` to replace); `pt_open_project(path=…)`
+  replaces the open topology.
+
+### Verify every change, then read it back
+
+Config tools (`pt_apply_*`) send IOS line by line and reply `verified`, `verification`
+(`verified`/`rejected`/`error`/`unverified` = no answer) and `rejected_lines` (line, command, IOS
+reason). **Only `verified: true` means it landed**; fix a rejected line, never resend blind; preview with
+`dry_run=True`. `pt_move_device`, `pt_rename_device`, `pt_delete_link` also reply `verified`. Read back:
+VLAN/port-security → `pt_read_vlans`; ACL → `pt_read_acl`; NAT → `pt_read_nat`; STP → `pt_read_stp`;
+QoS → `pt_read_qos`; routing → `pt_read_routes` (`convergence_gaps`) + `pt_read_ospf`; DHCP/voice →
+`pt_read_dhcp_leases`; host IP/gateway → `pt_read_device_panel`; cabling → `pt_inspect_ports` (`cable`, `peer`).
+
+### Diagnose with reads and PDUs, not by parsing `show`
+
+`pt_health_check()` → `pt_inspect_ports(device="R1", only_linked=True)` → `pt_read_routes()` /
+`pt_read_ospf()` / `pt_read_arp(device="R1")` / `pt_read_mac_table(switch="SW1")` → **why**:
+`pt_send_pdu(source="PC1", destination="PC4", steps=10)` (PT's per-layer reason, e.g. an ACL deny;
+then `pt_simulation_mode(on=False)`) → `pt_verify_connectivity(from_device="PC1", to_ip="192.168.1.1")`.
+The first ping/PDU can die on ARP: repeat once. `pt_read_cdp` is empty ~60 s after a deploy.
+
+## Recipes
+
+Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
+
+- **HSRP** (lines measured on a 2911; failover not measured):
+  `pt_apply_hsrp(router="R1", interface="GigabitEthernet0/0", group=1, virtual_ip="192.168.1.254", priority=110)`,
+  same on R2 with `priority=100`; hosts `pt_host_ip_config(device="PC1", gateway="192.168.1.254")`.
+- **EtherChannel** (measured on a 2960-24TT), on both switches:
+  `pt_apply_etherchannel(switch="SW1", ports=["FastEthernet0/10","FastEthernet0/11"], group=1, mode="active", trunk=True)`
+  → `pt_fast_forward()` → `pt_cli(device="SW1", commands=["show etherchannel summary"])`.
+- **BGP, two AS** (lines measured; session not measured):
+  `pt_apply_bgp(router="R1", asn=65001, neighbors=[{"ip":"10.0.0.2","remote_as":65002}], networks=["192.168.1.0/24"])`,
+  mirror on R2 → `pt_cli(device="R1", commands=["show ip bgp summary"])`.
+- **QoS for voice** (measured, 2911 and 2811):
+  `pt_apply_qos(router="R1", interface="GigabitEthernet0/1", policy_name="WAN-OUT", classes=[{"name":"VOICE","match_protocol":"rtp","match_dscp":"ef","priority_kbps":512}])`
+  → `pt_read_qos(device="R1")`.
+- **CME** (measured end to end): `pt_add_device(name="CME", model="2811")`,
+  `pt_add_device(name="SW1", model="3560-24PS")` (PoE), `pt_add_device(name="PH1", model="7960")`;
+  `pt_add_link(device1="CME", port1="FastEthernet0/0", device2="SW1", port2="FastEthernet0/24")`,
+  `pt_add_link(device1="PH1", port1="Switch", device2="SW1", port2="FastEthernet0/1")` (PH2 on `FastEthernet0/2` the same way);
+  `pt_cli(device="CME", commands=["enable","configure terminal","interface FastEthernet0/0","ip address 10.10.10.1 255.255.255.0","no shutdown","end"])`;
+  `pt_apply_voice(router="CME", source_ip="10.10.10.1", extensions=["1001","1002"], dhcp_pool="VOICE", dhcp_network="10.10.10.0/24")`
+  (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
+  (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
+- **2811 network** (measured: OSPF FULL, leases): `pt_full_build(router_model="2811", routing="ospf")`.
+- **Wi-Fi AP** (SSID measured; MAC filter not measured): `pt_wireless_ap(device="AP1", ssid="LAB-A")`
+  (laptops only join "Default", so its clients drop);
+  `pt_wireless_ap(device="AP1", mac_filter=True, allow_listed=True, mac_list=["0001.63BE.8468"])`.
+  Judge association by `pt_host_command(device="LT1", command="ping 192.168.1.1")`, not the port.
+- **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
+  routers via `pt_plan_topology(dual_stack=True)`.
+- **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
+
+## What is NOT possible (do not try, say so)
+
+- **WPA/WEP on a wireless client**: `WirelessClientProcess.addProfile`/`setCurrentProfile*` always throw "invalid vector subscript" (GUI only).
+- **CME on a 2911**: `telephony-service` is status 2 even with the uck9 license + reload; use a 2811.
+- **IoT programs as files**: `FileManager` answers "File not exist" for every path.
+- **NetFlow flows**: the exporter manager has no flow getters; only the exporter is configured.
+- **QoS class names by API**: a class only says "PolicyMapQosClass"; names come from the running-config.
+
+## Common mistakes
+
+`slot="0/0"` is a string, never `0`. Cable `"cross"`, never `"crossover"`. `pt_delete_link` takes
+`interface_name`, `pt_save_project` takes `filename`. Never trust a config call that merely returned:
+check `verified`. Never sleep 30 s after cabling: `pt_fast_forward()`. Several IOS lines → `pt_cli`,
+not raw `enterCommand`. Raw JS: `ipc.network().getDevice("R1")` (no global `getDevice`), `getPorts()`
+returns strings, wrap everything in `try/catch`; `getProcess("Aaa")` and `PolicyMap.toString()` throw.
 
 ## Reference files: read on demand
 
 | Read | When |
 |---|---|
-| [reference/tools.md](reference/tools.md) | choosing a tool or its arguments: full catalog, advanced builds, recipes |
-| [reference/script-engine-api.md](reference/script-engine-api.md) | raw JS for `pt_send_raw`, installing expansion modules, plans too big for a tool parameter |
-| [reference/rough-edges.md](reference/rough-edges.md) | something behaves oddly: verified PT 9.0.1 rough edges and workarounds |
+| [reference/tools.md](reference/tools.md) | full catalog (96 tools) with arguments, advanced builds, more recipes |
+| [reference/script-engine-api.md](reference/script-engine-api.md) | raw JS for `pt_send_raw`, modules, plans too big for a parameter |
+| [reference/rough-edges.md](reference/rough-edges.md) | something behaves oddly: measured PT 9 traps and workarounds |
 
-The MCP also serves its full usage guide as the resource `pt://guide`.
-
-## Validation: read `plan.errors` before you deploy
-
-`pt_plan_topology` / `pt_full_build` return `errors[]` and `warnings[]`;
-`pt_validate_plan` returns the same as typed codes. **An empty `errors[]` is now
-meaningful** — it did not used to be. The validator only checked per-device facts,
-so a topology split into islands passed with `valid: true`, deployed, and failed
-silently. It now walks the graph.
-
-| Code | What it means | What to do |
-|---|---|---|
-| `TOPOLOGY_DISCONNECTED` | The cabled devices form more than one component — something has no path to the rest | Usually the hub ran out of ports (a 2911 has 3 Gigabit). Use a bigger model, add a module, or fewer routers. **Do not deploy**: the isolated part cannot route |
-| `OSPF_NO_NETWORKS` | An OSPF process with zero `network` statements | That router has no addressed, linked interface. Fix the links first |
-| `OSPF_INVALID_ROUTER_ID` | `router-id 0.0.0.0`, which IOS rejects | Same root cause as above |
-| `WIRELESS_AMBIGUOUS_ASSOCIATION` | **warning** — two or more APs share the default SSID | Not a blocker. Confirm with `pt_inspect_ports` which subnet each wireless host actually landed in |
-| `IP_CONFLICT` / `INVALID_IP_ADDRESS` | Duplicate or malformed address | Re-address |
-| `DHCP_GATEWAY_MISMATCH` | **warning** — the pool gateway is on no interface of that router | Check the pool against the router's interfaces |
-
-Wireless hosts are excluded from the connectivity graph on purpose: they carry no
-cable by design, so counting them as islands would flag every wireless topology
-as broken.
-
-## Common mistakes → corrections (do not repeat these)
-
-| ❌ Wrong | ✅ Right | Why |
-|---|---|---|
-| `getDevice("R1")` | `ipc.network().getDevice("R1")` (or `getDevices("")` to list) | no global `getDevice` → ReferenceError → freeze |
-| `d.getPorts().size()` / `.at(i)` / `.getName()` | `d.getPorts()[i]` (string array) | getPorts returns strings |
-| `getProcess("DhcpServerMain").getPoolCount()` | `getProcess("DhcpServerMain").getDhcpServerProcessByPortName("FastEthernet0").getPoolCount()` (or `pt_configure_dhcp_server`) | the pools live on the per-port process |
-| `pt_add_module(slot=0)` | `slot="0"` (string) | int slot silently fails (`===` compare) |
-| cable `"crossover"` | `"cross"` | alias works but `cross` is canonical |
-| invent model `"Cisco4500"` | `pt_list_devices` / `pt_get_device_details` first | use real catalog names |
-| invent module `"NM-4T"` | `pt_list_modules(router_model=…)` first | use real module names |
-| raw JS unwrapped | wrap in `try/catch` + `reportResult` | uncaught error freezes the bridge |
-| several IOS commands blind through raw `enterCommand` | `pt_cli` (waits for the prompt per command) | a typo hangs the console on a DNS lookup and everything typed after it is dropped |
-| `getProcess("Aaa")` | don't | throws `invalid string position` in PT 9.0.1 |
-
-## Cables, ports, IP conventions
-
-- **Cables (15)**: `straight, cross, roll, serial, fiber, console, phone, cable, coaxial, auto, wireless,
-  octal, cellular, usb, custom_io`. Omit `cable_type` in `pt_add_link` to infer (router↔router &
-  switch↔switch → `cross`; router↔switch, switch↔host → `straight`).
-- **Exact ports**: 2911 `GigabitEthernet0/0..0/2` but 1941/2901 only `0/0..0/1`;
-  ISR4321/4331 `GigabitEthernet0/0/0..`;
-  2960/3560 `FastEthernet0/1..0/24` + `GigabitEthernet0/1..0/2`; PC/Laptop/Server `FastEthernet0`;
-  HWIC-2T in `"0/x"` → `Serial0/x/0`,`Serial0/x/1`;
-  **Cloud-PT has 8 ports**: `Serial0..3`, `Modem4`, `Modem5`, `Ethernet6`, `Coaxial7`.
-  ⚠️ A cloud only *forwards* over its serial ports once frame relay is configured, and the MCP has no
-  tool for that. For a WAN core that actually passes traffic, link routers to each other with `/30`s and
-  hang the cloud off `Ethernet6` as an external stub.
-- **IP plan** (`pt_plan_topology`): LANs `/24` from `192.168.0.0`, gateway `.1`, hosts from `.2`;
-  router↔router `/30` from `10.0.0.0`; DHCP pool per LAN with `.1` excluded; routing
-  `static|ospf|eigrp|rip|none` (+ `floating_routes`, `ospf_process_id`, `eigrp_as`).
-
+The MCP also serves its usage guide as the resource `pt://guide`.
