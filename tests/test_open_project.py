@@ -45,24 +45,34 @@ def test_named_ok_is_opened():
     assert file_open_outcome(TARGET, {"ret": "eFileReturnOk", "file": ""})[0] is True
 
 
-def test_tool_reports_failure_and_does_not_reread():
+def _lab(tmp_path) -> str:
+    """A real .pkt on disk: the tool checks the file exists before asking PT."""
+    lab = tmp_path / "lab.pkt"
+    lab.write_bytes(b"pkt")
+    return str(lab.resolve()).replace("\\", "/")
+
+
+def test_tool_reports_failure_and_does_not_reread(tmp_path):
     ctx = FakeCtx(replies=[json.dumps({"ret": "eFileReturnBadBinary", "before": 3, "after": 3,
                                        "file": "C:/labs/old.pkt"})])
-    out = tools(live, ctx)["pt_open_project"](path=TARGET)
+    out = tools(live, ctx)["pt_open_project"](path=_lab(tmp_path))
     assert out.startswith("Not opened") and "BadBinary" in out
     assert len(ctx.sent) == 1
 
 
-def test_tool_rereads_the_canvas_after_opening():
-    ctx = FakeCtx(replies=[json.dumps({"ret": "0", "before": 3, "after": 0, "file": TARGET}), "7"])
-    out = tools(live, ctx)["pt_open_project"](path=TARGET)
+def test_tool_rereads_the_canvas_after_opening(tmp_path):
+    target = _lab(tmp_path)
+    ctx = FakeCtx(replies=[json.dumps({"ret": "0", "before": 3, "after": 0, "file": target}), "7"])
+    out = tools(live, ctx)["pt_open_project"](path=target)
     assert out.startswith("Project opened") and "3 before → 7 now" in out
     assert ctx.sent[1] == DEVICE_COUNT_JS
 
 
-def test_missing_file_is_an_error():
+def test_missing_file_is_an_error(tmp_path):
     ctx = FakeCtx(replies=["ERR:does not exist " + TARGET])
-    assert "does not exist" in tools(live, ctx)["pt_open_project"](path=TARGET)
+    out = tools(live, ctx)["pt_open_project"](path=str(tmp_path / "missing.pkt"))
+    assert out.startswith("Not opened") and "not found" in out
+    assert ctx.sent == []
 
 
 FAKE_PT = """

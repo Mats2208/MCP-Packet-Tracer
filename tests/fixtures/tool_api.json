@@ -1403,7 +1403,7 @@
   }
  },
  "pt_deploy": {
-  "description": "Deploys a plan to Packet Tracer: copies the script to the Windows\nclipboard, exports the configuration files, and generates\nstep-by-step instructions.\n\nUsage: after pt_full_build or pt_plan_topology, pass the plan JSON\nhere to prepare everything for Packet Tracer.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- project_name: project name\n- output_dir: output directory",
+  "description": "Deploys a plan to Packet Tracer: copies the script to the Windows\nclipboard, exports the configuration files, and generates\nstep-by-step instructions.\n\nUsage: after pt_full_build or pt_plan_topology, pass the plan JSON\nhere to prepare everything for Packet Tracer.\n\nParameters:\n- plan_json: plan JSON (output of pt_plan_topology or pt_full_build)\n- project_name: project name\n- output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);\n  a path that points elsewhere is reduced to a folder name there.",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -1624,7 +1624,7 @@
   }
  },
  "pt_export": {
-  "description": "Exports the plan to files: JS script, CLI configs and JSON.\n\nParameters:\n- plan_json: plan JSON\n- project_name: project name\n- output_dir: output directory",
+  "description": "Exports the plan to files: JS script, CLI configs and JSON.\n\nParameters:\n- plan_json: plan JSON\n- project_name: project name\n- output_dir: folder inside the MCP's working directory (PT_MCP_WORKDIR);\n  a path that points elsewhere is reduced to a folder name there.",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -2146,7 +2146,7 @@
   }
  },
  "pt_list_projects": {
-  "description": "Lists the saved projects.\n\nParameters:\n- output_dir: base projects directory",
+  "description": "Lists the saved projects.\n\nParameters:\n- output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -2192,7 +2192,7 @@
   }
  },
  "pt_load_project": {
-  "description": "Loads a saved project.\n\nParameters:\n- project_name: project name\n- output_dir: base projects directory",
+  "description": "Loads a saved project.\n\nParameters:\n- project_name: project name\n- output_dir: projects folder inside the MCP's working directory (PT_MCP_WORKDIR)",
   "inputSchema": {
    "properties": {
     "output_dir": {
@@ -2239,7 +2239,7 @@
   }
  },
  "pt_open_project": {
-  "description": "Opens a .pkt file in Packet Tracer.\n\nWARNING: it replaces the topology currently open. If it has unsaved\nchanges, save them first with pt_save_project.\n\nParameters:\n- path: full path to the .pkt file",
+  "description": "Opens a .pkt file in Packet Tracer.\n\nWARNING: it replaces the topology currently open. If it has unsaved\nchanges, save them first with pt_save_project.\n\nParameters:\n- path: full path to an existing .pkt file (any folder: opening the\n  user's own labs is the point). A relative path is looked up inside the\n  MCP's working directory and may not leave it.",
   "inputSchema": {
    "properties": {
     "path": {
@@ -2780,7 +2780,7 @@
   }
  },
  "pt_save_project": {
-  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder.\n- overwrite: replace an existing file (default False: an existing file is an error).",
+  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder. An absolute\n  path must be an existing folder (the user's choice of where labs live);\n  a relative one is a folder inside the MCP's working directory.\n- overwrite: replace an existing file (default False: an existing file is an error).",
   "inputSchema": {
    "properties": {
     "directory": {

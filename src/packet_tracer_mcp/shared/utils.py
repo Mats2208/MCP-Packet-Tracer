@@ -135,6 +135,63 @@ def resolve_within(base: Path, *parts: str) -> Path:
     return candidate
 
 
+def workdir_subdir(name: str, fallback: str) -> Path:
+    """A one-level folder under the MCP's working directory, never outside it.
+
+    `server.main()` chdirs into `server.workdir()` (`PT_MCP_WORKDIR`), so the
+    current directory IS the working directory at run time. Every tool that takes
+    an `output_dir` goes through here: "../x", "C:/Windows" or "/etc" become a
+    harmless folder name inside it.
+    """
+    return resolve_within(Path.cwd(), safe_name_component(name, fallback=fallback))
+
+
+def resolve_save_dir(directory: str) -> str:
+    """The folder pt_save_project hands to PT ("" = PT's own save folder).
+
+    An absolute path is the user's choice of where the lab lives (Documents, a
+    course folder), so it is allowed, but it must be an existing directory: nothing
+    is created outside the working directory. A relative path is a folder inside
+    the MCP's working directory (PT_MCP_WORKDIR), sanitised and created there.
+    Raises ValueError when the folder is unusable.
+    """
+    raw = directory.strip()
+    if not raw:
+        return ""
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        path = path.resolve()
+        if not path.is_dir():
+            raise ValueError(f"directory does not exist: {path}")
+        return str(path)
+    target = workdir_subdir(raw, "projects")
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
+
+
+def resolve_open_path(path: str) -> Path:
+    """The .pkt file pt_open_project opens, checked on this machine's disk first.
+
+    Opening a lab the user already has is the point of the tool, so an absolute
+    path anywhere is allowed; it must end in .pkt and be an existing file. A
+    relative path is resolved inside the MCP's working directory and may not
+    leave it. Raises ValueError otherwise.
+    """
+    raw = path.strip()
+    if not raw:
+        raise ValueError("path is empty")
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        candidate = candidate.resolve()
+    else:
+        candidate = resolve_within(Path.cwd(), raw)
+    if candidate.suffix.lower() != ".pkt":
+        raise ValueError("The file must end in .pkt")
+    if not candidate.is_file():
+        raise ValueError(f"file not found: {candidate}")
+    return candidate
+
+
 def prefix_to_mask(prefix: int) -> str:
     """Converts a CIDR prefix to a dotted decimal mask."""
     if prefix in PREFIX_TO_MASK:

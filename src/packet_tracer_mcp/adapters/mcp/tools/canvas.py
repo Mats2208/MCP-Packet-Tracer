@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
-from ....shared.utils import safe_name_component, resolve_within
+from ....shared.utils import safe_name_component, resolve_within, workdir_subdir
 from ....domain.services.canvas import CanvasImageError, decode_pt_image, normalize_format
 from ....shared.utils import reply_json
 
@@ -77,7 +77,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         safe = safe_name_component(filename, fallback="topology")
         ext = "jpg" if image_fmt in ("JPG", "JPEG") else image_fmt.lower()
         try:
-            base = Path(safe_name_component(output_dir, fallback="projects"))
+            base = workdir_subdir(output_dir, fallback="projects")
             base.mkdir(parents=True, exist_ok=True)
             target = resolve_within(base, f"{safe}.{ext}")
             target.write_bytes(blob)

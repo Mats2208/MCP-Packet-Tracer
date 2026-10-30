@@ -32,7 +32,7 @@ from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exporte
     console_ping_arm_js, console_ping_poll_js,
 )
 from ....shared.enums import RoutingProtocol, TopologyTemplate
-from ....shared.utils import safe_name_component, resolve_within, classify_ping as _classify_ping, name_collisions, read_plan_source
+from ....shared.utils import safe_name_component, resolve_within, resolve_open_path, resolve_save_dir, classify_ping as _classify_ping, name_collisions, read_plan_source
 
 
 # Names of the devices on the canvas, as a JSON array.
@@ -575,12 +575,18 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         Parameters:
         - filename: file name (.pkt is added if missing)
-        - directory: destination folder. Empty = PT's save folder.
+        - directory: destination folder. Empty = PT's save folder. An absolute
+          path must be an existing folder (the user's choice of where labs live);
+          a relative one is a folder inside the MCP's working directory.
         - overwrite: replace an existing file (default False: an existing file is an error).
         """
         err = _check_bridge()
         if err:
             return err
+        try:
+            directory = resolve_save_dir(directory)
+        except (ValueError, OSError) as exc:
+            return f"Not saved: {exc}"
 
         name = safe_name_component(filename.strip(), "topology")
         if not name.lower().endswith(".pkt"):
@@ -620,15 +626,19 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         changes, save them first with pt_save_project.
 
         Parameters:
-        - path: full path to the .pkt file
+        - path: full path to an existing .pkt file (any folder: opening the
+          user's own labs is the point). A relative path is looked up inside the
+          MCP's working directory and may not leave it.
         """
         err = _check_bridge()
         if err:
             return err
 
-        target = path.strip().replace("\\", "/")
-        if not target.lower().endswith(".pkt"):
-            return "The file must end in .pkt"
+        try:
+            target = str(resolve_open_path(path)).replace("\\", "/")
+        except (ValueError, OSError) as exc:
+            msg = str(exc)
+            return msg if msg.startswith("The file") else f"Not opened: {msg}"
 
         result = _bridge_send_and_wait(file_open_js(target), timeout=30.0)
         if result is None:
