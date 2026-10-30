@@ -721,7 +721,7 @@
   }
  },
  "pt_apply_netflow": {
-  "description": "Configures a NetFlow exporter on a PT device.\n\nUnlike the rest of the advanced features, NetFlow does NOT go through CLI: it is\nconfigured directly and read back to verify it was applied. If\nthe name already exists, it is reconfigured instead of duplicated.\n\nParameters:\n- device: router where the exporter lives.\n- name: exporter name (e.g. \"COLLECTOR-1\").\n- destination_ip: the collector's IP. Without it the exporter is inert.\n- udp_port: the collector's UDP port (default 2055).\n- version: 9 (templates, recommended) or 5 (fixed format).\n- source_port: source interface; empty = PT picks it.\n- monitors: names of the monitors to associate.\n- remove: if True, deletes the exporter `name` instead of creating it.\n- dry_run: if True, only validates and returns the payload without touching PT.\n\nExample: export to a collector at 192.168.0.50:\n  pt_apply_netflow(device=\"R1\", name=\"COLLECTOR-1\", destination_ip=\"192.168.0.50\")",
+  "description": "Configures a NetFlow exporter on a PT device.\n\nUnlike the rest of the advanced features, NetFlow does NOT go through CLI: it is\nconfigured directly and read back to verify it was applied. If\nthe name already exists, it is reconfigured instead of duplicated.\nThe exported FLOWS are not read: no way to read them was measured on PT 9\n(the exporter manager has no exporter or monitor count either).\n\nParameters:\n- device: router where the exporter lives.\n- name: exporter name (e.g. \"COLLECTOR-1\").\n- destination_ip: the collector's IP. Without it the exporter is inert.\n- udp_port: the collector's UDP port (default 2055).\n- version: 9 (templates, recommended) or 5 (fixed format).\n- source_port: source interface; empty = PT picks it.\n- monitors: names of the monitors to associate.\n- remove: if True, deletes the exporter `name` instead of creating it.\n- dry_run: if True, only validates and returns the payload without touching PT.\n\nExample: export to a collector at 192.168.0.50:\n  pt_apply_netflow(device=\"R1\", name=\"COLLECTOR-1\", destination_ip=\"192.168.0.50\")",
   "inputSchema": {
    "properties": {
     "destination_ip": {
@@ -1382,7 +1382,7 @@
   }
  },
  "pt_delete_link": {
-  "description": "Delete the link connected to a specific interface on a device in PT.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
+  "description": "Delete the link connected to a specific interface on a device in PT.\nReads both ends back: `verified` is true only when this port AND the\nfar-end port no longer have a link. Reports the far end and the cable.\n\nParameters:\n- device_name: device name (e.g. \"R1\")\n- interface_name: interface name (e.g. \"GigabitEthernet0/0\", \"FastEthernet0/1\")",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -1650,7 +1650,7 @@
   }
  },
  "pt_export_topology": {
-  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns JSON with devices (name, model, x/y position, interfaces with IPs)\nand links (endpoints, ports, cable type). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
+  "description": "Export a detailed snapshot of the full topology currently in Packet Tracer.\nReturns devices (name, model, x/y position, interfaces with IPs) and links\n(endpoints, ports, and the REAL cable type PT reports for each link:\nstraight, cross, serial, fiber...). This gives a complete picture of\nwhat is deployed so the LLM can reason about the topology.",
   "inputSchema": {
    "properties": {},
    "title": "pt_export_topologyArguments",
@@ -2075,7 +2075,7 @@
   }
  },
  "pt_inspect_ports": {
-  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode and applied\nACLs. Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
+  "description": "Real state of each port of a live device in PT.\n\nReads the device, not the plan: line/protocol status, MAC, IP/mask,\nduplex, bandwidth, MTU, delay, CDP, DHCP client, NAT mode, applied\nACLs and, on a cabled port, the real cable type (straight, cross,\nserial...) and the far end (\"SW1:FastEthernet0/1\"). Flags anomalies (cable connected with the port down, line up with\nprotocol down).\n\nIt is the DETAIL view of one device; for the sweep of the whole\ntopology (down links, duplicate IPs) use pt_health_check.\n\nParameters:\n- device: device name; empty = all (verbose on large topologies).\n- only_linked: if True, returns only ports with a cable connected.\n\nExample: see why one of R1's links won't come up:\n  pt_inspect_ports(device=\"R1\", only_linked=True)",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2213,7 +2213,7 @@
   }
  },
  "pt_move_device": {
-  "description": "Move a device to new coordinates on the Packet Tracer canvas.\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
+  "description": "Move a device to new coordinates on the Packet Tracer canvas.\nReads the position back: `verified` is true when PT reports exactly (x, y).\n\nParameters:\n- device_name: device name\n- x: X coordinate (logical view, e.g. 100-800)\n- y: Y coordinate (logical view, e.g. 100-600)",
   "inputSchema": {
    "properties": {
     "device_name": {
@@ -2373,7 +2373,7 @@
   }
  },
  "pt_query_topology": {
-  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology.\nRequires bridge connected (use pt_bridge_status to verify).",
+  "description": "Query current devices in Packet Tracer.\nReturns name, model, and port/IP info for each device in the active topology,\nthen every link with its real cable type (read from the link itself).\nRequires bridge connected (use pt_bridge_status to verify).",
   "inputSchema": {
    "properties": {},
    "title": "pt_query_topologyArguments",
@@ -2423,7 +2423,7 @@
   }
  },
  "pt_read_device_panel": {
-  "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
+  "description": "Reads what a device's tabs show, in one go (read-only): model, power,\nwhether it is a host, DHCP, the host's default gateway, per port IP/mask/MAC/state/IPv6/firewall/\nbandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,\nSYSLOG, EMAIL, NTP) are on.",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2435,6 +2435,20 @@
     "device"
    ],
    "title": "pt_read_device_panelArguments",
+   "type": "object"
+  }
+ },
+ "pt_read_dhcp_leases": {
+  "description": "Reads the REAL DHCP leases a server handed out: per pool, each lease's\nIP, MAC, port and lease time.\n\nRouter pools (`ip dhcp pool`) come from its DhcpServerProcess (measured\non a 2911); a Server-PT's from each port's DHCP process. A pool whose\nleases this PT build cannot read says `lease_api: false`: unknown, not\nzero. Use it to check that hosts got their address from the right pool.\n\nParameters:\n- device: router or server name; empty = every DHCP server.\n\nExample: pt_read_dhcp_leases(device=\"R1\")",
+  "inputSchema": {
+   "properties": {
+    "device": {
+     "default": "",
+     "title": "Device",
+     "type": "string"
+    }
+   },
+   "title": "pt_read_dhcp_leasesArguments",
    "type": "object"
   }
  },
@@ -2510,7 +2524,7 @@
   }
  },
  "pt_read_qos": {
-  "description": "Reads a device's REAL QoS configuration: class-maps and policy-maps.\n\nRead only: QoS cannot be created programmatically in PT, so to\nCONFIGURE it you send IOS CLI with pt_send_raw\n(`configureIosDevice`). This tool is for checking that it was applied.\n\nReturns, per class-map, its match type and CLI representation; per\npolicy-map, how many classes it has and which features it uses (bandwidth, priority,\nshaping, fair-queue).\n\nParameters:\n- device: router name in PT.\n\nExample: pt_read_qos(device=\"R1\")",
+  "description": "Reads a device's REAL QoS configuration: class-maps and policy-maps.\n\nRead only (PT's API cannot create class/policy-maps): to CONFIGURE QoS\nuse pt_apply_qos. This tool checks that it was applied.\n\nReturns, per class-map, its match type and CLI; per policy-map, its\nclasses in order, each with its name, priority (kbps), bandwidth (kbps),\nfair-queue and whether it is class-default. PT does not give a class\nits name, so names come from the running-config, matched by position.\n\nParameters:\n- device: router name in PT.\n\nExample: pt_read_qos(device=\"R1\")",
   "inputSchema": {
    "properties": {
     "device": {
@@ -2745,7 +2759,7 @@
   }
  },
  "pt_rename_device": {
-  "description": "Rename a device in the active Packet Tracer topology.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
+  "description": "Rename a device in the active Packet Tracer topology.\nReads the result back: `verified` is true only when the new name resolves\nto the device and the old name no longer does.\n\nParameters:\n- old_name: current device name\n- new_name: new name to assign",
   "inputSchema": {
    "properties": {
     "new_name": {
@@ -3142,7 +3156,7 @@
   }
  },
  "pt_server_service": {
-  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
+  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received (`entries`) and the\nnewest 200 as PT serializes them (`messages`; fields not mapped).",
   "inputSchema": {
    "properties": {
     "capture": {

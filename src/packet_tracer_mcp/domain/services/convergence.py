@@ -478,3 +478,51 @@ def vlans_report(dev: dict) -> dict:
             "vlan_interfaces": dev.get("vlan_interfaces"), "vlans": vlans,
             "trunk_ports": trunks, "port_security": secured,
             "ports_in_missing_vlan": orphans, "summary": summary}
+
+
+# ----------------------------------------------------------------------------
+# DHCP leases (pt_read_dhcp_leases)
+# ----------------------------------------------------------------------------
+
+def normalize_lease(raw: dict) -> dict:
+    """{ipAddress, leaseTime, macAddress, port} (measured on a 2911) -> snake_case."""
+    return {"ip": raw.get("ipAddress"), "mac": raw.get("macAddress"),
+            "port": raw.get("port"), "lease_time": _int(raw.get("leaseTime"))}
+
+
+def dhcp_leases_report(devices: list[dict]) -> dict:
+    """Pools and their leases per DHCP server; flags pools whose leases are unreadable."""
+    out = []
+    for d in devices:
+        pools, seen = [], set()
+        for p in d.get("pools") or []:
+            leases = []
+            for raw in p.get("leases") or []:
+                if not isinstance(raw, dict):
+                    continue
+                lease = normalize_lease(raw)
+                # A Server-PT answers per port: the same pool can come back twice.
+                key = (p.get("name"), lease["ip"], lease["mac"])
+                if key not in seen:
+                    seen.add(key)
+                    leases.append(lease)
+            pools.append({"pool": p.get("name"), "server_port": p.get("port"),
+                          "lease_api": bool(p.get("lease_api")),
+                          "truncated": bool(p.get("truncated")), "leases": leases})
+        out.append({"device": d.get("name"), "model": d.get("model", ""),
+                    "source": d.get("source"), "pools": pools,
+                    "leases": sum(len(p["leases"]) for p in pools)})
+    # A sweep lists only the devices that serve DHCP; one named device is kept as is.
+    if len(out) > 1:
+        out = [d for d in out if d["pools"]]
+    blind = [f"{d['device']}/{p['pool']}" for d in out for p in d["pools"] if not p["lease_api"]]
+    if not any(d["pools"] for d in out):
+        summary = "No DHCP pool found."
+    else:
+        total = sum(d["leases"] for d in out)
+        summary = f"{total} lease(s): " + ", ".join(
+            f"{d['device']} {d['leases']} in {len(d['pools'])} pool(s)" for d in out if d["pools"])
+    if blind:
+        summary += (f" ⚠ {len(blind)} pool(s) without a lease API in this PT build "
+                    f"({', '.join(blind)}): their leases are unknown, not zero.")
+    return {"devices": out, "summary": summary}

@@ -1,4 +1,4 @@
-"""Convergence reads: routes, OSPF, ARP, CDP, STP, ACL, NAT and MAC tables from PT's processes."""
+"""Convergence reads: routes, OSPF, ARP, CDP, STP, ACL, NAT, MAC tables and DHCP leases."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ from typing import Callable
 
 from mcp.server.fastmcp import FastMCP
 from ....domain.services.convergence import (
-    acl_report, arp_report, cdp_report, mac_table_report, nat_report, ospf_report,
+    acl_report, arp_report, cdp_report, dhcp_leases_report, mac_table_report, nat_report,
+    ospf_report,
     routes_report, select_devices, stp_report,
 )
 from ....infrastructure.generator.state_js import (
-    acl_js, arp_js, cdp_js, mac_table_js, nat_js, ospf_js, routes_js, stp_js,
+    acl_js, arp_js, cdp_js, dhcp_leases_js, mac_table_js, nat_js, ospf_js, routes_js, stp_js,
 )
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import reply_json
@@ -168,3 +169,22 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         """
         return _read(mac_table_js(switch.strip(), vlan), switch, "a MAC table",
                      mac_table_report)
+
+    @mcp.tool()
+    def pt_read_dhcp_leases(device: str = "") -> str:
+        """
+        Reads the REAL DHCP leases a server handed out: per pool, each lease's
+        IP, MAC, port and lease time.
+
+        Router pools (`ip dhcp pool`) come from its DhcpServerProcess (measured
+        on a 2911); a Server-PT's from each port's DHCP process. A pool whose
+        leases this PT build cannot read says `lease_api: false`: unknown, not
+        zero. Use it to check that hosts got their address from the right pool.
+
+        Parameters:
+        - device: router or server name; empty = every DHCP server.
+
+        Example: pt_read_dhcp_leases(device="R1")
+        """
+        return _read(dhcp_leases_js(device.strip()), device, "a DHCP server",
+                     dhcp_leases_report)

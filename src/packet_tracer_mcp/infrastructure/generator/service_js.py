@@ -237,6 +237,9 @@ def server_http_js(
 # TFTP / FTP / SYSLOG / EMAIL
 # ---------------------------------------------------------------------------
 
+# The newest SYSLOG messages pt_server_service returns (`entries` is always the total).
+SYSLOG_MAX_ENTRIES = 200
+
 SIMPLE_SERVICES = {
     # name → (process, enable setter, enable getter)
     "tftp": ("TftpServer", "setEnabled", "isEnabled"),
@@ -292,7 +295,15 @@ def server_service_js(
         "if(c.service==='ftp'){var mm=s.getFtpUserAccountManager();info.users=[];"
         "for(var k=0;k<mm.getUsersCount();k++){info.users.push(String(mm.getUsernameAt(k)));}}"
         "if(c.service==='email'){info.accounts=String(s.getAllEmailAcctAsStrings());}"
-        "if(c.service==='syslog'){try{info.entries=s.getAllEntries().length;}catch(e){info.entries=null;}}"
+        # getAllEntries() is an Array (measured on PT 9); its entries' fields were
+        # never seen, so each one is sent as PT serializes it (JSON, else String),
+        # the newest SYSLOG_MAX_ENTRIES only.
+        "if(c.service==='syslog'){info.entries=null;info.messages=[];try{var all=s.getAllEntries();"
+        "info.entries=all.length;"
+        f"for(var q=Math.max(0,all.length-{SYSLOG_MAX_ENTRIES});q<all.length;q++){{var t=null;"
+        "try{t=JSON.stringify(all[q]);}catch(e){}"
+        "if(t===undefined||t===null||t==='{}'){try{t=String(all[q]);}catch(e){t=null;}}"
+        "info.messages.push(t);}}catch(e){}}"
         "reportResult(JSON.stringify(info));"
         + _TAIL
     )

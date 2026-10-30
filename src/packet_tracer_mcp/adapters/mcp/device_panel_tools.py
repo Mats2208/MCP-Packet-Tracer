@@ -330,6 +330,7 @@ def register_device_panel_tools(
             return error
         notes: list[str] = []
         state = data.get("state") or {}
+        gw_now = data.get("gateway")
         lease: bool | None = None
         if mode == "dhcp" and wait_dhcp_s > 0:
             stale = stale_dhcp_ip(data.get("before"))
@@ -339,6 +340,7 @@ def register_device_panel_tools(
                 again, _ = ps.call(port_state_js(device, data["port"]), device, 8.0)
                 if again:
                     state = again.get("state") or state
+                    gw_now = again.get("gateway", gw_now)
             lease = is_new_lease(state, stale)
             if not lease and stale and state.get("ip") == stale:
                 notes.append(
@@ -367,12 +369,17 @@ def register_device_panel_tools(
             "ipv6": state.get("ipv6"),
             "link_local": state.get("link_local"),
             "ipv6_addresses": state.get("ipv6_addresses"),
+            "gateway": gw_now,
             "summary": f"{device}/{data.get('port')}: {', '.join(data.get('applied', []))} → "
                        f"{state.get('ip')}/{state.get('mask')}"
                        + (" (DHCP requested, no lease yet)" if lease is False
                           else " (DHCP)" if state.get("dhcp") else ""),
-            "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the gateway and DNS.",
+            "verify": f"pt_host_command('{device}', 'ipconfig /all') shows the DNS too.",
         }
+        # The gateway is read back from HostIpProcess (measured on PT 9).
+        want_gw = gateway.strip()
+        if want_gw and mode != "dhcp" and gw_now is not None and gw_now != want_gw:
+            notes.append(f"Gateway: asked for {want_gw} but the host reads {gw_now}.")
         if lease is not None:
             out["lease"] = lease
         if v6:
@@ -388,7 +395,7 @@ def register_device_panel_tools(
     def pt_read_device_panel(device: str) -> str:
         """
         Reads what a device's tabs show, in one go (read-only): model, power,
-        whether it is a host, DHCP, per port IP/mask/MAC/state/IPv6/firewall/
+        whether it is a host, DHCP, the host's default gateway, per port IP/mask/MAC/state/IPv6/firewall/
         bandwidth, and on servers which services (DHCP, DNS, HTTP, TFTP, FTP,
         SYSLOG, EMAIL, NTP) are on.
         """
