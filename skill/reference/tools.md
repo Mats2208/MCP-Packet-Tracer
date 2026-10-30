@@ -60,18 +60,24 @@ class-maps and policy-maps with IOS CLI and use this to verify.
 (`forward`/`back`/`reset`), `pt_read_packet_trace(limit, device, include_decisions)` — the event list
 plus PT's own per-OSI-layer explanation of each decision (same text as the GUI's PDU Details pane).
 Workflow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`) → `pt_read_packet_trace`.
-There is **no `pt_send_pdu`**: PT does not let an extension originate a packet the way the GUI's
-*Add Simple PDU* button does. Generate traffic with a real ping instead.
+`pt_send_pdu(source, destination, simulation=True, steps=0)` is the GUI's *Add Simple PDU*
+(`getUserCreatedPDU().addSimplePdu`: 0 added, 30 destination missing, other codes raw); with
+`steps > 0` it steps the simulation and returns the trace. `pt_fast_forward()` is Realtime's
+*Fast Forward Time*: STP converges at once (the deploy and `pt_verify_connectivity` use it).
 **Device panel (CLI / Desktop / Services, live):** `pt_cli(device, commands)` types IOS commands
 in the router's real CLI tab one at a time, waiting for the prompt, and marks each `ok` / `ERROR` /
 `UNKNOWN COMMAND` / `WAITING FOR ANSWER` / `TIMEOUT`; `pt_host_command(host, command, inputs)` is the
 PC's Desktop › Command Prompt (ping, ipconfig, tracert, nslookup, telnet/ssh); `pt_terminal(pc,
 commands)` types on the router at the other end of the PC's console cable. `pt_host_ip_config`
-(static/DHCP/gateway/DNS/IPv6 auto), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
+(static/DHCP/gateway/DNS/IPv6 auto or static `ipv6_address="2001:db8::10/64"`), `pt_host_firewall`, `pt_web_browser(host, url)` (page as text),
 `pt_email_client`. Server-PT: `pt_server_dhcp` (create/edit/delete pools, exclusions, on/off),
 `pt_server_dns` (A/CNAME add/remove, reports `stored` per record), `pt_server_http` (pages, HTTP/HTTPS; refuses to re-enable or write pages while HTTP and HTTPS are
 both off, see rough-edges),
-`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts).
+`pt_server_service` (TFTP/FTP/SYSLOG/EMAIL toggles, FTP users, email accounts, EMAIL `domain` and
+`smtp`/`pop3` on/off, read back).
+`pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list, reset_associations,
+dry_run)`: an AccessPoint-PT's SSID, SSID broadcast and MAC filter, applied and read back
+(`WirelessServerProcess`). WPA/WEP are not set: the client would need a profile, and that API is broken.
 `pt_read_device_panel(device)` reads every tab at once (read-only).
 **UI mode:** `pt_ui_mode("headless"|"ui"|"status")` — headless (default) does everything through the
 API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
@@ -85,14 +91,15 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
   trunk uplink, router `.1q` subinterfaces, one `/24` + DHCP pool per VLAN. 2960 omits trunk
   `encapsulation` (dot1q-only); 3560 emits it.
 - **IPv6 dual-stack:** `pt_plan_topology(dual_stack=True)` → routers get `ipv6 address` via CLI +
-  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). Static host
-  IPv6 is NOT settable via the PT API (`addIpv6Address` fails on HostPort) — SLAAC is the path.
+  `ipv6 unicast-routing`; hosts use **SLAAC** (`configurePcIpv6` = enable + auto-config). A static
+  host IPv6 is set afterwards with `pt_host_ip_config(host, ipv6_address="2001:db8:0:1::10/64")`
+  (`port.addIpv6Address(addr, prefix, 0, false)`, measured on PT 9.0; read back via `getIpv6Addresses()`).
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
   → `Wireless0`, and adds **one `AccessPoint-PT` per LAN**, each wired to that LAN's own switch.
   ⚠️ **Wireless addressing is NOT deterministic.** Laptops auto-associate on the default SSID and
-  PT exposes **no SSID API** (verified: neither the AP nor its port has `setSsid`), so with more
-  than one AP a laptop can associate to *any* of them and take a DHCP lease from **another LAN's
-  pool**. Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
+  the client side has **no working profile API** (`WirelessClientProcess.addProfile` throws), so with
+  more than one AP a laptop can associate to *any* of them and take a DHCP lease from **another
+  LAN's pool**. The AP side *is* settable: `pt_wireless_ap` renames the SSID (clients drop off it). Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
   the LAN-1 AP and got `192.168.0.13`; only with that AP powered off did it take `192.168.4.25`.
   The planner now emits a `WIRELESS_AMBIGUOUS_ASSOCIATION` **warning** when ≥2 APs coexist.
   Always confirm with `pt_inspect_ports`; for deterministic addressing use `wireless_laptops=False`.

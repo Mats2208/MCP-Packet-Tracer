@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **79 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **82 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -83,14 +83,15 @@ up in the device's real CLI tab, so the user can watch or take over at any time.
 | `pt_cli` | CLI tab (router/switch) | Type IOS commands one at a time, waiting for the prompt. Each comes back `ok`, `ERROR`, `unknown command` (IOS took it as a hostname; the DNS lookup is aborted), `waiting for an answer` or `timeout`. Presses Enter on `[confirm]` and `Destination filename [..]?`; `[yes/no]` and `Password:` are answered by the next command. A freshly deployed router is primed automatically. |
 | `pt_host_command` | Desktop › Command Prompt | `ping`, `ipconfig`, `tracert`, `arp -a`, `nslookup`, `telnet`/`ssh` (answers via `inputs`). |
 | `pt_terminal` | PC Desktop › Terminal | Find the router at the other end of the PC's console cable and type on its console, as from the PC's Terminal app. |
-| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig. |
+| `pt_host_ip_config` | Desktop › IP Configuration | Static IP or DHCP (waits for the lease), mask (`24` or dotted), gateway, DNS, IPv6 autoconfig or a static IPv6 (`ipv6_address="2001:db8::10/64"`, read back). |
 | `pt_host_firewall` | Desktop › Firewall | Inbound IPv4/IPv6 firewall on or off. |
 | `pt_web_browser` | Desktop › Web Browser | Open a URL and return the page as text; in UI mode the window's own browser navigates. |
 | `pt_email_client` | Desktop › Email | Configure the account, send, or ask the POP3 server for mail. |
 | `pt_server_dhcp` | Services › DHCP | Create, edit or delete pools, exclude ranges, switch the service on/off. |
 | `pt_server_dns` | Services › DNS | Add or remove A and CNAME records, then confirm each one is stored. |
 | `pt_server_http` | Services › HTTP | Replace existing pages (it cannot create new ones), switch HTTP/HTTPS. Refuses to turn either back on or write pages while both are off (PT 9.0.0 crashes); turn one on in the GUI first. |
-| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts. |
+| `pt_server_service` | Services › TFTP/FTP/SYSLOG/EMAIL | Toggle the service; FTP users with permissions; email accounts; EMAIL's Domain Name and SMTP/POP3 on/off, read back. |
+| `pt_wireless_ap` | AccessPoint-PT Config › Port 1 | SSID, SSID broadcast, MAC filter (allow or deny the listed MACs), applied and read back; resets associations so clients re-associate. No WPA/WEP: the client side has no working profile API. |
 | `pt_read_device_panel` | all tabs, read-only | Model, power, per-port IP/MAC/state/IPv6/firewall/bandwidth, which server services are on. |
 
 ### Headless or UI mode
@@ -252,6 +253,8 @@ them in real time, which is what makes a step-by-step trace possible.
 | `pt_simulation_mode` | Switch between Realtime and Simulation. |
 | `pt_simulation_step` | Advance, rewind or reset the simulation (`forward` / `back` / `reset`). |
 | `pt_read_packet_trace` | Read the event list: per frame the device, ingress/egress port, source, destination, traffic type and outcome — **plus PT's own per-OSI-layer explanation** of what the device decided and why. |
+| `pt_send_pdu` | The GUI's *Add Simple PDU*: an ICMP echo between two devices. In Simulation it waits in the event list; with `steps > 0` it is stepped and the trace comes back in the same reply. |
+| `pt_fast_forward` | Realtime's *Fast Forward Time*: STP converges at once, so a link cabled moments ago answers a ping right away. The deploy and `pt_verify_connectivity` already use it. |
 
 !!! tip "`pt_read_packet_trace` answers *why*, not just *what*"
     The decision log is the same text Packet Tracer shows in its **PDU Details**
@@ -263,10 +266,12 @@ them in real time, which is what makes a step-by-step trace possible.
           send an ARP request for that IP address and buffers this packet.
     ```
 
-!!! warning "There is no `pt_send_pdu`"
-    Packet Tracer does not let an extension originate a packet the way the GUI's
-    *Add Simple PDU* button does. Generate traffic the way a user would —
-    `pt_verify_connectivity` runs a real ping — and then read the trace.
+!!! tip "`pt_send_pdu` is the GUI's *Add Simple PDU*"
+    It calls the same `addSimplePdu(source, destination)` the button does (0 = added,
+    30 = the destination does not exist; any other code is returned as is). The
+    first PDU between two devices can die at a router waiting on ARP, exactly like
+    the first ping: send it again. `pt_verify_connectivity` remains the way to run a
+    real ping from a device's console.
 
 !!! warning "`pt_audit_security` never returns credentials"
     Passwords and hashes do not leave the device. The reader classifies each

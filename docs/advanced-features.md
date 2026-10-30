@@ -54,9 +54,10 @@ pt_full_build(routers=2, dual_stack=True)
 - **Hosts** use **SLAAC** — they auto-configure from the router's Router Advertisements
   (`configurePcIpv6` enables IPv6 + address auto-config).
 
-!!! warning "Static host IPv6 is not available"
-    Packet Tracer's Script Engine rejects `addIpv6Address` on host ports, so end devices use
-    SLAAC rather than a hardcoded address. Routers carry the explicit `ipv6 address`.
+!!! note "Static host IPv6 is set after the build"
+    The plan gives hosts SLAAC. A fixed address is set per host with
+    `pt_host_ip_config(host, ipv6_address="2001:db8:0:1::10/64")`, which calls the port's
+    `addIpv6Address(address, prefix, 0, false)` and reads `getIpv6Addresses()` back.
 
 ## Wireless laptops
 
@@ -69,14 +70,16 @@ pt_full_build(laptops_per_lan=2, wireless_laptops=True)
 - Each laptop's wired NIC is swapped for a **wireless card** (`PT-LAPTOP-NM-1W` → `Wireless0`).
 - An **Access Point** is added and wired to the switch; laptops **auto-associate** on the
   default SSID. One AP is created **per LAN**, wired to that LAN's switch. PT's logical view
-  has global RF range and exposes no SSID API, so association is not proximity-based: a
+  has global RF range and clients have no working profile API, so association is not proximity-based: a
   wireless host may associate to any AP and get a lease from another LAN's pool. The plan
   warns with `WIRELESS_AMBIGUOUS_ASSOCIATION`; verify with `pt_inspect_ports`.
 - Wireless hosts pull a DHCP lease over the air, landing on the same LAN as the wired PCs.
 
-!!! note "AP SSID / WPA2 is GUI-only"
-    Packet Tracer does not expose Access-Point SSID / security through its Script Engine, so
-    custom SSID/WPA2 must be set in the AP's GUI. The default-SSID association works out of the box.
+!!! note "AP SSID and MAC filter: `pt_wireless_ap`; WPA2 is GUI-only"
+    `pt_wireless_ap` sets an Access Point's SSID, SSID broadcast and MAC filter through
+    `WirelessServerProcess` and reads them back. Renaming the SSID drops the AP's clients (they
+    only join "Default"). WPA/WEP are not automated: each client would need a matching profile,
+    and `WirelessClientProcess.addProfile` is broken on PT 9.0.1, so set security in the GUI.
 
 ## Layer-2 security & device hardening
 

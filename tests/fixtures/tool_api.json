@@ -1144,7 +1144,7 @@
   }
  },
  "pt_email_client": {
-  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe EMAIL service's \"Domain Name\" has no API: set it in the server's\nwindow (pt_ui_open(server, tab=\"Services\", section=\"EMAIL\")).",
+  "description": "A host's Desktop > Email.\n\n- action=\"configure\": name, address (alice@lab.com), username, password,\n  smtp_server, pop3_server (IP or name of the Server running EMAIL).\n- action=\"send\": to, subject, body (uses the configured account).\n- action=\"receive\": asks the POP3 server for mail (it shows in the\n  window; PT does not expose the mailbox through the API).\nServer accounts are created with pt_server_service(service=\"email\").\nThe server's Domain Name and SMTP/POP3 switches are set with\npt_server_service(server, \"email\", domain=..., smtp=..., pop3=...).",
   "inputSchema": {
    "properties": {
     "action": {
@@ -1332,6 +1332,14 @@
   "inputSchema": {
    "properties": {},
    "title": "pt_export_topologyArguments",
+   "type": "object"
+  }
+ },
+ "pt_fast_forward": {
+  "description": "Realtime's \"Fast Forward Time\" button: moves PT's clock ahead at once.\n\nUse it after cabling or changing switch links: STP needs ~30 s to put a\nnew port in forwarding, and fast-forwarding gets there immediately, so a\nping right after it works (measured on PT 9.0). Realtime only (in\nSimulation use pt_simulation_step). The network is not reset.\npt_live_deploy and pt_verify_connectivity already do this themselves.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_fast_forwardArguments",
    "type": "object"
   }
  },
@@ -1652,7 +1660,7 @@
   }
  },
  "pt_host_ip_config": {
-  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, automatic IPv6.\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\". PT does not let the API set a\n  static IPv6 on a host.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
+  "description": "Desktop > IP Configuration (and Config > Global) of a PC/Laptop/Server:\nstatic IP or DHCP, mask, gateway, DNS, IPv6 (automatic or static).\n\nParameters (empty = leave alone):\n- mode: \"static\" | \"dhcp\". With \"dhcp\" a lease is requested and the\n  tool waits up to wait_dhcp_s seconds (0-120) for it.\n- ip, mask: IPv4 and mask (\"255.255.255.0\" or \"24\").\n- gateway, dns: IPv4. \"0.0.0.0\" to clear.\n- interface: port (default: the first Ethernet, or Wireless0).\n- ipv6_mode: \"auto\" (SLAAC) | \"off\".\n- ipv6_address: static IPv6 with its prefix, \"2001:db8:0:1::10/64\".\n  Added to the port (it does not remove other addresses) and read back.\n- ipv6_gateway, ipv6_dns.\n- show / capture: opens Desktop > IP Configuration (per pt_ui_mode).\n\nFor routers/switches use pt_cli (ip address ... on the interface).",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -1682,6 +1690,11 @@
     "ip": {
      "default": "",
      "title": "Ip",
+     "type": "string"
+    },
+    "ipv6_address": {
+     "default": "",
+     "title": "Ipv6 Address",
      "type": "string"
     },
     "ipv6_dns": {
@@ -2480,6 +2493,37 @@
    "type": "object"
   }
  },
+ "pt_send_pdu": {
+  "description": "The GUI's \"Add Simple PDU\": an ICMP echo from one device to another.\n\nParameters:\n- source, destination: device names (pt_query_topology).\n- simulation: True (default) switches PT to Simulation first, so the\n  PDU waits in the event list; False switches to Realtime, where PT\n  delivers it at once.\n- steps: in Simulation, how many events to step forward right away\n  (0-100). With steps > 0 the reply includes the packet trace (path,\n  drops and PT's per-layer reason), like pt_read_packet_trace.\n\nThe first PDU between two devices can die at a router waiting on ARP,\nexactly like the first ping: send it again.\n\nExample: pt_send_pdu(\"PC1\", \"PC4\", steps=10)",
+  "inputSchema": {
+   "properties": {
+    "destination": {
+     "title": "Destination",
+     "type": "string"
+    },
+    "simulation": {
+     "default": true,
+     "title": "Simulation",
+     "type": "boolean"
+    },
+    "source": {
+     "title": "Source",
+     "type": "string"
+    },
+    "steps": {
+     "default": 0,
+     "title": "Steps",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "title": "pt_send_pduArguments",
+   "type": "object"
+  }
+ },
  "pt_send_raw": {
   "description": "Send arbitrary JavaScript to Packet Tracer via bridge.\nUseful for exploring the IPC API or running custom commands.\n\nIf wait_result=True, reportResult() is auto-injected into scope.\nJust call reportResult(data) in your code — no need to define it.\nExamples:\n  pt_send_raw(\"reportResult(getDevices('router'))\", wait_result=True)\n  pt_send_raw(\"addDevice('TestR','2911',500,300)\")\n\nParameters:\n- js_code: JavaScript to execute in PT's Script Engine\n- wait_result: if True, waits for a response via reportResult()",
   "inputSchema": {
@@ -2776,7 +2820,7 @@
   }
  },
  "pt_server_service": {
-  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). EMAIL has no on/off switch in the API.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
+  "description": "A Server-PT's Services > TFTP / FTP / SYSLOG / EMAIL.\n\n- service: \"tftp\" | \"ftp\" | \"syslog\" | \"email\"\n- enable: True/False (None = leave alone). On EMAIL it switches SMTP\n  and POP3 together.\n- domain, smtp, pop3: EMAIL only. The Domain Name (\"lab.com\"; empty =\n  leave alone) and each protocol On/Off; all three are read back.\n- users: accounts for ftp/email:\n  [{\"username\": \"alice\", \"password\": \"secret\", \"permissions\": \"RWDNL\"}]\n  (permissions FTP only: Read Write Delete reName List).\nSYSLOG also returns how many messages it received.",
   "inputSchema": {
    "properties": {
     "capture": {
@@ -2786,6 +2830,11 @@
     },
     "device": {
      "title": "Device",
+     "type": "string"
+    },
+    "domain": {
+     "default": "",
+     "title": "Domain",
      "type": "string"
     },
     "enable": {
@@ -2805,6 +2854,18 @@
      "title": "Output Dir",
      "type": "string"
     },
+    "pop3": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pop3"
+    },
     "service": {
      "title": "Service",
      "type": "string"
@@ -2820,6 +2881,18 @@
      ],
      "default": null,
      "title": "Show"
+    },
+    "smtp": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Smtp"
     },
     "users": {
      "anyOf": [
@@ -3196,6 +3269,88 @@
     "url"
    ],
    "title": "pt_web_browserArguments",
+   "type": "object"
+  }
+ },
+ "pt_wireless_ap": {
+  "description": "An access point's wireless settings (AccessPoint-PT Config > Port 1),\napplied and read back. With no settings it only reads.\n\nParameters (empty/None = leave alone):\n- ssid: network name (up to 32 bytes). Clients on another SSID drop\n  off; giving each AP its own SSID keeps clients off the APs you rename.\n- broadcast: SSID broadcast on/off.\n- mac_filter: MAC filtering on/off.\n- allow_listed: True = only listed MACs may associate, False = listed\n  MACs are denied.\n- mac_list: REPLACES the filter list (\"0001.63BE.8468\", \"00:01:63:BE:84:68\").\n- reset_associations: after a change, drop every client so they\n  re-associate against the new settings (default True; without it,\n  clients already associated may keep the old association).\n- dry_run: only read and report what would change.\n\nA dropped client's port still reads up/linked: confirm with a ping\n(pt_host_command) or its address, not the port state. WPA/WEP are not\nsettable: clients need a matching profile, and PT's client profile API\nis broken.",
+  "inputSchema": {
+   "properties": {
+    "allow_listed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Allow Listed"
+    },
+    "broadcast": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Broadcast"
+    },
+    "device": {
+     "title": "Device",
+     "type": "string"
+    },
+    "dry_run": {
+     "default": false,
+     "title": "Dry Run",
+     "type": "boolean"
+    },
+    "mac_filter": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac Filter"
+    },
+    "mac_list": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Mac List"
+    },
+    "reset_associations": {
+     "default": true,
+     "title": "Reset Associations",
+     "type": "boolean"
+    },
+    "ssid": {
+     "default": "",
+     "title": "Ssid",
+     "type": "string"
+    }
+   },
+   "required": [
+    "device"
+   ],
+   "title": "pt_wireless_apArguments",
    "type": "object"
   }
  },

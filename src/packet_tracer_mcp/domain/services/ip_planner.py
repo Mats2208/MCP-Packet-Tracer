@@ -151,8 +151,9 @@ class IPPlanner:
     def _plan_ipv6_addressing(self, plan: TopologyPlan, ipv6_base: str):
         """Assigns a /64 IPv6 to the router interfaces (LAN, inter-router, subinterfaces).
 
-        Hosts do NOT get a static address: they use SLAAC (configurePcIpv6 during deploy),
-        which is the form supported by the PT API (addIpv6Address fails on HostPort).
+        Hosts do NOT get a static address: they use SLAAC (configurePcIpv6 during deploy).
+        A fixed host address is possible after the build (pt_host_ip_config's
+        ipv6_address, port.addIpv6Address measured on PT 9.0); the plan keeps SLAAC.
         """
         pool = ipaddress.IPv6Network(ipv6_base).subnets(new_prefix=64)
 

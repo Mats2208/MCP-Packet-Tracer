@@ -35,7 +35,7 @@ comments in English (see Language above).
 | `src/packet_tracer_mcp/domain/` | Pydantic models, validation rules, planning services |
 | `src/packet_tracer_mcp/application/` | Use cases: rules + generators, dependencies injected |
 | `src/packet_tracer_mcp/infrastructure/` | Generators, executors, the HTTP + file bridges, device catalog |
-| `src/packet_tracer_mcp/adapters/mcp/` | `tools/<topic>.py` — 62 of the 79 tools, one `register(mcp, ctx)` each, run by `tool_registry.py`; `bridge_context.py` — the shared `BridgeContext`; `device_panel_tools.py` + `desktop_service_tools.py` — the 17 device-panel tools; `prompt_registry.py` / `resource_registry.py` — prompts and resources (`pt://guide`) |
+| `src/packet_tracer_mcp/adapters/mcp/` | `tools/<topic>.py` — 73 of the 90 tools, one `register(mcp, ctx)` each, run by `tool_registry.py`; `bridge_context.py` — the shared `BridgeContext`; `device_panel_tools.py` + `desktop_service_tools.py` — the 17 device-panel tools; `prompt_registry.py` / `resource_registry.py` — prompts and resources (`pt://guide`) |
 | `src/packet_tracer_mcp/infrastructure/ui/` | UI mode: Win32 + UI Automation presenter that opens/captures device windows (Windows only, `[ui]` extra) |
 | `EXTENSION/script-engine/` | Script-engine side of the extension. `main.js` is ours (tracked); the rest are PTBuilder reference copies (gitignored) |
 | `EXTENSION/webview/` | The MCP Control Center webview (`index.html` + `interface.js`) |

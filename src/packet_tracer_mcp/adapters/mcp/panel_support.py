@@ -32,8 +32,30 @@ _JS_ERRORS = {
     "no_FtpServer": "'{device}' has no FTP service.",
     "no_SyslogServer": "'{device}' has no SYSLOG service.",
     "no_EmailServer": "'{device}' has no EMAIL service.",
+    "no_WirelessServerProcess": "'{device}' is not a wireless access point (it has no "
+                                "WirelessServerProcess).",
     "no_rs232": "'{device}' has no RS 232 port (Terminal only exists on hosts).",
 }
+
+
+def parse_panel_reply(raw: str | None, device: str) -> tuple[dict | None, str | None]:
+    """A host_js/service_js-style JSON reply: (data, None) or (None, error message)."""
+    if raw is None:
+        return None, "No answer from PT (timeout)."
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None, f"Unexpected reply from PT: {raw[:300]}"
+    if not isinstance(data, dict):
+        return None, f"Unexpected reply from PT: {raw[:300]}"
+    if not data.get("ok", True):
+        err = str(data.get("error", "error"))
+        tmpl = _JS_ERRORS.get(err)
+        if tmpl:
+            return None, tmpl.format(device=device, ports=data.get("ports", "?"))
+        detail = data.get("detail")
+        return None, f"PT answered: {err}" + (f" ({detail})" if detail else "")
+    return data, None
 
 
 def errors_text(result) -> str:
@@ -58,21 +80,7 @@ class PanelSupport:
     # -- PT ---------------------------------------------------------------
     def call(self, js: str, device: str, timeout: float = 10.0) -> tuple[dict | None, str | None]:
         """Run JS that reports JSON. (data, None) or (None, error message)."""
-        raw = self.send(js, timeout)
-        if raw is None:
-            return None, "No answer from PT (timeout)."
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return None, f"Unexpected reply from PT: {raw[:300]}"
-        if not isinstance(data, dict):
-            return None, f"Unexpected reply from PT: {raw[:300]}"
-        if not data.get("ok", True):
-            err = str(data.get("error", "error"))
-            tmpl = _JS_ERRORS.get(err)
-            return None, (tmpl.format(device=device, ports=data.get("ports", "?")) if tmpl
-                          else f"PT answered: {err}")
-        return data, None
+        return parse_panel_reply(self.send(js, timeout), device)
 
     # -- GUI --------------------------------------------------------------
     def visible(self, show: bool | None, capture: bool = False) -> bool:

@@ -169,14 +169,16 @@ device once each.
   checking that it was applied.
 
 ## Step-by-step simulation
-Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_verify_connectivity`)
+Flow: `pt_simulation_mode(on=True)` → generate traffic (`pt_send_pdu` or `pt_verify_connectivity`)
 → `pt_read_packet_trace()` → `pt_simulation_step(action="forward")` to advance.
 - `pt_read_packet_trace` returns, per frame, the path AND PT's decision log per
   OSI layer — the same text as the GUI's "PDU Details" panel. That is where the
   real cause of a failing ping is ("The next-hop IP address is not in the ARP
   table..."), not just the symptom.
-- `pt_send_pdu` does NOT exist: PT does not let an extension originate a packet
-  the way the GUI's "Add Simple PDU" button does. Generate traffic with a real ping.
+- `pt_send_pdu(source, destination, simulation=True, steps=0)` is the GUI's "Add
+  Simple PDU" (ICMP echo); with steps > 0 it steps and returns the trace.
+- `pt_fast_forward()`: Realtime's "Fast Forward Time"; STP converges at once, so a
+  link cabled moments ago answers a ping right away. Never reset the network.
 
 ## Device panel (CLI, Desktop, Services) — headless or UI
 Everything in a device's window is driven through the API, without taking the mouse or keyboard:
@@ -187,11 +189,14 @@ Everything in a device's window is driven through the API, without taking the mo
 - `pt_host_command(host, command, inputs)`: Desktop > Command Prompt (ping, ipconfig, tracert,
   arp -a, nslookup, telnet/ssh with `inputs`).
 - `pt_terminal(pc, commands)`: Desktop > Terminal of a PC with a console cable to a router.
-- `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto), `pt_host_firewall`,
+- `pt_host_ip_config` (static IP/DHCP, gateway, DNS, IPv6 auto or static `ipv6_address`), `pt_host_firewall`,
   `pt_web_browser` (returns the page as text), `pt_email_client`.
 - Server-PT Services: `pt_server_dhcp` (pools, exclusions), `pt_server_dns` (A/CNAME),
-  `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts).
+  `pt_server_http` (pages), `pt_server_service` (TFTP/FTP/SYSLOG/EMAIL, accounts, EMAIL domain and SMTP/POP3 on/off).
 - `pt_read_device_panel(device)`: reads ports, IPs, MAC, firewall and services in one go.
+- `pt_wireless_ap(device, ssid, broadcast, mac_filter, allow_listed, mac_list)`: an AP's SSID,
+  SSID broadcast and MAC filter, applied and read back; resets associations after a change. A
+  dropped client's port still reads up/linked: confirm with a ping. No WPA/WEP (client profiles broken).
 - `pt_remove_module(device, slot)`: the inverse of pt_add_module.
 
 Presentation mode (`pt_ui_mode`):
@@ -204,13 +209,12 @@ Presentation mode (`pt_ui_mode`):
 - `pt_ui_open(device, tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)` to
   show/capture without doing anything else.
 PT 9.0.1 limits (don't try them through the API): PC Wireless profiles (the API throws
-"invalid vector subscript"), the Text Editor, the EMAIL service's "Domain Name" and individual
-host-firewall rules. For those, open the window with pt_ui_open and let the user do it.
+"invalid vector subscript"), the Text Editor and individual host-firewall rules. For those, open the window with pt_ui_open and let the user do it.
 
 ## Important
 - To add individual devices use pt_add_device (validates duplicates and model).
 - To create individual links use pt_add_link (validates devices, ports, cable type).
-- The MCP has 79 tools. Use `pt_full_build` for the general case (new topology with configs).
+- The MCP has 82 tools. Use `pt_full_build` for the general case (new topology with configs).
 - To create ONLY the physical topology without configuring IPs/OSPF/DHCP, send `dhcp_pools=[]`,
   `static_routes=[]`, `ospf_configs=[]`, etc. and leave `interfaces={}` in each DevicePlan.
 - If the user asks for something that is not in the catalog, say so clearly instead of inventing it.

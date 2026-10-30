@@ -148,11 +148,13 @@ class TestSummarizeTrace:
 
 
 class TestSimulationReaders:
-    """Guards sobre el JS. Son closures en register_tools, así que se verifican
-    por texto, igual que TestReconcileWiring en test_live_reconcile.py."""
+    """Guards sobre el JS. Se verifican por texto, igual que TestReconcileWiring en
+    test_live_reconcile.py; el JS vive en simulation_js.py, compartido con pt_send_pdu."""
 
     def _src(self) -> str:
-        return registry_source()
+        from pathlib import Path
+        gen = Path("src/packet_tracer_mcp/infrastructure/generator/simulation_js.py")
+        return registry_source() + gen.read_text(encoding="utf-8")
 
     def test_uses_pts_misspelled_decision_getter(self):
         """PT expone `getFrameDecsionAt`, con el typo. Corregirlo rompe la lectura."""
@@ -244,6 +246,9 @@ class TestEmptyEndpoints:
         assert out["failures"][0]["destination"] == "PC4"
 
     def test_reader_asks_for_the_traffic_source_behind_typeof(self):
-        src = registry_source()
-        assert "typeof __f.getTrafficSource === 'function'" in src
-        assert "normalize_frame(frame)" in src
+        from pathlib import Path
+        pkg = Path("src/packet_tracer_mcp")
+        js = (pkg / "infrastructure/generator/simulation_js.py").read_text(encoding="utf-8")
+        report = (pkg / "domain/services/packet_trace.py").read_text(encoding="utf-8")
+        assert "typeof __f.getTrafficSource === 'function'" in js
+        assert "normalize_frame(frame)" in report.split("def trace_report", 1)[1]

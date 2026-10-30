@@ -161,3 +161,41 @@ def summarize_trace(frames: list[dict]) -> dict:
         "expected_drops": expected,
         "clean": not failures,
     }
+
+
+def trace_report(data: dict) -> dict:
+    """The event-list read (packet_trace_js's reply) as summary + trace for the model.
+
+    Shared by pt_read_packet_trace and pt_send_pdu so both explain a trace the same way.
+    """
+    frames = data.get("frames", [])
+    for frame in frames:
+        normalize_frame(frame)
+
+    result = summarize_trace(frames)
+    result["total_in_event_list"] = data.get("total", 0)
+    result["simulation_mode"] = data.get("simulation_mode", False)
+    result["trace"] = frames
+
+    if not data.get("simulation_mode"):
+        result["summary"] = (
+            "PT is in Realtime mode: the event list does not keep packets. "
+            "Call pt_simulation_mode(on=True) and generate traffic."
+        )
+    elif not frames:
+        result["summary"] = (
+            "Simulation mode is on but there are no frames. Generate traffic "
+            "(for example pt_verify_connectivity) and read again."
+        )
+    elif result["clean"]:
+        normal = len(result["expected_drops"])
+        result["summary"] = (
+            f"{result['frames']} frame(s) read, none failed."
+            + (f" {normal} dropped as normal operation (flooded frames, STP BPDUs, multicast at hosts)." if normal else "")
+        )
+    else:
+        reasons = "; ".join(f["reason"] for f in result["failures"][:3] if f["reason"])
+        result["summary"] = (
+            f"⚠ {len(result['failures'])} frame(s) did not reach their destination. {reasons}"
+        )
+    return result

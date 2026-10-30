@@ -139,8 +139,9 @@ class TestAmbiguousWirelessAssociationIsWarned:
     subred que le corresponde. PT NO elige el AP mas cercano; la asociacion es
     pegajosa y, entre APs que comparten el SSID por defecto, arbitraria.
 
-    Y no hay forma de desambiguarla: PT no expone API de SSID (verificado, ni el
-    AP ni su puerto tienen setSsid). Asi que lo unico honesto es avisar.
+    Y el plan no puede desambiguarla: el SSID del AP si se puede cambiar
+    (WirelessServerProcess.setSsid, pt_wireless_ap), pero el cliente solo se une a
+    "Default" y su API de perfiles (addProfile) esta rota. Asi que lo honesto es avisar.
     """
 
     def _plan(self, **kw):

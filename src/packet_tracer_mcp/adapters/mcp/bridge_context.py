@@ -17,6 +17,7 @@ from ...infrastructure.execution.file_bridge import FileBridge
 from ...infrastructure.execution.live_bridge import (
     DEFAULT_PORT, PTCommandBridge, next_rid, report_result_js,
 )
+from ...infrastructure.generator.simulation_js import FAST_FORWARD_JS, parse_fast_forward
 
 # Commands per POST. Bounded so large topologies stay well below the bridge's
 # body limit, and so progress is visible in PT.
@@ -60,8 +61,8 @@ BRIDGE_GRACE_POLL_S = 0.25
 
 
 # New switch ports spend ~30 s in STP listening/learning (15 s + 15 s) before they
-# forward, so a ping right after cabling is lost. pt_verify_connectivity waits out
-# what is left of this window after the last link was created.
+# forward, so a ping right after cabling is lost. BridgeContext.settle_stp skips that
+# window with Fast Forward Time and only sleeps out what is left of it when that fails.
 STP_SETTLE_S = 32.0
 _LINK_CALLS = ("addLink(", "lwAddLink(", "createLink(")
 
@@ -309,6 +310,32 @@ class BridgeContext:
         """`read_live_devices`, with a failed read as [] (the best-effort pre-checks:
         module compat, ACL/NAT, pt_diff)."""
         return self.read_live_devices() or []
+
+    def fast_forward(self) -> dict:
+        """Press Realtime's Fast Forward Time: STP converges at once (measured, PT 9.0).
+
+        Returns the parsed reply. In Simulation mode nothing is pressed
+        (fast_forwarded=False). Once it worked, links created before it are no
+        longer waiting on STP.
+        """
+        data = parse_fast_forward(self.send_and_wait(FAST_FORWARD_JS, timeout=5.0))
+        if data.get("fast_forwarded"):
+            self.last_link_change = None
+        return data
+
+    def settle_stp(self) -> float:
+        """Get links created moments ago past STP before a ping or a DHCP request.
+
+        Fast-forwards PT's clock instead of sleeping; if that is not possible
+        (Simulation mode, an old PT, no answer), sleeps out what is left of the
+        STP_SETTLE_S window as before. Returns the seconds slept (0 when nothing
+        was pending or the fast-forward worked).
+        """
+        wait = stp_wait_seconds(self.last_link_change, time.monotonic())
+        if wait <= 0 or self.fast_forward().get("fast_forwarded"):
+            return 0.0
+        time.sleep(wait)
+        return wait
 
     def send_payload(self, js_call: str) -> bool:
         """Send a fire-and-forget JS payload over the available channel (HTTP or file)."""

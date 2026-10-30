@@ -41,15 +41,15 @@ CAPABILITIES = {
                  "simulation_mode", "simulation_step", "packet_trace",
                  "netflow", "qos_read", "dhcp_server_pools",
                  "config_backup", "project_metadata", "workspace_options",
-                 "screenshot", "canvas_annotations"],
+                 "screenshot", "canvas_annotations", "send_pdu", "fast_forward", "wireless_ap"],
     # Supported TODAY via raw IOS CLI (configureIosDevice / pt_send_raw) but without a
     # dedicated high-level tool yet — candidates for future expansion, NOT "impossible".
     # vlan/trunk/stp/port_security/ipv6 were removed from here: they have their own tool.
     # QoS stays: it can be READ with pt_read_qos but not created via the API.
     "supported_via_cli": ["qos", "bgp", "hsrp", "voip"],
-    # Genuinely not implemented in any form. Originating a PDU is not available:
-    # PT does not expose it to extensions (the "Add Simple PDU" is GUI-only).
-    "unsupported": ["originate_pdu"],
+    # Genuinely not implemented in any form. Originating a PDU used to be here:
+    # getUserCreatedPDU().addSimplePdu does it (pt_send_pdu, measured on PT 9.0).
+    "unsupported": [],
     "max_routers": 20,
     "max_pcs_per_lan": 24,
     "max_switches_per_router": 4,

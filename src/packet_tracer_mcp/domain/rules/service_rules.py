@@ -8,6 +8,7 @@ a host uses it.
 from __future__ import annotations
 
 import ipaddress
+import re
 
 from ..models.errors import ErrorCode, PlanError, ValidationResult
 from .panel_rules import normalize_mask
@@ -16,6 +17,9 @@ from .text_rules import has_control_chars
 SERVICES = ("tftp", "ftp", "syslog", "email")
 DNS_TYPES = ("A", "CNAME")
 EMAIL_ACTIONS = ("configure", "send", "receive")
+# A DNS name: dot-separated labels of letters, digits and inner hyphens.
+_DOMAIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+                     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
 
 
 class _Collector:
@@ -120,6 +124,20 @@ def validate_users(device: str, service: str, users: list[dict]) -> ValidationRe
         if perms and set(perms) - set("RWDNL"):
             c.bad(ErrorCode.PANEL_INVALID_VALUE, f"FTP permissions '{perms}' are invalid.",
                   "Combine R(ead) W(rite) D(elete) N(rename) L(ist).")
+    return c.result()
+
+
+def validate_email_server(device: str, service: str, *, domain: str = "",
+                          smtp: bool | None = None, pop3: bool | None = None) -> ValidationResult:
+    """The EMAIL service's Domain Name and SMTP/POP3 switches (Server-PT only)."""
+    c = _Collector(device)
+    if (domain or smtp is not None or pop3 is not None) and service != "email":
+        c.bad(ErrorCode.PANEL_INVALID_VALUE,
+              f"domain/smtp/pop3 belong to the EMAIL service, not '{service}'.",
+              "Use service='email'.")
+    if domain and (len(domain) > 253 or not _DOMAIN.fullmatch(domain)):
+        c.bad(ErrorCode.PANEL_INVALID_VALUE, f"Domain '{domain}' is not a valid domain name.",
+              "Example: 'lab.com'.")
     return c.result()
 
 

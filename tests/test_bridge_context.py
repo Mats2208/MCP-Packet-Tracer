@@ -218,3 +218,63 @@ def test_stp_wait_covers_only_the_rest_of_the_window():
     assert stp_wait_seconds(None, 100.0) == 0
     assert stp_wait_seconds(100.0, 100.0 + STP_SETTLE_S + 1) == 0
     assert stp_wait_seconds(100.0, 110.0) == pytest.approx(STP_SETTLE_S - 10)
+
+
+class TestSettleStp:
+    """Fast Forward Time converges STP at once (measured on PT 9.0: a link cabled
+    moments ago answered a ping right after it), so the deploy and
+    pt_verify_connectivity no longer sleep ~30 s. The sleep stays as the fallback."""
+
+    def _ctx(self, monkeypatch, reply):
+        ctx = _ctx()
+        sent: list[str] = []
+        slept: list[float] = []
+
+        def send(js, timeout=10.0):
+            sent.append(js)
+            return reply
+
+        ctx.send_and_wait = send
+        monkeypatch.setattr(bridge_context.time, "sleep", slept.append)
+        return ctx, sent, slept
+
+    def test_nothing_pending_sends_nothing(self, monkeypatch):
+        ctx, sent, slept = self._ctx(monkeypatch, None)
+        assert ctx.settle_stp() == 0
+        assert sent == [] and slept == []
+
+    def test_fast_forward_replaces_the_sleep(self, monkeypatch):
+        ctx, sent, slept = self._ctx(
+            monkeypatch, '{"ok":true,"fast_forwarded":true,"simulation_mode":false}')
+        ctx.last_link_change = bridge_context.time.monotonic()
+        assert ctx.settle_stp() == 0
+        assert slept == []
+        assert "fastForwardTime()" in sent[0]
+        assert ctx.last_link_change is None  # nothing left to wait for
+
+    @pytest.mark.parametrize("reply", [
+        None,  # timeout
+        '{"ok":true,"fast_forwarded":false,"simulation_mode":true}',
+        '{"ok":false,"error":"pt_error","detail":"TypeError"}',
+        "PT_ERROR: boom",
+    ])
+    def test_falls_back_to_sleeping_out_the_window(self, monkeypatch, reply):
+        ctx, _, slept = self._ctx(monkeypatch, reply)
+        ctx.last_link_change = bridge_context.time.monotonic()
+        waited = ctx.settle_stp()
+        assert waited > 0 and slept == [waited]
+        assert ctx.last_link_change is not None
+
+    def test_fast_forward_js_never_resets_the_network(self):
+        from src.packet_tracer_mcp.infrastructure.generator.simulation_js import FAST_FORWARD_JS
+        assert "resetNetwork" not in FAST_FORWARD_JS
+        assert "isSimulationMode()" in FAST_FORWARD_JS
+        assert FAST_FORWARD_JS.startswith("(function(){try{")
+
+
+def test_live_tools_settle_stp_through_the_context():
+    """The deploy's DHCP renewal and pt_verify_connectivity must not sleep on their own."""
+    from pathlib import Path
+    src = Path("src/packet_tracer_mcp/adapters/mcp/tools/live.py").read_text(encoding="utf-8")
+    assert src.count("ctx.settle_stp()") == 2
+    assert "stp_wait_seconds" not in src
