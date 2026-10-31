@@ -162,9 +162,12 @@ def _switch_3560_ports() -> tuple[PortSpec, ...]:
     return fast + gig
 
 def _switch_3650_ports() -> tuple[PortSpec, ...]:
-    fast = tuple(_fast(f"0/{i}") for i in range(1, 25))
-    gig = (_gig("0/1"), _gig("0/2"))
-    return fast + gig
+    # Measured in a PT 9.0.1 save: 24 copper Gigabit ports in stack member 1, then the
+    # four SFP uplinks of C3650-SFP-BUILTIN. The SFP ports exist without a transceiver;
+    # a copper cable on them needs a GLC-T. No FastEthernet at all.
+    copper = tuple(_gig(f"1/0/{i}") for i in range(1, 25))
+    sfp = tuple(_gig(f"1/1/{i}") for i in range(1, 5))
+    return copper + sfp
 
 SWITCH_3560 = DeviceModel(
     pt_type="3560-24PS", category="switch", display_name="Cisco 3560-24PS",
