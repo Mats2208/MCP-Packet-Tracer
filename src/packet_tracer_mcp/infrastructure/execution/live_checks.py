@@ -201,6 +201,32 @@ def file_open_result_name(ret: str | None) -> str | None:
     return None
 
 
+def save_project_js(directory: str, name: str, overwrite: bool) -> str:
+    """Script-Engine JS that saves the active topology as `directory`/`name`.
+
+    With no directory it uses PT's save folder, but on Linux PT 9.0.1 reports
+    `~/Cisco Packet Tracer 9.0.1/saves`, which does not exist (its real user folder is
+    `~/pt`). Saving there pops a modal "No Write Permission" dialog that blocks PT and
+    the call times out, so a missing default falls back to getUserFolder()/saves
+    (created if needed). fileSaveAsNoPrompt is never called on a folder that is not there.
+    """
+    return (
+        "var aw=ipc.appWindow();var fm=ipc.systemFileManager();"
+        f"var dir={json.dumps(directory)};"
+        "function norm(p){return String(p).replace(/\\\\/g,'/').replace(/\\/+$/,'');}"
+        "if(!dir){dir=norm(aw.getDefaultFileSaveLocation());"
+        "if(!fm.directoryExists(dir)){var uf='';try{uf=norm(aw.getUserFolder());}catch(e){}"
+        "if(uf&&fm.directoryExists(uf)){dir=uf+'/saves';"
+        "if(!fm.directoryExists(dir)){try{fm.makeDirectory(dir);}catch(e){}}}}}"
+        "dir=norm(dir);"
+        f"var full=dir+'/'+{json.dumps(name)};"
+        "if(!fm.directoryExists(dir)){reportResult('ERR:folder does not exist '+dir);}"
+        f"else if(!{json.dumps(overwrite)}&&fm.fileExists(full)){{reportResult('EXISTS:'+full);}}else{{"
+        "aw.fileSaveAsNoPrompt(full,false);"
+        "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:not created '+full));}"
+    )
+
+
 def _same_path(a: str, b: str) -> bool:
     norm = lambda s: str(s).strip().replace("\\", "/").rstrip("/").lower()  # noqa: E731
     return bool(a) and norm(a) == norm(b)
@@ -291,6 +317,55 @@ def renew_dhcp_leases(
             renewed += leased
             pending = [n for n in pending if n not in leased]
     return renewed, pending
+
+
+def read_host_ips(send: Callable[[str, float], str | None], hosts: dict[str, str]) -> dict[str, str]:
+    """{host: IPv4 it holds right now} for each of `hosts` ({host: port}).
+
+    A host whose port cannot be read is left out, so a missing entry means "unknown",
+    never "0.0.0.0".
+    """
+    from ..generator.host_js import port_state_js
+
+    ips: dict[str, str] = {}
+    for name, port in hosts.items():
+        try:
+            state = json.loads(send(port_state_js(name, port), 8.0) or "{}").get("state") or {}
+        except (ValueError, AttributeError):
+            continue
+        if state.get("ip"):
+            ips[name] = str(state["ip"])
+    return ips
+
+
+def dhcp_address_report(plan, live_ips: dict[str, str]) -> list[str]:
+    """Report lines with the address each DHCP host REALLY got.
+
+    The plan's addressing table can only predict a lease: the pool hands addresses in
+    request order, and a DISCOVER lost to STP and asked again can land on another one
+    (measured on PT 9.0.1: planned 192.168.2.2, leased 192.168.2.4). Pings must use
+    these, so every lease is listed and the ones that differ from the table are flagged.
+    """
+    if not live_ips:
+        return []
+    # Only the hosts that were read: a router or a hand-written plan may hold a value
+    # that is not an address, and the deploy already happened by the time this runs.
+    planned: dict[str, str] = {}
+    for dev in plan.devices:
+        if dev.name not in live_ips or not dev.interfaces:
+            continue
+        try:
+            planned[dev.name] = str(ipaddress.ip_interface(next(iter(dev.interfaces.values()))).ip)
+        except ValueError:
+            pass
+    parts = []
+    for name, ip in live_ips.items():
+        want = planned.get(name)
+        if want and ip != want and ip != "0.0.0.0":
+            parts.append(f"{name} {ip} (table said {want})")
+        else:
+            parts.append(f"{name} {ip}")
+    return [f"  DHCP leases (live, use these to ping): {', '.join(parts)}"]
 
 
 def dhcp_lease_report(renewed: list[str], without_ip: list[str]) -> list[str]:

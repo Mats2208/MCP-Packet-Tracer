@@ -47,6 +47,20 @@ jobs:
           echo "tag=$TAG  pyproject=$VER"
           test "$TAG" = "$VER" || { echo "::error::tag $TAG does not match version $VER in pyproject.toml"; exit 1; }
 
+      # README and llms-install.md download the extension from
+      # releases/latest/download/MCP-Control-Center.pts: a release published without
+      # it turns that link into a 404 for every new user (it happened with v0.11.0).
+      # The .pts is built inside Packet Tracer, so CI cannot attach it; it can refuse
+      # to publish without it.
+      - name: Extension attached to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | grep -qx 'MCP-Control-Center.pts' \
+            || { echo "::error::attach MCP-Control-Center.pts to release $GITHUB_REF_NAME before publishing"; exit 1; }
+
       - name: Check metadata
         run: python -m twine check dist/*
 

@@ -198,11 +198,11 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Install by agent (`llms-install.md`, PT detects the extension) | ✅ | ✅ | not tested yet |
-| Server (`uvx packet-tracer-mcp`) | ✅ | ✅ | not tested yet |
-| Live deploy (HTTP bridge) | ✅ | ✅ | not tested yet |
-| File-bridge (extension window closed) | ✅ | ✅ | not tested yet |
-| Device panel (`pt_cli`, `pt_host_command`, services…) | ✅ | ✅ | not tested yet |
+| Install by agent (`llms-install.md`, PT detects the extension) | ✅ | ✅ | ⚠️ server + skill yes; extension added by hand |
+| Server (`uvx packet-tracer-mcp`) | ✅ | ✅ | ✅ |
+| Live deploy (HTTP bridge) | ✅ | ✅ | ✅ |
+| File-bridge (extension window closed) | ✅ | ✅ | ✅ |
+| Device panel (`pt_cli`, `pt_host_command`, services…) | ✅ | ✅ | ✅ |
 | UI mode (open/capture device windows) | ✅ | — | — |
 | Activities: open, grade, mark, save | ✅ | ✅ | not tested yet |
 | Activities: create and exam (Wizard) | ✅ | ✅ HTML instructions need `PT_UI_ALLOW_FOREGROUND=1`; no points or connectivity tests | — |
@@ -214,7 +214,26 @@ macOS and Windows 11 were verified on Packet Tracer 9.0.1: every tool of that re
 canvas on macOS, and on Windows the agent install, both bridge channels, OSPF + DHCP builds checked with real
 pings, and UI mode. The activity tools were measured on both; on macOS a whole exam was built through the MCP,
 reopened and graded 0 % → 100 %. The Wizard driver is shared and changed after the Windows run, so that run is
-pending. On Linux only the offline test suite has run.
+pending. On Linux the core tools were verified live (below); the activity tools have only run offline there.
+
+Linux was verified on 2026-11-03 with Ubuntu 26.04.1 LTS (kernel 7.0, GNOME 50 on Wayland),
+Packet Tracer 9.0.1 from Cisco's `.deb`, `packet-tracer-mcp` 0.11.0 through `uvx` (uv 0.13.3)
+and Claude Code 2.1.317 as the client. Both bridge channels connected (PT's webview is
+QtWebEngine 6.8.7). Checked live: `pt_full_build` single LAN (4/4 devices, 3/3 links, DHCP lease)
+and 3 routers with OSPF + DHCP (12/12, 12/12, 6 neighbours FULL, no convergence gaps), real pings
+across LANs, `pt_cli`, `pt_host_command`, `pt_host_ip_config`, Server-PT HTTP / DNS / EMAIL,
+`pt_web_browser`, `pt_health_check`, `pt_screenshot`, `pt_save_project`, and with the extension
+window closed the file-bridge alone ran pings, CLI, add device + link and a DHCP lease.
+Linux specifics:
+
+- PT ships as an AppImage in `/opt/pt`, so there is no `extensions` folder to drop the module
+  into: add `MCP-Control-Center.pts` with **Extensions → Scripting → Configure PT Script Modules → Add…**.
+- Before the first start, accept the EULA by running `packettracer` in a terminal (launched from
+  the menu it waits for an answer it never gets and no window appears). On Ubuntu 26.04 PT also
+  needs `sudo apt install libopengl0 libts0t64`.
+- PT reports `~/Cisco Packet Tracer 9.0.1/saves` as its save folder, which does not exist on Linux
+  (its real user folder is `~/pt`). `pt_save_project` without `directory` now falls back to
+  `~/pt/saves` instead of hitting PT's "No Write Permission" dialog.
 
 ## Live deploy
 

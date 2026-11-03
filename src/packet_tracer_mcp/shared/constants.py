@@ -7,6 +7,7 @@ DEFAULT_SWITCH = "2960-24TT"
 # Layout (pixel position on the Packet Tracer canvas)
 LAYOUT_X_START = 100
 LAYOUT_Y_ROUTER = 100
+LAYOUT_RING_LIFT = 80   # middle routers of a ring sit this much higher (closing link stays visible)
 LAYOUT_Y_SWITCH = 250
 LAYOUT_Y_PC = 400
 LAYOUT_X_SPACING = 250

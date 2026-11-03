@@ -8,6 +8,34 @@
 - `pt_activity_save` no longer reports a same-second overwrite as a failure, and `pt_activity_reset` waits for
   the new score.
 
+Linux verified for the first time, on 2026-11-03: Ubuntu 26.04.1 LTS, Packet Tracer 9.0.1 from
+Cisco's `.deb`, `packet-tracer-mcp` 0.11.0 through `uvx`, Claude Code as the client. The server,
+both bridge channels and the device panel work; the run found the bugs below.
+
+### Fixed
+
+- **`pt_save_project` without `directory` no longer hangs on Linux.** PT reports
+  `~/Cisco Packet Tracer 9.0.1/saves` as its save folder there, which does not exist; saving into
+  it popped a modal "No Write Permission" dialog that blocked PT, and the call timed out. A missing
+  default now falls back to `getUserFolder()/saves` (`~/pt/saves`, created if needed), and the JS
+  never calls `fileSaveAsNoPrompt` on a folder that is not there. Measured live.
+- **`three_router_triangle` draws its closing link.** All routers sat on one row, so the R3 ↔ R1
+  link ran straight behind R2 and could not be seen. The middle routers of the ring are lifted.
+- **Deploys report the DHCP leases hosts really got.** The addressing table can only predict a
+  lease: a DISCOVER lost to STP and asked again can land on another address (measured: planned
+  192.168.2.2, leased 192.168.2.4), so a ping to the table's address failed. The table now tags those
+  addresses as the expected lease, and the deploy report lists every live lease, flagging the ones
+  that differ.
+- **The release workflow refuses to publish without `MCP-Control-Center.pts`.** v0.11.0 went out
+  without it and `releases/latest/download/MCP-Control-Center.pts` answered 404.
+
+### Docs
+
+- README platform matrix: Linux column filled in with what was measured; Linux notes (no
+  `extensions` folder in the AppImage, EULA in a terminal, `libopengl0` and `libts0t64` on Ubuntu 26.04).
+- `llms-install.md`: the Linux step pointed at `/opt/pt/extensions`, which does not exist.
+- The extension file is `MCP-Control-Center.pts`, not `V5.2.pts`, in README, installation and live-deploy docs.
+
 ## 0.11.0
 
 Everything below was run against a live PT 9.0 on 2026-10-30. Several things this repo called

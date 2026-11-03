@@ -29,7 +29,7 @@ This folder is the **source of truth** for which devices, ports and cables exist
 | `2960-24TT` | switch | 24× FastEthernet + 2× GigabitEthernet | **Default** |
 | `Switch-PT` | switch | 8× FastEthernet | Generic |
 | `3560-24PS` | switch | 24× FastEthernet + 2× GigabitEthernet | L3 |
-| `3650-24PS` | switch | 24× FastEthernet + 2× GigabitEthernet | L3 |
+| `3650-24PS` | switch | 24× GigabitEthernet (1/0/x) + 4× SFP GigabitEthernet (1/1/x) | L3 |
 | `PC-PT` | pc | 1× FastEthernet0 | |
 | `Server-PT` | server | 1× FastEthernet0 | |
 | `Laptop-PT` | laptop | 1× FastEthernet0 | |
