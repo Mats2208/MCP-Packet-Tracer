@@ -85,8 +85,11 @@ any other) into that folder, inside a subfolder of its own:
   Invoke-WebRequest -OutFile $tmp https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest/download/MCP-Control-Center.pts
   Start-Process powershell -Verb RunAs -Wait -ArgumentList "-Command", "New-Item -ItemType Directory -Force '$pt\extensions\MCPControlCenter' | Out-Null; Copy-Item '$tmp' '$pt\extensions\MCPControlCenter\MCPControlCenter.pts' -Force"
   ```
-- **Linux**: PT installs under `/opt/pt`; copy to `/opt/pt/extensions/MCPControlCenter/MCPControlCenter.pts`
-  with `sudo` (ask the user first).
+- **Linux** (verified on Ubuntu 26.04 + PT 9.0.1): PT is a single AppImage in `/opt/pt`, so there is
+  no `extensions` folder to copy into. Download the `.pts` to the user's Downloads folder and use the
+  manual way below. Before that, PT must start at least once: the user accepts the EULA by running
+  `packettracer` in a terminal (from the menu no window appears), and on Ubuntu 26.04 it also needs
+  `sudo apt install libopengl0 libts0t64` (ask the user first).
 
 If copying is not possible, fall back to the manual way: download the file to the user's Downloads
 folder and have them add it with **Extensions → Scripting → Configure PT Script Modules → Add…**.

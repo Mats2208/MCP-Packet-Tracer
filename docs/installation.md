@@ -7,7 +7,7 @@
 | Python | 3.11+ | |
 | `mcp[cli]` | ≥ 1.13, < 2 | Installed automatically |
 | `pydantic` | ≥ 2.11, < 3 | Installed automatically |
-| Cisco Packet Tracer | 8.2+ (tested on 9.0) | Only for **live deploy** |
+| Cisco Packet Tracer | 8.2+ (tested on 9.0 and 9.0.1: Windows, macOS, Linux) | Only for **live deploy** |
 | MCP Control Center extension | latest | This project's **own** PT extension (`.pts` in [Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)), only for live deploy — see [Live Deploy Setup](live-deploy.md) |
 
 !!! warning "pydantic ≥ 2.11 is required"
@@ -125,11 +125,20 @@ pip install -e .
 To stream topologies into a **running** Packet Tracer, also install this project's own
 **MCP Control Center** extension:
 
-1. Download **`V5.2.pts`** from
+1. Download **`MCP-Control-Center.pts`** from
    **[Releases (latest)](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**.
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules → Add…**,
-   select `V5.2.pts`, and confirm.
+   select `MCP-Control-Center.pts`, and confirm.
 3. Open **Extensions → MCP BUILDER** — it auto-connects to the bridge.
+
+!!! note "Linux (verified on Ubuntu 26.04 with PT 9.0.1)"
+    - PT ships as a single AppImage in `/opt/pt`, so there is no `extensions` folder to
+      copy the module into: step 2 above is the way on Linux.
+    - Accept the EULA once by running `packettracer` in a terminal. Started from the
+      menu, PT waits for an answer it never gets and no window appears.
+    - On Ubuntu 26.04 PT also needs `sudo apt install libopengl0 libts0t64`
+      (otherwise: `libOpenGL.so.0: cannot open shared object file`).
+    - PT's user folder is `~/pt`; saved labs go to `~/pt/saves`.
 
 Full walkthrough → **[Live Deploy Setup](live-deploy.md)**.
 

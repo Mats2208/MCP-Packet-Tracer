@@ -20,7 +20,7 @@ from ...infrastructure.catalog.cables import infer_cable
 from ...shared.enums import PortSpeed, DeviceRole, TopologyTemplate
 from ...shared.constants import (
     DEFAULT_ROUTER, DEFAULT_SWITCH,
-    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
+    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_RING_LIFT, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
     LAYOUT_X_SPACING, LAYOUT_PC_X_SPACING, LAYOUT_CLOUD_X_OFFSET,
 )
 
@@ -135,15 +135,20 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
     # secondary switches, which are shifted 120 px at a time along the same row.
     ap_y = LAYOUT_Y_SWITCH + 70
 
-    # Routers
+    # Routers. A ring (triangle) closes last ↔ first: with every router on one row that
+    # link is drawn straight through the middle ones and hides behind them, so the
+    # middle routers are lifted to make the closing link visible.
+    ring = req.template == TopologyTemplate.THREE_ROUTER_TRIANGLE and req.routers >= 3
     for i in range(req.routers):
         role = DeviceRole.CORE_ROUTER if req.routers == 1 else (
             DeviceRole.EDGE_ROUTER if (i == 0 or i == req.routers - 1) else DeviceRole.CORE_ROUTER
         )
+        middle = 0 < i < req.routers - 1
         plan.devices.append(DevicePlan(
             name=f"R{i + 1}", model=router_model, category="router",
             role=role,
-            x=_column_x(i), y=LAYOUT_Y_ROUTER,
+            x=_column_x(i),
+            y=LAYOUT_Y_ROUTER - LAYOUT_RING_LIFT if ring and middle else LAYOUT_Y_ROUTER,
         ))
 
     # Switches + PCs + Laptops

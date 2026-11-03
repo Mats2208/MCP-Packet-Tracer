@@ -2785,7 +2785,7 @@
   }
  },
  "pt_save_project": {
-  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder. An absolute\n  path must be an existing folder (the user's choice of where labs live);\n  a relative one is a folder inside the MCP's working directory.\n- overwrite: replace an existing file (default False: an existing file is an error).",
+  "description": "Saves Packet Tracer's active topology as a .pkt file.\n\nCloses the loop: until now the MCP built the topology but saving it\nneeded Ctrl+S by hand.\n\nParameters:\n- filename: file name (.pkt is added if missing)\n- directory: destination folder. Empty = PT's save folder (on Linux, where PT\n  reports a folder that does not exist, ~/pt/saves). An absolute\n  path must be an existing folder (the user's choice of where labs live);\n  a relative one is a folder inside the MCP's working directory.\n- overwrite: replace an existing file (default False: an existing file is an error).",
   "inputSchema": {
    "properties": {
     "directory": {

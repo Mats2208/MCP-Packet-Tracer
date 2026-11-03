@@ -28,7 +28,8 @@ from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
     verify_and_reconcile, file_open_js, file_open_outcome, DEVICE_COUNT_JS,
-    dhcp_host_ports, dhcp_lease_report, renew_dhcp_leases,
+    dhcp_address_report, dhcp_host_ports, dhcp_lease_report, read_host_ips, renew_dhcp_leases,
+    save_project_js,
     console_ping_arm_js, console_ping_poll_js,
 )
 from ....infrastructure.generator.walk_js import WALK_JS
@@ -175,11 +176,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         parts.append("=" * 60)
         parts.append("ADDRESSING TABLE")
         parts.append("=" * 60)
+        # A DHCP host's address here is only the expected lease; the real one is
+        # listed after the deploy ("DHCP leases (live)").
+        dhcp_named = set(dhcp_host_ports(plan, set(static_host_ips(plan))))
         for dev in plan.devices:
             if dev.interfaces:
                 parts.append(f"{dev.name} ({dev.model}):")
                 for iface, ip in dev.interfaces.items():
-                    parts.append(f"  {iface}: {ip}")
+                    tag = "  (DHCP, expected lease)" if dev.name in dhcp_named else ""
+                    parts.append(f"  {iface}: {ip}{tag}")
                 if dev.gateway:
                     parts.append(f"  Gateway: {dev.gateway}")
             elif dev.gateway:
@@ -396,8 +401,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         dhcp_hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
         if dhcp_hosts:
             ctx.settle_stp()
-            dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(
-                lambda js, t: _bridge_send_and_wait(js, timeout=t), dhcp_hosts))
+            send = lambda js, t: _bridge_send_and_wait(js, timeout=t)  # noqa: E731
+            dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(send, dhcp_hosts))
+            dhcp_lines += dhcp_address_report(plan, read_host_ips(send, dhcp_hosts))
 
         report = ["Topology deployed to Packet Tracer!", f"  Commands sent: {sent}"]
         if not chk["verified"]:
@@ -575,7 +581,8 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
 
         Parameters:
         - filename: file name (.pkt is added if missing)
-        - directory: destination folder. Empty = PT's save folder. An absolute
+        - directory: destination folder. Empty = PT's save folder (on Linux, where PT
+          reports a folder that does not exist, ~/pt/saves). An absolute
           path must be an existing folder (the user's choice of where labs live);
           a relative one is a folder inside the MCP's working directory.
         - overwrite: replace an existing file (default False: an existing file is an error).
@@ -596,17 +603,7 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         if directory.strip() and not overwrite and save_target_exists(directory.strip(), name):
             return f"Not saved: {name} already exists in {directory.strip()}. Pass overwrite=True to replace it."
 
-        js = (
-            "var aw=ipc.appWindow();"
-            f"var dir={json.dumps(directory.strip())};"
-            "if(!dir){dir=String(aw.getDefaultFileSaveLocation());}"
-            "dir=String(dir).replace(/\\\\/g,'/').replace(/\\/+$/,'');"
-            f"var full=dir+'/'+{json.dumps(name)};"
-            "var fm=ipc.systemFileManager();"
-            f"if(!{json.dumps(overwrite)}&&fm.fileExists(full)){{reportResult('EXISTS:'+full);}}else{{"
-            "aw.fileSaveAsNoPrompt(full,false);"
-            "reportResult(fm.fileExists(full)?('OK:'+full+'|'+fm.getFileSize(full)):('ERR:not created '+full));}"
-        )
+        js = save_project_js(directory.strip(), name, overwrite)
         result = _bridge_send_and_wait(js, timeout=20.0)
         if result is None:
             return "No answer from PT (timeout) while saving."
