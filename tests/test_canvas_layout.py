@@ -196,3 +196,15 @@ def test_move_js_escapes_device_names():
     js = move_devices_js({'R1"); evil(); ("': (10, 20)})
     cfg = js[js.index("var c=") + 6: js.index(";var net")]
     assert json.loads(cfg)["p"] == {'R1"); evil(); ("': [10, 20]}
+
+
+def test_hub_lan_takes_the_free_side_not_a_spoke():
+    # The hub's own LAN used to point into a spoke's link and its PCs sat on it.
+    plan, d = _plan(MAC, template="hub_spoke", routers=4, pcs_per_lan=2)
+    hub, sw = d["R1"], d["SW1"]
+    import math
+    lan = math.atan2(sw.y - hub.y, sw.x - hub.x)
+    for spoke in ("R2", "R3", "R4"):
+        a = math.atan2(d[spoke].y - hub.y, d[spoke].x - hub.x)
+        assert abs((lan - a + math.pi) % (2 * math.pi) - math.pi) > math.radians(40)
+    assert not _boxes_overlap(plan.devices)

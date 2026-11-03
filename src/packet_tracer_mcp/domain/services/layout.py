@@ -41,17 +41,17 @@ LABEL_H = 25
 MARGIN = 45
 
 # Distances of the unscaled drawing (the fit scales them).
-CORE_GAP = 280        # between neighbouring core devices
-FIRST_HOP = 125       # core device → first device of a branch
-NEXT_HOP = 115        # one tree level further
-SPREAD_X = 85         # side by side, horizontally
-SPREAD_Y = 90         # side by side, vertically (the labels take room)
+CORE_GAP = 260        # between neighbouring core devices
+FIRST_HOP = 120       # core device → first device of a branch
+NEXT_HOP = 130        # one tree level further
+SPREAD_X = 95         # side by side, horizontally
+SPREAD_Y = 95         # side by side, vertically (the labels take room)
 ROW_MAX = 6           # hosts in one row before wrapping
 
 # Never shrink below this (labels overlap) and never blow a small lab up past this.
 SCALE_MIN = 0.7
-SCALE_MAX = 1.5
-MAX_STRETCH = 2.2     # one axis at most this many times the other
+SCALE_MAX = 1.2
+MAX_STRETCH = 1.5     # one axis at most this many times the other
 
 _COMPASS = [math.radians(a) for a in (-90, 0, 180, 90, -45, -135, 45, 135)]
 
@@ -247,6 +247,29 @@ def _place_children(at: tuple[float, float], children: list[_Node], d: tuple[flo
         pos[c.name] = (at[0] + d[0] * depth + v[0] * off, at[1] + d[1] * depth + v[1] * off)
 
 
+def _angle_gap(a: float, b: float) -> float:
+    return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+
+
+def _free_direction(pos: dict[str, tuple[float, float]], c: str, core_peers: set[str],
+                    out: tuple[float, float]) -> tuple[float, float]:
+    """The compass direction (45° steps) for `c`'s LANs: as far as possible from its
+    links to other core devices, and among equals the closest to its outward one.
+
+    In a row this is the outward side for the ends and up/down for the middle ones; on
+    a hub it is the widest gap between spokes, so the hub's LAN never sits on a spoke.
+    """
+    used = [math.atan2(pos[n][1] - pos[c][1], pos[n][0] - pos[c][0]) for n in core_peers]
+    want = math.atan2(out[1], out[0])
+
+    def score(a: float) -> tuple[float, float]:
+        free = min((_angle_gap(a, u) for u in used), default=math.pi)
+        return (round(free, 3), -_angle_gap(a, want))
+
+    best = max(_COMPASS, key=score)
+    return _snap((math.cos(best), math.sin(best)), 45)
+
+
 def _draw(shape: str, order: list[str], turn: float, adj: dict[str, set[str]],
           cats: dict[str, str]) -> dict[str, tuple[float, float]]:
     """Unscaled centres of the core and of everything hanging from it."""
@@ -255,7 +278,7 @@ def _draw(shape: str, order: list[str], turn: float, adj: dict[str, set[str]],
     taken = set(order)
     # Branches of each core device go along its outward direction, side by side.
     for c in order:
-        d = _snap(out[c], 45)
+        d = _free_direction(pos, c, adj[c] & set(order), out[c])
         heads = sorted((n for n in adj[c] if n not in taken), key=lambda n: (_is_host(cats[n]), _natural(n)))
         clouds = [n for n in heads if cats[n] == "cloud"]
         trees = [_branch_tree(h, adj, cats, taken) for h in heads
