@@ -348,10 +348,16 @@ def dhcp_address_report(plan, live_ips: dict[str, str]) -> list[str]:
     """
     if not live_ips:
         return []
-    planned = {
-        dev.name: str(ipaddress.ip_interface(next(iter(dev.interfaces.values()))).ip)
-        for dev in plan.devices if dev.interfaces and next(iter(dev.interfaces.values()))
-    }
+    # Only the hosts that were read: a router or a hand-written plan may hold a value
+    # that is not an address, and the deploy already happened by the time this runs.
+    planned: dict[str, str] = {}
+    for dev in plan.devices:
+        if dev.name not in live_ips or not dev.interfaces:
+            continue
+        try:
+            planned[dev.name] = str(ipaddress.ip_interface(next(iter(dev.interfaces.values()))).ip)
+        except ValueError:
+            pass
     parts = []
     for name, ip in live_ips.items():
         want = planned.get(name)
