@@ -93,3 +93,13 @@ def test_read_host_ips_skips_unreadable_hosts():
 
     hosts = {"PC1": "FastEthernet0", "PC2": "FastEthernet0", "PC3": "FastEthernet0"}
     assert read_host_ips(send, hosts) == {"PC1": "192.168.0.2"}
+
+
+def test_dhcp_report_ignores_devices_that_were_not_read():
+    # A router with a non-address value must not break the report after a deploy.
+    plan = _Plan([_Dev("R1", "unassigned"), _Dev("PC1", "not-an-ip"), _Dev("PC2", "192.168.0.3/24")])
+    lines = dhcp_address_report(plan, {"PC1": "192.168.0.2", "PC2": "192.168.0.4"})
+    assert lines == [
+        "  DHCP leases (live, use these to ping): "
+        "PC1 192.168.0.2, PC2 192.168.0.4 (table said 192.168.0.3)"
+    ]
