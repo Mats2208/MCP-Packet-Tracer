@@ -14,26 +14,20 @@ from src.packet_tracer_mcp.infrastructure.generator.ptbuilder_generator import (
 
 
 class TestDHCPFallback:
-    def test_last_host_per_lan_is_static(self):
-        # 1 router, 3 PCs, DHCP on → 2 DHCP + 1 estático (el de mayor IP)
+    def test_every_pc_takes_dhcp(self):
+        # The old F17 fallback made the last PC of each LAN static; the deploy now
+        # re-requests leases after STP instead.
         req = TopologyRequest(routers=1, pcs_per_lan=3, dhcp=True)
         plan, _ = plan_from_request(req)
         script = generate_executable_script(plan)
+        assert len(re.findall(r"configurePcIp\([^,]+, true\)", script)) == 3
+        assert not re.findall(r"configurePcIp\([^,]+, false,", script)
 
-        dhcp_calls = re.findall(r"configurePcIp\([^,]+, true\)", script)
-        static_calls = re.findall(r"configurePcIp\([^,]+, false,", script)
-        assert len(dhcp_calls) == 2
-        assert len(static_calls) == 1
-        # el estático es el de mayor IP (.4)
-        assert "192.168.0.4" in script
-
-    def test_two_lans_one_static_each(self):
+    def test_two_lans_no_static_pc(self):
         req = TopologyRequest(routers=2, pcs_per_lan=2, dhcp=True, routing="static")
         plan, _ = plan_from_request(req)
         script = generate_executable_script(plan)
-        static_calls = re.findall(r"configurePcIp\([^,]+, false,", script)
-        # un host estático por LAN (2 LANs)
-        assert len(static_calls) == 2
+        assert not re.findall(r"configurePcIp\([^,]+, false,", script)
 
     def test_no_dhcp_all_static(self):
         req = TopologyRequest(routers=1, pcs_per_lan=3, dhcp=False)

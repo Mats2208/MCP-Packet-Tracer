@@ -5,6 +5,7 @@ from ..models.plans import TopologyPlan
 from ..models.errors import PlanError, ErrorCode
 from ...infrastructure.catalog.devices import resolve_model, get_valid_ports
 from ...infrastructure.catalog.cables import CABLE_TYPES, infer_cable
+from ...infrastructure.catalog.modules import ports_for_slot, resolve_module
 
 
 def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]]:
@@ -12,6 +13,12 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
     errors: list[PlanError] = []
     warnings: list[PlanError] = []
     port_usage: dict[str, str] = {}
+    # Ports that the plan's modules add (an HWIC-2T in "0/1" adds Serial0/1/0-1).
+    module_ports: dict[str, set[str]] = {}
+    for mod in plan.modules:
+        spec = resolve_module(mod.module)
+        if spec:
+            module_ports.setdefault(mod.device, set()).update(ports_for_slot(spec, mod.slot))
 
     for link in plan.links:
         desc = f"{link.device_a}:{link.port_a} ↔ {link.device_b}:{link.port_b}"
@@ -35,8 +42,8 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
             continue
 
         # Valid ports
-        _check_port(errors, dev_a.name, dev_a.model, link.port_a)
-        _check_port(errors, dev_b.name, dev_b.model, link.port_b)
+        _check_port(errors, dev_a.name, dev_a.model, link.port_a, module_ports.get(dev_a.name))
+        _check_port(errors, dev_b.name, dev_b.model, link.port_b, module_ports.get(dev_b.name))
 
         # Duplicate ports
         for key, label in [
@@ -63,6 +70,8 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
 
         # Suggest the correct cable
         expected = infer_cable(dev_a.category, dev_b.category)
+        if link.port_a.startswith("Serial") and link.port_b.startswith("Serial"):
+            expected = "serial"
         if link.cable != expected:
             warnings.append(PlanError(
                 code=ErrorCode.INVALID_CABLE_TYPE,
@@ -73,9 +82,10 @@ def validate_links(plan: TopologyPlan) -> tuple[list[PlanError], list[PlanError]
     return errors, warnings
 
 
-def _check_port(errors: list[PlanError], dev_name: str, model_name: str, port: str):
-    """Checks that a port exists on the model."""
-    valid = get_valid_ports(model_name)
+def _check_port(errors: list[PlanError], dev_name: str, model_name: str, port: str,
+                extra: set[str] | None = None):
+    """Checks that a port exists on the model (or on a module the plan installs)."""
+    valid = get_valid_ports(model_name) | (extra or set())
     if valid and port not in valid:
         errors.append(PlanError(
             code=ErrorCode.INVALID_PORT,

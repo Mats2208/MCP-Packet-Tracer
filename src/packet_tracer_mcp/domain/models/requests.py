@@ -45,6 +45,10 @@ class TopologyRequest(BaseModel):
     ipv6_base: str = "2001:db8::/32"
     # Laptops connected over WiFi (wireless NIC + an AP auto-associated per LAN)
     wireless_laptops: bool = False
+    # Visible area of PT's logical view (px). None = layout.DEFAULT_CANVAS; the tools fill
+    # it from the live canvas when the bridge is up.
+    canvas_width: int | None = Field(default=None, ge=400, le=8000)
+    canvas_height: int | None = Field(default=None, ge=300, le=5000)
 
     @field_validator("base_network", "inter_router_network")
     @classmethod

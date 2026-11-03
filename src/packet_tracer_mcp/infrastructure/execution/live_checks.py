@@ -438,3 +438,96 @@ def console_ping_poll_js(device: str, base: int) -> str:
         "reportResult('DONE:'+(stat?stat[stat.length-1]:'no stats'));"
         "}else{reportResult('WAIT');}}"
     )
+
+
+def wifi_clients_by_ap(plan) -> dict[str, list[str]]:
+    """{AP: [WiFi clients of its LAN]} when the plan has more than one AP.
+
+    Every AP-PT broadcasts the same SSID ("Default") and a laptop joins whichever AP
+    it hears first, not the one of its LAN (measured on PT 9.0.1: LT3 and LT4, planned
+    for LAN 2, leased 192.168.0.x from LAN 1, with the old layout and the new one
+    alike). The planner records each client's AP in DevicePlan.ap.
+    """
+    aps = {d.name for d in plan.devices if d.category == "accesspoint"}
+    if len(aps) < 2:
+        return {}
+    out: dict[str, list[str]] = {}
+    for d in plan.devices:
+        ap = getattr(d, "ap", "")
+        if getattr(d, "wireless", False) and ap in aps:
+            out.setdefault(ap, []).append(d.name)
+    return out
+
+
+def wireless_macs_js(devices: list[str]) -> str:
+    """{device: MAC of its Wireless0} for each device; a missing one is left out."""
+    cfg = json.dumps({"devices": devices})
+    return (
+        "(function(){try{"
+        f"var c={cfg};var net=ipc.network();var r={{}};"
+        "for(var i=0;i<c.devices.length;i++){try{var d=net.getDevice(c.devices[i]);"
+        "var p=d?d.getPort('Wireless0'):null;if(p){r[c.devices[i]]=String(p.getMacAddress());}}catch(e){}}"
+        "reportResult(JSON.stringify(r));"
+        "}catch(e){reportResult('{}');}})();"
+    )
+
+
+def power_cycle_js(devices: list[str]) -> str:
+    """Turn each device off and on again (skipping the boot); answers the ones cycled."""
+    cfg = json.dumps({"devices": devices})
+    return (
+        "(function(){try{"
+        f"var c={cfg};var net=ipc.network();var done=[];"
+        "for(var i=0;i<c.devices.length;i++){try{var d=net.getDevice(c.devices[i]);if(!d){continue;}"
+        "d.setPower(false);d.setPower(true);if(typeof d.skipBoot==='function'){d.skipBoot();}"
+        "done.push(c.devices[i]);}catch(e){}}"
+        "reportResult(JSON.stringify(done));"
+        "}catch(e){reportResult('[]');}})();"
+    )
+
+
+def pin_wifi_clients(send: Callable[[str, float], str | None], plan) -> list[str]:
+    """Keep each WiFi laptop on the AP of its LAN, then have it ask for a new lease.
+
+    Each AP gets a MAC filter that allows only its own laptops (the same setting as
+    pt_wireless_ap; measured: LT3/LT4 moved from 192.168.0.x to 192.168.1.x), and
+    every pinned laptop re-requests DHCP. Returns report lines.
+    """
+    from ..generator.host_js import host_ip_config_js
+    from ..generator.wireless_js import wireless_ap_js
+
+    groups = wifi_clients_by_ap(plan)
+    if not groups:
+        return []
+    names = [n for clients in groups.values() for n in clients]
+    try:
+        macs = json.loads(send(wireless_macs_js(names), 8.0) or "{}")
+    except ValueError:
+        macs = {}
+    pinned, failed = [], []
+    for ap, clients in groups.items():
+        allowed = [macs[n] for n in clients if n in macs]
+        if not allowed:
+            failed.append(ap)
+            continue
+        raw = send(wireless_ap_js(ap, mac_filter=True, allow_listed=True, mac_list=allowed), 8.0)
+        try:
+            after = json.loads(raw or "{}").get("after") or {}
+            ok = bool(after.get("mac_filter")) and set(allowed) <= set(after.get("mac_list") or [])
+        except (ValueError, AttributeError):
+            ok = False
+        (pinned if ok else failed).append(ap)
+    # A client an AP has just refused stays unassociated (APIPA 169.254.x) and never tries
+    # the other AP on its own; a power cycle makes it scan again (measured on PT 9.0.1:
+    # LT1 went from 169.254.167.174 to 192.168.0.8). Then it asks for a lease.
+    send(power_cycle_js(names), 8.0)
+    for n in names:
+        send(host_ip_config_js(n, "Wireless0", mode="dhcp"), 8.0)
+    lines = []
+    if pinned:
+        lines.append(f"  📶 WiFi clients pinned to their LAN's AP (MAC filter): "
+                     + ", ".join(f"{ap} ← {'/'.join(groups[ap])}" for ap in pinned))
+    if failed:
+        lines.append(f"  ⚠ Could not pin the clients of {', '.join(failed)}: they may join "
+                     f"another LAN's AP. Fix with pt_wireless_ap(mac_filter=True, allow_listed=True, mac_list=[...]).")
+    return lines

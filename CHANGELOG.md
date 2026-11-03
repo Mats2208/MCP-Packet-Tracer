@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- **Topology-aware layout fitted to the user's canvas** (`domain/services/layout.py`). Plans used to be
+  three fixed rows (routers y=100, switches 250, hosts 400, servers 640): 3 routers with 3 PCs looked
+  like 2 with 2, and on a 14" MacBook, whose logical view measures 1512x599, the servers row fell
+  below the view. Routers now form the core from their own links (a pair or chain in a row with the
+  end LANs pointing outward and the middle ones alternating down and up, a ring as a polygon, a hub
+  as a star), each LAN hangs off its router away from the core, a WAN cloud takes the free side, and
+  the drawing is scaled (at most 1.2x, axes within 1.5x of each other) and centred in the visible view. `pt_full_build` reads that view
+  (`getMainViewAreaWidth/Height`, measured) when it deploys a valid plan, `pt_plan_topology` when a
+  bridge is up; without one the layout plans for 1500x600. A lab bigger than the view gets a note
+  instead of piled-up devices. Checked live on PT 9.0.1 (macOS) with 2 routers + 2 PCs each,
+  3 routers + 3 PCs, a triangle and 2 routers with WAN and a server.
+- **`pt_canvas_info`**: size of the visible view, zoom, the devices' bbox and the usable x/y range,
+  so the model knows its axes before placing devices by hand.
+- **`pt_auto_layout`**: rearranges the live topology the same way in one call and reads every
+  position back (`apply=False` previews). Measured: a scrambled 12-device lab, 12/12 moved.
+- Skill: a "Canvas and layout" section, plus the measured view-size API in the Script-Engine reference.
+
 Linux verified for the first time, on 2026-11-03: Ubuntu 26.04.1 LTS, Packet Tracer 9.0.1 from
 Cisco's `.deb`, `packet-tracer-mcp` 0.11.0 through `uvx`, Claude Code as the client. The server,
 both bridge channels and the device panel work; the run found the bugs below.
@@ -14,7 +33,23 @@ both bridge channels and the device panel work; the run found the bugs below.
   default now falls back to `getUserFolder()/saves` (`~/pt/saves`, created if needed), and the JS
   never calls `fileSaveAsNoPrompt` on a folder that is not there. Measured live.
 - **`three_router_triangle` draws its closing link.** All routers sat on one row, so the R3 ↔ R1
-  link ran straight behind R2 and could not be seen. The middle routers of the ring are lifted.
+  link ran straight behind R2 and could not be seen. The topology-aware layout above draws a ring as
+  a polygon.
+- **WiFi laptops lease from their own LAN.** Every AccessPoint-PT broadcasts "Default" and a laptop
+  joins whichever AP it hears first: with one AP per LAN, LT3 and LT4 of LAN 2 leased 192.168.0.x
+  from LAN 1 (measured, with the old layout and the new). The planner records each client's AP
+  (`DevicePlan.ap`) and the deploy gives every AP a MAC filter allowing only its own laptops, then
+  re-requests their leases; measured, they moved to 192.168.1.x.
+- **Every PC takes DHCP; only servers stay static.** The last host of each subnet was set static (an
+  old fallback for a DISCOVER lost to STP), so one PC of a DHCP lab had a hand-set address and was
+  missing from the lease report. The deploy re-requests leases after STP instead; measured, all six PCs
+  of a triangle lab leased.
+- **Router links go over serial when Ethernet runs out.** A hub with 3 spokes on a 2911 left its own
+  LAN unconnected and a triangle with WAN dropped the cloud, silently. Router-router links that would
+  take a port a LAN or the WAN needs now use an HWIC-2T (1941/2901/2911) or NIM-2T (ISR4321/4331)
+  added to the plan, and the validator accepts the ports of the plan's modules. Measured: the serial
+  link comes up with no clock rate set and OSPF goes FULL over it. A link with no Ethernet and no free
+  slot left is reported (`Planner: no free port ...`) instead of dropped silently.
 - **Deploys report the DHCP leases hosts really got.** The addressing table can only predict a
   lease: a DISCOVER lost to STP and asked again can land on another address (measured: planned
   192.168.2.2, leased 192.168.2.4), so a ping to the table's address failed. The table now tags those

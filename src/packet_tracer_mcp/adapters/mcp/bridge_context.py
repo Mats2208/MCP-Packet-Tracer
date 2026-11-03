@@ -267,6 +267,20 @@ class BridgeContext:
             return self.file_bridge.send_and_wait(guarded, timeout=timeout)
         return None
 
+    def canvas_size(self) -> tuple[int, int] | None:
+        """(width, height) of PT's visible logical view when a channel is up, else None.
+
+        Planning uses it to fit the layout to the user's screen; with no channel the
+        layout falls back to its default size.
+        """
+        if not self.pick_channel():
+            return None
+        from ...infrastructure.execution.canvas_view import read_canvas_size
+        size = read_canvas_size(lambda js, t: self.send_and_wait(js, timeout=t))
+        if size is None:
+            return None
+        return max(400, size[0]), max(300, size[1])
+
     def check_bridge(self) -> str | None:
         """Check that there is a channel to PT (HTTP or file). Error message or None.
 

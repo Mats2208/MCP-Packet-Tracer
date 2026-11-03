@@ -8,7 +8,6 @@ from packet_tracer_mcp.infrastructure.execution.live_checks import (
     read_host_ips,
     save_project_js,
 )
-from packet_tracer_mcp.shared.constants import LAYOUT_RING_LIFT, LAYOUT_Y_ROUTER
 from packet_tracer_mcp.shared.enums import RoutingProtocol, TopologyTemplate
 
 
@@ -42,15 +41,17 @@ def _plan(template, routers):
     return {d.name: d for d in plan.devices}, plan
 
 
-def test_triangle_lifts_the_middle_router():
+def test_triangle_routers_are_not_collinear():
+    # With all three on one line, R3 <-> R1 is drawn straight behind R2.
     devs, _ = _plan(TopologyTemplate.THREE_ROUTER_TRIANGLE, 3)
-    assert devs["R1"].y == devs["R3"].y == LAYOUT_Y_ROUTER
-    assert devs["R2"].y == LAYOUT_Y_ROUTER - LAYOUT_RING_LIFT
+    (x1, y1), (x2, y2), (x3, y3) = ((devs[r].x, devs[r].y) for r in ("R1", "R2", "R3"))
+    twice_area = abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1))
+    assert twice_area > 100 * 100
 
 
 def test_chain_templates_keep_routers_on_one_row():
     devs, _ = _plan(TopologyTemplate.MULTI_LAN, 3)
-    assert {devs[r].y for r in ("R1", "R2", "R3")} == {LAYOUT_Y_ROUTER}
+    assert len({devs[r].y for r in ("R1", "R2", "R3")}) == 1
 
 
 # --- DHCP leases: report the address each host REALLY got --------------------

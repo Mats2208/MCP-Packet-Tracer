@@ -1,4 +1,4 @@
-"""Canvas tools: screenshot, notes, clear annotations."""
+"""Canvas tools: screenshot, notes, clear annotations, view size, auto layout."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....shared.utils import safe_name_component, resolve_within, workdir_subdir
 from ....domain.services.canvas import CanvasImageError, decode_pt_image, normalize_format
 from ....shared.utils import reply_json
+from ....domain.services.layout import ICON_H, ICON_W, LABEL_H, MARGIN, layout
+from ....infrastructure.execution.canvas_view import (
+    canvas_info_js, layout_inputs, move_devices_js, parse_canvas_info, read_canvas_size,
+)
+from ....infrastructure.generator.topology_js import topology_snapshot_js
 
 
 def register(mcp: FastMCP, ctx: BridgeContext) -> None:
@@ -226,4 +231,99 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             if data.get("removed")
             else f"There were no annotations to remove{nota}"
         )
+        return reply_json(data)
+
+    # ------------------------------------------------------------------
+    # CANVAS — size and layout
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def pt_canvas_info() -> str:
+        """
+        Size of PT's visible logical view and where the devices are, so you know which
+        x/y range to use before pt_add_device / pt_move_device / pt_add_note.
+
+        Returns view [width, height] in canvas px (depends on the screen and the window:
+        1512x599 on a 14" MacBook, about 1900x700 on a maximised 1920x1080), zoom (0 =
+        100 %), the device count and their bbox [x0, y0, x1, y1]. x/y of a device is the
+        top-left corner of its icon (about 50x40 px, labels below): keep x within
+        [40, width-90] and y within [40, height-90] so everything is visible.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+        data = parse_canvas_info(_bridge_send_and_wait(canvas_info_js(), timeout=8.0))
+        if data is None:
+            return _TIMEOUT_MSG
+        w, h = data["view"]
+        data["usable_x"] = [MARGIN, max(MARGIN, w - MARGIN - ICON_W)]
+        data["usable_y"] = [MARGIN, max(MARGIN, h - MARGIN - ICON_H - LABEL_H)]
+        zoom = data.get("zoom")
+        data["summary"] = (
+            f"Visible view {w}x{h} px at zoom {zoom} (0 = 100 %). Place icons with x in "
+            f"{data['usable_x']} and y in {data['usable_y']}."
+            + (f" Devices: {data['devices']}, bbox {data['bbox']}." if data.get("bbox") else "")
+            + (" PT is zoomed: the visible area in canvas px differs." if zoom not in (0, None) else "")
+        )
+        return reply_json(data)
+
+    @mcp.tool()
+    def pt_auto_layout(apply: bool = True) -> str:
+        """
+        Rearrange the devices on the canvas by topology and fit them to the visible view.
+
+        Reads the live devices and links: routers form the core (2 or a chain: a row with
+        the end LANs pointing outward, middle LANs alternating down/up; a ring: a polygon;
+        a hub: a star), each LAN hangs off its router away from the core (switch, then its
+        hosts side by side), a WAN cloud takes the free side. Moves everything in one call
+        and reads each position back.
+
+        Use it after building by hand, after adding devices, or when a lab looks crowded.
+        pt_full_build / pt_plan_topology already plan with this layout.
+
+        Parameters:
+        - apply: False only returns the new positions without moving anything.
+        """
+        err = _check_bridge()
+        if err:
+            return err
+        raw = _bridge_send_and_wait(topology_snapshot_js(), timeout=15.0)
+        if raw is None:
+            return _TIMEOUT_MSG
+        try:
+            snapshot = json.loads(raw)
+        except (TypeError, ValueError):
+            return f"Unreadable reply from PT: {raw[:200]}"
+        if not snapshot.get("ok"):
+            return f"PT error: {raw[:200]}"
+        devices, links = layout_inputs(snapshot)
+        if not devices:
+            return "The canvas has no devices to arrange."
+        canvas = read_canvas_size(lambda js, t: _bridge_send_and_wait(js, timeout=t))
+        result = layout(devices, links, canvas)
+        data: dict = {
+            "canvas": list(result.canvas), "canvas_read": canvas is not None,
+            "shape": result.shape, "fits": result.fits, "size": list(result.size),
+            "notes": result.notes,
+            "positions": {n: list(p) for n, p in result.positions.items()},
+        }
+        if not apply:
+            data["summary"] = f"Layout computed for {len(devices)} device(s); nothing moved (apply=False)."
+            return reply_json(data)
+        moved_raw = _bridge_send_and_wait(move_devices_js(result.positions), timeout=20.0)
+        if moved_raw is None:
+            return _TIMEOUT_MSG
+        try:
+            moved = json.loads(moved_raw)
+        except (TypeError, ValueError):
+            return f"Unreadable reply from PT: {moved_raw[:200]}"
+        data.update({k: moved.get(k) for k in ("moved", "missing", "mismatched")})
+        data["verified"] = bool(moved.get("ok")) and moved.get("moved") == len(result.positions)
+        data["summary"] = (
+            f"✅ {moved.get('moved')}/{len(result.positions)} device(s) moved ({result.shape} core) "
+            f"to fit {result.canvas[0]}x{result.canvas[1]}."
+            if data["verified"]
+            else f"⚠ Moved {moved.get('moved')}/{len(result.positions)}; missing {moved.get('missing')}, "
+                 f"mismatched {moved.get('mismatched')}."
+        ) + ("" if result.fits else " " + " ".join(result.notes[-1:]))
         return reply_json(data)

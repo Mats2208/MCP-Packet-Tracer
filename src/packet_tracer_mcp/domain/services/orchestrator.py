@@ -8,7 +8,7 @@ with devices, links, IPs, DHCP and routes, all validated.
 from __future__ import annotations
 
 from ..models.requests import TopologyRequest
-from ..models.plans import TopologyPlan, DevicePlan, LinkPlan, ValidationCheck
+from ..models.plans import TopologyPlan, DevicePlan, LinkPlan, ModulePlan, ValidationCheck
 from ..models.vlans import VLANConfig, AccessPortConfig, TrunkConfig
 from ..models.errors import ValidationResult
 from .ip_planner import IPPlanner
@@ -17,10 +17,11 @@ from ...infrastructure.catalog.devices import (
     resolve_model, get_ports_by_speed,
 )
 from ...infrastructure.catalog.cables import infer_cable
+from .layout import layout
 from ...shared.enums import PortSpeed, DeviceRole, TopologyTemplate
 from ...shared.constants import (
     DEFAULT_ROUTER, DEFAULT_SWITCH,
-    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_RING_LIFT, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
+    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
     LAYOUT_X_SPACING, LAYOUT_PC_X_SPACING, LAYOUT_CLOUD_X_OFFSET,
 )
 
@@ -45,6 +46,8 @@ def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, Validatio
 
     _create_devices(plan, request, pcs_list, laptops_list)
     _create_links(plan, request, pcs_list, laptops_list)
+    _assign_wifi_aps(plan, request, laptops_list)
+    _apply_layout(plan, request, laptops_list)
     _create_vlans(plan, request)
 
     ip_planner = IPPlanner(
@@ -64,7 +67,10 @@ def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, Validatio
 
     _create_validations(plan)
 
+    layout_notes = [w for w in plan.warnings if w.startswith(("Layout: ", "Planner: "))]
     result = validate_plan(plan)
+    # validate_plan rewrites plan.warnings from its own result; keep the planner's.
+    plan.warnings.extend(w for w in layout_notes if w not in plan.warnings)
     return plan, result
 
 
@@ -135,20 +141,15 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
     # secondary switches, which are shifted 120 px at a time along the same row.
     ap_y = LAYOUT_Y_SWITCH + 70
 
-    # Routers. A ring (triangle) closes last ↔ first: with every router on one row that
-    # link is drawn straight through the middle ones and hides behind them, so the
-    # middle routers are lifted to make the closing link visible.
-    ring = req.template == TopologyTemplate.THREE_ROUTER_TRIANGLE and req.routers >= 3
+    # These row-by-row positions are provisional: _apply_layout replaces them with the
+    # topology-aware layout once the links exist.
     for i in range(req.routers):
         role = DeviceRole.CORE_ROUTER if req.routers == 1 else (
             DeviceRole.EDGE_ROUTER if (i == 0 or i == req.routers - 1) else DeviceRole.CORE_ROUTER
         )
-        middle = 0 < i < req.routers - 1
         plan.devices.append(DevicePlan(
             name=f"R{i + 1}", model=router_model, category="router",
-            role=role,
-            x=_column_x(i),
-            y=LAYOUT_Y_ROUTER - LAYOUT_RING_LIFT if ring and middle else LAYOUT_Y_ROUTER,
+            role=role, x=_column_x(i), y=LAYOUT_Y_ROUTER,
         ))
 
     # Switches + PCs + Laptops
@@ -223,6 +224,48 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
         ))
 
 
+def _assign_wifi_aps(plan: TopologyPlan, req: TopologyRequest, laptops_list: list[int]) -> None:
+    """Record on each WiFi laptop the AP of its LAN (DevicePlan.ap)."""
+    if not req.wireless_laptops:
+        return
+    by_name = {d.name: d for d in plan.devices}
+    wifi_aps = {lan: f"WAP{k + 1}" for k, lan in enumerate(_wifi_lan_indices(req, laptops_list))}
+    lt = 0
+    for lan, count in enumerate(laptops_list):
+        for _ in range(count):
+            lt += 1
+            dev = by_name.get(f"LT{lt}")
+            if not dev or not dev.wireless:
+                continue
+            for parent in (wifi_aps.get(lan), f"AP{lan + 1}"):
+                if parent and by_name.get(parent) and by_name[parent].category == "accesspoint":
+                    dev.ap = parent
+                    break
+
+
+def _apply_layout(plan: TopologyPlan, req: TopologyRequest, laptops_list: list[int]) -> None:
+    """Replace the row-by-row positions with the topology-aware layout (layout.py).
+
+    WiFi laptops have no cable, so they are attached to the AP of their LAN (or its
+    switch) for drawing only.
+    """
+    attach = {d.name: d.ap for d in plan.devices if d.wireless and d.ap}
+    canvas = (req.canvas_width, req.canvas_height) if req.canvas_width and req.canvas_height else None
+    plan.warnings[:] = [w for w in plan.warnings if not w.startswith("Layout: ")]
+    res = layout([(d.name, d.category) for d in plan.devices],
+                 [(l.device_a, l.device_b) for l in plan.links], canvas, attach)
+    for d in plan.devices:
+        if d.name in res.positions:
+            d.x, d.y = res.positions[d.name]
+    plan.warnings.extend(f"Layout: {n}" for n in res.notes)
+
+
+def fit_plan_to_canvas(plan: TopologyPlan, req: TopologyRequest, canvas: tuple[int, int]) -> None:
+    """Lay `plan` out again for a `canvas` (width, height) read after planning."""
+    req.canvas_width, req.canvas_height = canvas
+    _apply_layout(plan, req, _normalize_laptops(req))
+
+
 def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int], laptops_list: list[int]):
     router_model_obj = resolve_model(req.router_model or DEFAULT_ROUTER)
     switch_model_obj = resolve_model(req.switch_model or DEFAULT_SWITCH)
@@ -270,27 +313,50 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
 
     # Router ↔ Router — the SHAPE depends on the template (it used to always be a chain, which
     # meant three_router_triangle lacked the R3↔R1 closing link = no redundancy).
-    def _link_routers(ra, rb):
-        p1, p2 = _router_port(ra.name, ra.model), _router_port(rb.name, rb.model)
-        if p1 and p2:
-            plan.links.append(LinkPlan(
-                device_a=ra.name, port_a=p1,
-                device_b=rb.name, port_b=p2,
-                cable=infer_cable("router", "router"),
-            ))
-
     if req.template == TopologyTemplate.HUB_SPOKE and len(routers) >= 2:
         # Router star: R1 (hub) ↔ each spoke.
-        hub = routers[0]
-        for spoke in routers[1:]:
-            _link_routers(hub, spoke)
+        edges = [(routers[0], spoke) for spoke in routers[1:]]
     else:
         # Chain: R[i] ↔ R[i+1].
-        for i in range(len(routers) - 1):
-            _link_routers(routers[i], routers[i + 1])
+        edges = [(routers[i], routers[i + 1]) for i in range(len(routers) - 1)]
         # Triangle/ring: closes the last ↔ the first to provide the redundant path.
         if req.template == TopologyTemplate.THREE_ROUTER_TRIANGLE and len(routers) >= 3:
-            _link_routers(routers[-1], routers[0])
+            edges.append((routers[-1], routers[0]))
+
+    # Each router keeps an Ethernet port for every LAN switch and for the WAN cloud.
+    # A router-router link that would eat one of those goes over serial instead: an
+    # HWIC-2T / NIM-2T is added to the plan. Without this a hub with 3 spokes on a
+    # 2911 (3 Gigabit ports) left its own LAN unconnected, and a triangle with WAN
+    # dropped the cloud, both silently.
+    spr = req.switches_per_router
+    eth_free = {r.name: len(_ethernet_ports(r.model)) - spr - (1 if cloud and r is routers[-1] else 0)
+                for r in routers}
+    serial = _SerialPorts(plan)
+
+    def _link_routers(ra, rb):
+        if eth_free[ra.name] > 0 and eth_free[rb.name] > 0:
+            p1, p2 = _router_port(ra.name, ra.model), _router_port(rb.name, rb.model)
+            if p1 and p2:
+                eth_free[ra.name] -= 1
+                eth_free[rb.name] -= 1
+                plan.links.append(LinkPlan(
+                    device_a=ra.name, port_a=p1,
+                    device_b=rb.name, port_b=p2,
+                    cable=infer_cable("router", "router"),
+                ))
+                return
+        s1, s2 = serial.port(ra), serial.port(rb)
+        if s1 and s2:
+            plan.links.append(LinkPlan(device_a=ra.name, port_a=s1,
+                                       device_b=rb.name, port_b=s2, cable="serial"))
+        else:
+            plan.warnings.append(
+                f"Planner: no free port for {ra.name} <-> {rb.name} ({ra.model}/{rb.model} have no "
+                "Ethernet left and no serial slot): the link was left out. Use a router with more "
+                "ports (ISR4331, 2911) or fewer links.")
+
+    for ra, rb in edges:
+        _link_routers(ra, rb)
 
     # Router ↔ Switch
     spr = req.switches_per_router
@@ -393,6 +459,51 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
                 device_b=cloud.name, port_b=cp,
                 cable=infer_cable("router", "cloud"),
             ))
+
+
+# Free slots for a 2-port serial card, in install order, per router model. HWIC on
+# 1941 / 2901 / 2911, NIM on the ISR 4000 (slot "0/1" measured; the rest follow PT's
+# chassis/subslot naming).
+_SERIAL_SLOTS = {
+    "1941": ("0/0", "0/1"),
+    "2901": ("0/0", "0/1", "0/2", "0/3"),
+    "2911": ("0/0", "0/1", "0/2", "0/3"),
+    "ISR4321": ("0/1", "0/2"),
+    "ISR4331": ("0/1", "0/2", "0/3"),
+}
+
+
+def _ethernet_ports(model: str) -> list[str]:
+    """Routed Ethernet ports of a router model (Gigabit, else FastEthernet)."""
+    m = resolve_model(model)
+    if not m:
+        return []
+    return [p.full_name for p in get_ports_by_speed(m, PortSpeed.GIGABIT_ETHERNET)] or \
+        [p.full_name for p in get_ports_by_speed(m, PortSpeed.FAST_ETHERNET)]
+
+
+class _SerialPorts:
+    """Hands out serial ports, adding a 2-port serial module to the plan when needed."""
+
+    def __init__(self, plan: TopologyPlan):
+        self.plan = plan
+        self.free: dict[str, list[str]] = {}
+        self.slots_used: dict[str, int] = {}
+
+    def port(self, router) -> str | None:
+        from ...infrastructure.catalog.modules import get_serial_module, ports_for_slot
+        free = self.free.setdefault(router.name, [])
+        if not free:
+            spec = get_serial_module(router.model)
+            slots = _SERIAL_SLOTS.get(router.model, ())
+            used = self.slots_used.get(router.name, 0)
+            if not spec or used >= len(slots):
+                return None
+            slot = slots[used]
+            self.slots_used[router.name] = used + 1
+            self.plan.modules.append(ModulePlan(device=router.name, slot=slot, module=spec.name))
+            free.extend(ports_for_slot(spec, slot))
+        return free.pop(0)
 
 
 def _switch_port_for(plan: TopologyPlan, switch_name: str, peer_name: str) -> str | None:

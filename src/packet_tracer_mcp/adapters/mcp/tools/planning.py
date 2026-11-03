@@ -214,6 +214,9 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             ipv6_base=ipv6_base,
             wireless_laptops=wireless_laptops,
         )
+        size = ctx.canvas_size()
+        if size:
+            request.canvas_width, request.canvas_height = size
         plan, validation = plan_from_request(request)
         return plan.model_dump_json()
 

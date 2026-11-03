@@ -124,10 +124,16 @@ device once each. A power-cycle reloads the startup-config, so routers/switches 
   `switchport voice vlan`.
 - IPv6 dual-stack: `pt_plan_topology(dual_stack=True)` (routers via CLI, hosts via SLAAC); a
   static host IPv6 with `pt_host_ip_config(ipv6_address="2001:db8:0:1::10/64")`.
-- WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC
-  + AP auto-associated on the default SSID). The AP's SSID, broadcast and MAC filter are set with
-  `pt_wireless_ap`; WPA/WEP is NOT settable (the client profile API throws), so laptops only join
-  "Default".
+- WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC + one AP
+  per LAN). Every AP says "Default" and PT lets a laptop join any of them, so the deploy gives each AP
+  a MAC filter allowing only its own laptops (`ap` on each wireless device in the plan), power-cycles
+  them (a refused client stays at 169.254.x until restarted) and re-requests their leases (measured: they lease from their own LAN). By hand: `pt_wireless_ap(device,
+  mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])`. WPA/WEP is NOT settable (the client
+  profile API throws), so laptops only join "Default".
+- DHCP labs: every PC and laptop takes DHCP, only servers are static. The deploy report's
+  `DHCP leases (live, use these to ping)` is the real address of each host.
+- A router out of Ethernet ports: the planner puts the extra router-router links on serial
+  (HWIC-2T / NIM-2T added to `plan.modules`; measured up/up with no clock rate, OSPF FULL).
 - Verification: `pt_diff` (plan vs live PT), `pt_health_check` (down links, duplicate
   IPs) and `pt_verify_connectivity(from_device, to_ip)` — a REAL ping from the
   device's console, with the result parsed (reached / did not reach).
@@ -165,7 +171,13 @@ device once each. A power-cycle reloads the startup-config, so routers/switches 
   PNG by default — it compresses a diagram much better than JPG.
 - `pt_add_note(x, y, text)`: a label on the canvas. The font size is NOT
   configurable. The coordinates are the same logical-canvas ones that
-  pt_add_device uses (routers ~y=100, switches ~y=250, hosts ~y=400).
+  pt_add_device uses (top-left of an icon).
+- `pt_canvas_info()`: the visible view's size (it depends on the screen: 1512x599 on a 14"
+  MacBook, ~1900x700 on 1920x1080), zoom, the devices' bbox and the usable x/y range. Call it
+  before placing devices by hand.
+- `pt_full_build` / `pt_plan_topology` lay the plan out by topology (routers as a row, ring or
+  star; each LAN off its router on the free side; WAN on its own side) and fit it to that view.
+  `pt_auto_layout()` does the same to a live canvas (`apply=False` previews).
 - There is NO drawing tool: PT's line/circle calls take the stacking order where
   the size would go and ignore the colours passed to them.
 - `pt_clear_annotations(kind)`: removes ONLY annotations, never devices or links.
@@ -496,6 +508,7 @@ Rules that fail silently:
 `rejected_lines`, then read back (pt_read_routes/ospf/vlans/acl/nat/qos/dhcp_leases).
 - Diagnose with pt_health_check, pt_inspect_ports, the pt_read_* tools and \
 pt_send_pdu(steps=N) (the trace says why), not by parsing `show`. pt_fast_forward after cabling.
+- Canvas: pt_canvas_info gives the visible x/y range; plans are already laid out by topology; pt_auto_layout rearranges a canvas built by hand.
 
 Device windows (CLI, Command Prompt, Desktop apps, Services): pt_cli, pt_host_command, pt_server_* and \
 friends work headless; pt_ui_mode("ui") or show=True opens PT's window, capture=True saves a PNG.

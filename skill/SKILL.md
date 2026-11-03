@@ -10,7 +10,7 @@ description: >-
 
 # Packet Tracer MCP — operating guide
 
-The `packet-tracer` MCP (96 tools) plans, deploys, configures and **reads back** a *running* Packet
+The `packet-tracer` MCP (98 tools) plans, deploys, configures and **reads back** a *running* Packet
 Tracer. The `pt_*` tools are your only interface, plus raw JS via `pt_send_raw`.
 
 ## ⛔ Prime directive: DISCOVER, never invent
@@ -38,6 +38,9 @@ user to open **Extensions → MCP BUILDER** (or dismiss a stuck error modal).
 
 - **New topology, one shot:** `pt_full_build(routers=2, routing="ospf")` (refuses an invalid plan). Stepwise:
   `pt_list_devices` → `pt_plan_topology` → `pt_validate_plan` → `pt_live_deploy`. Read `errors[]` first.
+  The deploy report is the truth: hosts take DHCP (servers static), so ping the addresses in
+  `DHCP leases (live…)`, not the table. A router out of Ethernet gets serial links + an HWIC-2T/NIM-2T
+  in `plan.modules` (measured: no clock rate needed); a `Planner:` warning means a link was left out.
 - **Edit a live topology:** `pt_bridge_status` → `pt_query_topology` → `pt_add_device` / `pt_add_link` /
   `pt_delete_link` / `pt_move_device` / `pt_rename_device` → **`pt_fast_forward()`** after cabling
   (STP converges at once instead of ~30 s; measured) → verify.
@@ -46,6 +49,17 @@ user to open **Extensions → MCP BUILDER** (or dismiss a stuck error modal).
 - **Large design:** a TopologyPlan `.json` → `pt_validate_plan(plan_path=…)` → `pt_live_deploy(plan_path=…)`.
 - **Save:** `pt_save_project(filename="lab1")` (`overwrite=True` to replace); `pt_open_project(path=…)`
   replaces the open topology.
+
+### Canvas and layout
+
+- The visible view depends on the screen: **`pt_canvas_info()`** gives its size (1512x599 on a 14"
+  MacBook, ~1900x700 on 1920x1080), zoom and `usable_x`/`usable_y`. Call it before placing devices by
+  hand; x/y is an icon's top-left (~50x40 px, labels below).
+- `pt_full_build` / `pt_plan_topology` already lay out **by topology** and fit that view (routers as
+  the core: row, ring or star; each LAN off its router, away from the core; WAN on the free side).
+  Don't move devices afterwards unless asked.
+- After building or extending by hand: **`pt_auto_layout()`** (`apply=False` previews). "needs about
+  WxH" = bigger than the view: suggest maximising PT or zooming out.
 
 ### Verify every change, then read it back
 
@@ -82,22 +96,12 @@ Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
 - **QoS for voice** (measured, 2911 and 2811):
   `pt_apply_qos(router="R1", interface="GigabitEthernet0/1", policy_name="WAN-OUT", classes=[{"name":"VOICE","match_protocol":"rtp","match_dscp":"ef","priority_kbps":512}])`
   → `pt_read_qos(device="R1")`.
-- **CME** (measured end to end): `pt_add_device(name="CME", model="2811")`,
-  `pt_add_device(name="SW1", model="3560-24PS")` (PoE), `pt_add_device(name="PH1", model="7960")`;
-  `pt_add_link(device1="CME", port1="FastEthernet0/0", device2="SW1", port2="FastEthernet0/24")`,
-  `pt_add_link(device1="PH1", port1="Switch", device2="SW1", port2="FastEthernet0/1")` (PH2 on `FastEthernet0/2` the same way);
-  `pt_cli(device="CME", commands=["enable","configure terminal","interface FastEthernet0/0","ip address 10.10.10.1 255.255.255.0","no shutdown","end"])`;
-  `pt_apply_voice(router="CME", source_ip="10.10.10.1", extensions=["1001","1002"], dhcp_pool="VOICE", dhcp_network="10.10.10.0/24")`
-  (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
-  (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
 - **2811 network** (measured: OSPF FULL, leases): `pt_full_build(router_model="2811", routing="ospf")`.
-- **Wi-Fi AP** (measured): `pt_wireless_ap(device="AP1", ssid="LAB-A")` (laptops only join "Default", so its
-  clients drop); `pt_wireless_ap(device="AP1", mac_filter=True, allow_listed=True, mac_list=["00D0.BC56.D4CD"])`
-  keeps only the listed clients. List each client's **Wireless0** MAC (`pt_read_device_panel`), not its
-  Bluetooth one. Judge association by `pt_host_command(device="LT1", command="ping 192.168.0.1")`, not the port.
-- **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
-  routers via `pt_plan_topology(dual_stack=True)`.
-- **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
+- **Wi-Fi** (measured): `pt_full_build(laptops_per_lan=2, wireless_laptops=True)` pins each laptop to its
+  LAN's AP (MAC filter per AP; report line `📶 WiFi clients pinned`). By hand: `pt_wireless_ap(device="AP2",
+  mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])` then `pt_host_ip_config(device="LT3", mode="dhcp")`.
+  Laptops only join "Default": renaming an AP's SSID drops its clients. Judge association by the address, not the port.
+- **CME voice, static host IPv6, mail domain**: recipes in [reference/tools.md](reference/tools.md#recipes).
 
 ## What is NOT possible (do not try, say so)
 
@@ -119,7 +123,7 @@ returns strings, wrap everything in `try/catch`; `getProcess("Aaa")` and `Policy
 
 | Read | When |
 |---|---|
-| [reference/tools.md](reference/tools.md) | full catalog (96 tools) with arguments, advanced builds, more recipes |
+| [reference/tools.md](reference/tools.md) | full catalog (98 tools) with arguments, advanced builds, more recipes |
 | [reference/script-engine-api.md](reference/script-engine-api.md) | raw JS for `pt_send_raw`, modules, plans too big for a parameter |
 | [reference/rough-edges.md](reference/rough-edges.md) | something behaves oddly: measured PT 9 traps and workarounds |
 
