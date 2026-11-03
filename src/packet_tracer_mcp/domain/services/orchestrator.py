@@ -260,6 +260,10 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
         """Gigabit first; a router with only FastEthernet (the 2811) falls back to it."""
         return _gig(name, model) or _fast(name, model)
 
+    def _access_port(name: str, model: str) -> str | None:
+        """FastEthernet first; a switch without it (the 3650) falls back to Gigabit."""
+        return _fast(name, model) or _gig(name, model)
+
     def _ether(name: str, model: str) -> str | None:
         """Plain Ethernet port — the cloud's is Ethernet6, not FastEthernet."""
         return _next_port(name, model, PortSpeed.ETHERNET)
@@ -310,7 +314,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
             if pc_idx >= len(pcs):
                 break
             pc = pcs[pc_idx]
-            sp, pp = _fast(primary_sw.name, primary_sw.model), _fast(pc.name, pc.model)
+            sp, pp = _access_port(primary_sw.name, primary_sw.model), _fast(pc.name, pc.model)
             if sp and pp:
                 plan.links.append(LinkPlan(
                     device_a=primary_sw.name, port_a=sp,
@@ -333,7 +337,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
             if lt.wireless:
                 # WiFi: association is over RF (automatic to an AP on the default SSID), not by cable.
                 continue
-            sp, lp = _fast(primary_sw.name, primary_sw.model), _fast(lt.name, lt.model)
+            sp, lp = _access_port(primary_sw.name, primary_sw.model), _fast(lt.name, lt.model)
             if sp and lp:
                 plan.links.append(LinkPlan(
                     device_a=primary_sw.name, port_a=sp,
@@ -359,7 +363,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
         if not primary_sw:
             continue
         ap = aps[ap_idx]
-        sp, ap_port = _fast(primary_sw.name, primary_sw.model), _fast(ap.name, ap.model)
+        sp, ap_port = _access_port(primary_sw.name, primary_sw.model), _fast(ap.name, ap.model)
         if sp and ap_port:
             plan.links.append(LinkPlan(
                 device_a=primary_sw.name, port_a=sp,
@@ -371,7 +375,7 @@ def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int],
     if servers and switches:
         sw = switches[0]
         for srv in servers:
-            sp, srp = _fast(sw.name, sw.model), _fast(srv.name, srv.model)
+            sp, srp = _access_port(sw.name, sw.model), _fast(srv.name, srv.model)
             if sp and srp:
                 plan.links.append(LinkPlan(
                     device_a=sw.name, port_a=sp,
