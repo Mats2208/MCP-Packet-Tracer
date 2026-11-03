@@ -63,6 +63,15 @@ def test_middle_lans_of_a_long_chain_alternate_down_and_up():
     assert d["SW2"].y > d["R2"].y and d["SW3"].y < d["R3"].y
 
 
+def test_hosts_keep_natural_order_past_nine():
+    # Sorted as text, PC10 came before PC9 on the canvas.
+    devices = [("R1", "router"), ("SW1", "switch")] + [(f"PC{i}", "pc") for i in (9, 10, 11, 12)]
+    links = [("R1", "SW1")] + [("SW1", f"PC{i}") for i in (9, 10, 11, 12)]
+    pos = layout(devices, links, MAC).positions
+    order = sorted((f"PC{i}" for i in (9, 10, 11, 12)), key=lambda n: (pos[n][0], pos[n][1]))
+    assert order == ["PC9", "PC10", "PC11", "PC12"]
+
+
 def test_wan_cloud_takes_a_free_side_not_a_lan_slot():
     _, d = _plan(MAC, routers=2, pcs_per_lan=3, has_wan=True)
     cloud = next(v for v in d.values() if v.category == "cloud")

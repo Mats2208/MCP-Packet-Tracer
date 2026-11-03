@@ -26,6 +26,7 @@ before the deploy and a live canvas read back from PT.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 # Visible logical-view area used when the real one cannot be read (no bridge): the
@@ -67,6 +68,11 @@ class LayoutResult:
     size: tuple[int, int]                        # width, height of the drawing (px)
     shape: str                                   # core shape: single, line, ring, star, circle
     notes: list[str] = field(default_factory=list)
+
+
+def _natural(name: str) -> list:
+    """Sort key that puts PC9 before PC10."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
 
 def _is_host(cat: str) -> bool:
@@ -177,7 +183,7 @@ def _branch_tree(root: str, adj: dict[str, set[str]], cats: dict[str, str],
                  taken: set[str]) -> _Node:
     node = _Node(root, cats[root])
     taken.add(root)
-    for n in sorted(adj[root], key=lambda m: (_is_host(cats[m]), m)):
+    for n in sorted(adj[root], key=lambda m: (_is_host(cats[m]), _natural(m))):
         if n not in taken:
             node.children.append(_branch_tree(n, adj, cats, taken))
     return node
@@ -250,7 +256,7 @@ def _draw(shape: str, order: list[str], turn: float, adj: dict[str, set[str]],
     # Branches of each core device go along its outward direction, side by side.
     for c in order:
         d = _snap(out[c], 45)
-        heads = sorted((n for n in adj[c] if n not in taken), key=lambda n: (_is_host(cats[n]), n))
+        heads = sorted((n for n in adj[c] if n not in taken), key=lambda n: (_is_host(cats[n]), _natural(n)))
         clouds = [n for n in heads if cats[n] == "cloud"]
         trees = [_branch_tree(h, adj, cats, taken) for h in heads
                  if h not in taken and cats[h] != "cloud"]
@@ -359,7 +365,7 @@ def layout(devices: list[tuple[str, str]], links: list[tuple[str, str]],
     cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
     draw_w = span_x * sx + ICON_W
     draw_h = span_y * sy + ICON_H + LABEL_H
-    fits = draw_w <= W - MARGIN and draw_h <= H - MARGIN
+    fits = draw_w <= W and draw_h <= H
     # Centre in the canvas; an axis that does not fit starts at the margin instead, so
     # nothing goes negative (PT grows the canvas right and down, never left or up of 0).
     ox = W / 2 if draw_w <= W else MARGIN + span_x * sx / 2 + ICON_W / 2
