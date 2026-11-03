@@ -33,10 +33,10 @@ def _triangle_plan():
     return plan
 
 
-def test_static_hosts_are_the_servers_and_the_last_host_of_each_lan():
-    assert static_host_ips(_triangle_plan()) == {
-        "SRV1": "192.168.0.4", "PC4": "192.168.1.3", "PC6": "192.168.2.3",
-    }
+def test_static_hosts_are_only_the_servers():
+    # The last PC of each LAN used to be static too (F17); the deploy now re-requests
+    # every lease after STP, so it takes DHCP like the rest.
+    assert static_host_ips(_triangle_plan()) == {"SRV1": "192.168.0.4"}
 
 
 def test_no_static_hosts_without_dhcp():
@@ -51,8 +51,8 @@ def test_each_pool_excludes_the_static_hosts_of_its_subnet():
                 for r, cfg in configs.items() if r.startswith("R")}
     assert excluded == {
         "R1": ["192.168.0.1 192.168.0.1", "192.168.0.4"],
-        "R2": ["192.168.1.1 192.168.1.1", "192.168.1.3"],
-        "R3": ["192.168.2.1 192.168.2.1", "192.168.2.3"],
+        "R2": ["192.168.1.1 192.168.1.1"],
+        "R3": ["192.168.2.1 192.168.2.1"],
     }
 
 
@@ -65,14 +65,14 @@ def test_script_keeps_static_exactly_the_excluded_hosts():
     script = generate_executable_script(_triangle_plan())
     static = set(re.findall(r'configurePcIp\("([^"]+)", false,', script))
     dhcp = set(re.findall(r'configurePcIp\("([^"]+)", true\)', script))
-    assert static == {"SRV1", "PC4", "PC6"}
-    assert dhcp == {"PC1", "PC2", "PC3", "PC5"}
+    assert static == {"SRV1"}
+    assert dhcp == {"PC1", "PC2", "PC3", "PC4", "PC5", "PC6"}
 
 
 def test_dhcp_hosts_are_the_non_static_ones():
     plan = _triangle_plan()
     hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
-    assert hosts == {n: "FastEthernet0" for n in ("PC1", "PC2", "PC3", "PC5")}
+    assert hosts == {n: "FastEthernet0" for n in ("PC1", "PC2", "PC3", "PC4", "PC5", "PC6")}
 
 
 def test_hosts_outside_every_pool_are_not_dhcp_hosts():
