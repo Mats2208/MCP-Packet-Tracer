@@ -85,7 +85,7 @@ with the default outline.
   choice is arbitrary (measured: LT3/LT4 of LAN 2 leased 192.168.0.x from LAN 1's AP). The client side
   cannot be pointed at an SSID (`WirelessClientProcess.addProfile` throws), but the AP side can filter:
   **`pt_live_deploy` / `pt_full_build` give every AP a MAC filter allowing only its own clients** (each
-  WiFi device's `ap` in the plan; the planner fills it) and re-request their leases — measured, they
+  WiFi device's `ap` in the plan; the planner fills it), power-cycle those clients (a client an AP refused stays at 169.254.x until restarted) and re-request their leases — measured, they
   moved to 192.168.1.x. The report line `📶 WiFi clients pinned…` confirms it. On a canvas built by hand:
   `pt_wireless_ap(device="AP2", mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])`, then
   `pt_host_ip_config(device="LT3", mode="dhcp")`. A dropped client's port still reads

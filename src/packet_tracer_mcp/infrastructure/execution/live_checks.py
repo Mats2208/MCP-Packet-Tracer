@@ -472,6 +472,20 @@ def wireless_macs_js(devices: list[str]) -> str:
     )
 
 
+def power_cycle_js(devices: list[str]) -> str:
+    """Turn each device off and on again (skipping the boot); answers the ones cycled."""
+    cfg = json.dumps({"devices": devices})
+    return (
+        "(function(){try{"
+        f"var c={cfg};var net=ipc.network();var done=[];"
+        "for(var i=0;i<c.devices.length;i++){try{var d=net.getDevice(c.devices[i]);if(!d){continue;}"
+        "d.setPower(false);d.setPower(true);if(typeof d.skipBoot==='function'){d.skipBoot();}"
+        "done.push(c.devices[i]);}catch(e){}}"
+        "reportResult(JSON.stringify(done));"
+        "}catch(e){reportResult('[]');}})();"
+    )
+
+
 def pin_wifi_clients(send: Callable[[str, float], str | None], plan) -> list[str]:
     """Keep each WiFi laptop on the AP of its LAN, then have it ask for a new lease.
 
@@ -498,10 +512,15 @@ def pin_wifi_clients(send: Callable[[str, float], str | None], plan) -> list[str
             continue
         raw = send(wireless_ap_js(ap, mac_filter=True, allow_listed=True, mac_list=allowed), 8.0)
         try:
-            ok = bool(json.loads(raw or "{}").get("state", {}).get("mac_filter"))
+            after = json.loads(raw or "{}").get("after") or {}
+            ok = bool(after.get("mac_filter")) and set(allowed) <= set(after.get("mac_list") or [])
         except (ValueError, AttributeError):
             ok = False
         (pinned if ok else failed).append(ap)
+    # A client an AP has just refused stays unassociated (APIPA 169.254.x) and never tries
+    # the other AP on its own; a power cycle makes it scan again (measured on PT 9.0.1:
+    # LT1 went from 169.254.167.174 to 192.168.0.8). Then it asks for a lease.
+    send(power_cycle_js(names), 8.0)
     for n in names:
         send(host_ip_config_js(n, "Wireless0", mode="dhcp"), 8.0)
     lines = []

@@ -44,7 +44,11 @@ class _FakePT:
         if "getPort('Wireless0')" in js:
             return json.dumps(self.macs)
         if "WirelessServerProcess" in js:
-            return json.dumps({"ok": True, "state": {"mac_filter": self.filter_ok}})
+            # The shape wireless_ap_js really answers (measured): the state is in "after".
+            cfg = json.loads(re.search(r"var c=(\{.*?\});", js).group(1))
+            return json.dumps({"ok": True, "applied": ["mac_filter"], "failed": [],
+                               "before": {}, "after": {"mac_filter": self.filter_ok,
+                                                       "mac_list": cfg["mac_list"]}})
         return '{"ok":true}'
 
 
@@ -68,7 +72,19 @@ def test_pinning_filters_each_ap_and_re_requests_the_leases():
     renewed = [n for n in ("LT1", "LT2", "LT3", "LT4")
                if any(f'"{n}"' in js and '"dhcp"' in js for js in pt.sent)]
     assert renewed == ["LT1", "LT2", "LT3", "LT4"]
+    # A refused client stays stuck until it is power-cycled, before the DHCP request.
+    cycle = next(i for i, js in enumerate(pt.sent) if "setPower(false)" in js)
+    first_dhcp = next(i for i, js in enumerate(pt.sent) if '"dhcp"' in js)
+    assert cycle < first_dhcp
     assert lines and "WAP1 ← LT1/LT2" in lines[0] and "WAP2 ← LT3/LT4" in lines[0]
+
+
+def test_the_state_comes_from_the_after_block():
+    # The deploy read a "state" key that wireless_ap_js never sends, so every AP was
+    # reported as not pinned while the filter was in place (seen live, 2026-11-03).
+    pt = _FakePT({"LT1": "A", "LT2": "B", "LT3": "C", "LT4": "D"})
+    lines = pin_wifi_clients(pt.send, _wifi_plan())
+    assert not any("Could not pin" in line for line in lines)
 
 
 def test_an_ap_that_does_not_take_the_filter_is_reported():

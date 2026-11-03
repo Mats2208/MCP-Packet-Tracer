@@ -126,8 +126,8 @@ device once each. A power-cycle reloads the startup-config, so routers/switches 
   static host IPv6 with `pt_host_ip_config(ipv6_address="2001:db8:0:1::10/64")`.
 - WiFi laptops: `pt_full_build(laptops_per_lan=N, wireless_laptops=True)` (wireless NIC + one AP
   per LAN). Every AP says "Default" and PT lets a laptop join any of them, so the deploy gives each AP
-  a MAC filter allowing only its own laptops (`ap` on each wireless device in the plan) and re-requests
-  their leases (measured: they lease from their own LAN). By hand: `pt_wireless_ap(device,
+  a MAC filter allowing only its own laptops (`ap` on each wireless device in the plan), power-cycles
+  them (a refused client stays at 169.254.x until restarted) and re-requests their leases (measured: they lease from their own LAN). By hand: `pt_wireless_ap(device,
   mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])`. WPA/WEP is NOT settable (the client
   profile API throws), so laptops only join "Default".
 - DHCP labs: every PC and laptop takes DHCP, only servers are static. The deploy report's

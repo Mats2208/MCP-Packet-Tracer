@@ -172,8 +172,8 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
   → `Wireless0`, adds **one `AccessPoint-PT` per LAN** wired to that LAN's switch, and records each
   laptop's AP (`"ap": "WAP2"` in the plan). Every AP says "Default" and PT lets a laptop join any of
-  them, so the deploy gives each AP a **MAC filter allowing only its own laptops** and re-requests their
-  leases (measured on PT 9.0.1: LT3/LT4 went from LAN 1's 192.168.0.x to their own 192.168.1.x). A
+  them, so the deploy gives each AP a **MAC filter allowing only its own laptops**, power-cycles them (a refused client
+  stays at 169.254.x until restarted) and re-requests their leases (measured on PT 9.0.1: LT3/LT4 went from LAN 1's 192.168.0.x to their own 192.168.1.x). A
   hand-written plan with ≥2 APs needs `ap` on each wireless device, or it gets
   `WIRELESS_AMBIGUOUS_ASSOCIATION`.
 - **Serial when Ethernet runs out:** router-router links that would take the port a LAN or the WAN needs
