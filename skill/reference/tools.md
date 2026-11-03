@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (108)
+## Tool catalog (111)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
