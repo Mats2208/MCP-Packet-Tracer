@@ -96,22 +96,12 @@ Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
 - **QoS for voice** (measured, 2911 and 2811):
   `pt_apply_qos(router="R1", interface="GigabitEthernet0/1", policy_name="WAN-OUT", classes=[{"name":"VOICE","match_protocol":"rtp","match_dscp":"ef","priority_kbps":512}])`
   → `pt_read_qos(device="R1")`.
-- **CME** (measured end to end): `pt_add_device(name="CME", model="2811")`,
-  `pt_add_device(name="SW1", model="3560-24PS")` (PoE), `pt_add_device(name="PH1", model="7960")`;
-  `pt_add_link(device1="CME", port1="FastEthernet0/0", device2="SW1", port2="FastEthernet0/24")`,
-  `pt_add_link(device1="PH1", port1="Switch", device2="SW1", port2="FastEthernet0/1")` (PH2 on `FastEthernet0/2` the same way);
-  `pt_cli(device="CME", commands=["enable","configure terminal","interface FastEthernet0/0","ip address 10.10.10.1 255.255.255.0","no shutdown","end"])`;
-  `pt_apply_voice(router="CME", source_ip="10.10.10.1", extensions=["1001","1002"], dhcp_pool="VOICE", dhcp_network="10.10.10.0/24")`
-  (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
-  (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
 - **2811 network** (measured: OSPF FULL, leases): `pt_full_build(router_model="2811", routing="ospf")`.
 - **Wi-Fi** (measured): `pt_full_build(laptops_per_lan=2, wireless_laptops=True)` pins each laptop to its
   LAN's AP (MAC filter per AP; report line `📶 WiFi clients pinned`). By hand: `pt_wireless_ap(device="AP2",
   mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])` then `pt_host_ip_config(device="LT3", mode="dhcp")`.
   Laptops only join "Default": renaming an AP's SSID drops its clients. Judge association by the address, not the port.
-- **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
-  routers via `pt_plan_topology(dual_stack=True)`.
-- **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
+- **CME voice, static host IPv6, mail domain**: recipes in [reference/tools.md](reference/tools.md#recipes).
 
 ## What is NOT possible (do not try, say so)
 

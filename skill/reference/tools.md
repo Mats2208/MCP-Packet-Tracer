@@ -191,7 +191,18 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
   the filename question is automatic).
 - DHCP from a server → `pt_server_dhcp("Server0", gateway="192.168.1.1", dns="192.168.1.20",
   start_ip="192.168.1.100", mask="24", max_users=50)` then `pt_host_ip_config("PC0", mode="dhcp")`.
-- HSRP pair, EtherChannel, BGP, QoS for voice, CME, Wi-Fi, IPv6 and mail: see the recipes in SKILL.md.
+- HSRP pair, EtherChannel, BGP, QoS for voice and Wi-Fi: see the recipes in SKILL.md.
+- **CME** (measured end to end): `pt_add_device(name="CME", model="2811")`,
+  `pt_add_device(name="SW1", model="3560-24PS")` (PoE), `pt_add_device(name="PH1", model="7960")`;
+  `pt_add_link(device1="CME", port1="FastEthernet0/0", device2="SW1", port2="FastEthernet0/24")`,
+  `pt_add_link(device1="PH1", port1="Switch", device2="SW1", port2="FastEthernet0/1")` (PH2 on `FastEthernet0/2` the same way);
+  `pt_cli(device="CME", commands=["enable","configure terminal","interface FastEthernet0/0","ip address 10.10.10.1 255.255.255.0","no shutdown","end"])`;
+  `pt_apply_voice(router="CME", source_ip="10.10.10.1", extensions=["1001","1002"], dhcp_pool="VOICE", dhcp_network="10.10.10.0/24")`
+  (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
+  (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
+- **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
+  routers via `pt_plan_topology(dual_stack=True)`.
+- **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
 - Read a device's ports safely → `pt_send_raw('try{var d=ipc.network().getDevice("R1");reportResult(d?d.getPorts().join(","):"missing")}catch(e){reportResult("ERR:"+e)}', wait_result=True)`.
 
 ## Validation: plan error codes
