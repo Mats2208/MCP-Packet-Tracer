@@ -91,9 +91,11 @@ with the default outline.
   variable is set to something shorter than 32 chars or outside `[A-Za-z0-9_-]`. Fix it or unset it so
   the on-disk token is used. It fails loudly on purpose: a bad value there would disable the only real
   defence the bridge has.
-- **The layout adapts to the busiest LAN.** Coordinates no longer go negative and LAN clusters no longer
-  overlap, so you do not need to reposition devices by hand after `pt_full_build` — only if you want a
-  specific arrangement.
+- **The layout follows the topology and the user's screen.** `pt_full_build` reads the visible view
+  (`getMainViewAreaWidth/Height`) when it deploys and fits the drawing to it; without a bridge it plans
+  for 1500x600. A lab too big for the view gets a "needs about WxH" note instead of devices piled up.
+- **A screen capture of PT's window can be stale.** macOS keeps the last frame of a window that is not
+  in front; `pt_screenshot` renders the canvas itself and is always current.
 
 ### Verified against PT 9.0 (2026-10-30)
 

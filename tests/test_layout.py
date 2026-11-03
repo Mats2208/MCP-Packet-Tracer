@@ -13,7 +13,7 @@ import pytest
 
 from src.packet_tracer_mcp.domain.models.requests import TopologyRequest
 from src.packet_tracer_mcp.domain.services.orchestrator import plan_from_request
-from src.packet_tracer_mcp.shared.constants import LAYOUT_PC_X_SPACING
+from src.packet_tracer_mcp.domain.services.layout import ICON_H, ICON_W, LABEL_H
 
 
 def _big_plan(**kw):
@@ -48,25 +48,17 @@ class TestNoOverlap:
             seen[key] = d.name
         assert not clashes, f"dispositivos superpuestos: {clashes}"
 
-    def test_neighbouring_lan_clusters_keep_a_full_slot_of_air(self):
-        """Entre el ultimo PC de una LAN y el primero de la siguiente tiene que
-        caber al menos un espacio de host.
+    def test_no_two_icons_overlap(self):
+        """Icon boxes (with their labels) never intersect, whatever side a LAN takes.
 
-        No alcanza con "no se intercalan": con el espaciado viejo quedaban a
-        10 px, que sobre iconos de ~40 px es indistinguible de estar encimados.
+        This replaces a row-based gap check: LANs are no longer on one row, they hang
+        off their router on different sides.
         """
         plan = _big_plan(routers=4, pcs_per_lan=4, laptops_per_lan=0, servers=0)
-        pcs = [d for d in plan.devices if d.category == "pc"]
-        # 4 PCs por LAN, en orden de creacion
-        lans = [pcs[i * 4:(i + 1) * 4] for i in range(4)]
-        for i in range(len(lans) - 1):
-            rightmost = max(d.x for d in lans[i])
-            leftmost = min(d.x for d in lans[i + 1])
-            gap = leftmost - rightmost
-            assert gap >= LAYOUT_PC_X_SPACING, (
-                f"LAN{i + 1} termina en x={rightmost} y LAN{i + 2} empieza en "
-                f"x={leftmost}: solo {gap} px de separacion"
-            )
+        boxes = [(d.name, d.x, d.y, d.x + ICON_W, d.y + ICON_H + LABEL_H) for d in plan.devices]
+        clashes = [(a[0], b[0]) for i, a in enumerate(boxes) for b in boxes[i + 1:]
+                   if a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]]
+        assert not clashes, f"overlapping icons: {clashes}"
 
 
 class TestServersNearTheirSwitch:

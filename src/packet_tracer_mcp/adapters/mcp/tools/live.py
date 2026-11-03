@@ -8,7 +8,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from ....domain.models.plans import TopologyPlan
 from ....domain.models.requests import TopologyRequest
-from ....domain.services.orchestrator import plan_from_request
+from ....domain.services.orchestrator import fit_plan_to_canvas, plan_from_request
 from ....domain.services.explainer import explain_plan
 from ....domain.services.estimator import estimate_from_plan
 from ....domain.services.validator import validate_plan
@@ -134,6 +134,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             wireless_laptops=wireless_laptops,
         )
         plan, validation = plan_from_request(request)
+        # Fit the drawing to the user's real canvas, read only when this plan is going
+        # to be deployed (an invalid plan sends nothing to PT).
+        if deploy and validation.is_valid:
+            size = ctx.canvas_size()
+            if size:
+                fit_plan_to_canvas(plan, request, size)
         explanation = explain_plan(plan)
         estimation = estimate_from_plan(plan)
 

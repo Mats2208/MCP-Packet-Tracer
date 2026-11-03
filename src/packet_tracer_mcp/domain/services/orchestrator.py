@@ -17,10 +17,11 @@ from ...infrastructure.catalog.devices import (
     resolve_model, get_ports_by_speed,
 )
 from ...infrastructure.catalog.cables import infer_cable
+from .layout import layout
 from ...shared.enums import PortSpeed, DeviceRole, TopologyTemplate
 from ...shared.constants import (
     DEFAULT_ROUTER, DEFAULT_SWITCH,
-    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_RING_LIFT, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
+    LAYOUT_X_START, LAYOUT_Y_ROUTER, LAYOUT_Y_SWITCH, LAYOUT_Y_PC,
     LAYOUT_X_SPACING, LAYOUT_PC_X_SPACING, LAYOUT_CLOUD_X_OFFSET,
 )
 
@@ -45,6 +46,7 @@ def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, Validatio
 
     _create_devices(plan, request, pcs_list, laptops_list)
     _create_links(plan, request, pcs_list, laptops_list)
+    _apply_layout(plan, request, laptops_list)
     _create_vlans(plan, request)
 
     ip_planner = IPPlanner(
@@ -64,7 +66,10 @@ def plan_from_request(request: TopologyRequest) -> tuple[TopologyPlan, Validatio
 
     _create_validations(plan)
 
+    layout_notes = [w for w in plan.warnings if w.startswith("Layout: ")]
     result = validate_plan(plan)
+    # validate_plan rewrites plan.warnings from its own result; keep the layout's.
+    plan.warnings.extend(w for w in layout_notes if w not in plan.warnings)
     return plan, result
 
 
@@ -135,20 +140,15 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
     # secondary switches, which are shifted 120 px at a time along the same row.
     ap_y = LAYOUT_Y_SWITCH + 70
 
-    # Routers. A ring (triangle) closes last ↔ first: with every router on one row that
-    # link is drawn straight through the middle ones and hides behind them, so the
-    # middle routers are lifted to make the closing link visible.
-    ring = req.template == TopologyTemplate.THREE_ROUTER_TRIANGLE and req.routers >= 3
+    # These row-by-row positions are provisional: _apply_layout replaces them with the
+    # topology-aware layout once the links exist.
     for i in range(req.routers):
         role = DeviceRole.CORE_ROUTER if req.routers == 1 else (
             DeviceRole.EDGE_ROUTER if (i == 0 or i == req.routers - 1) else DeviceRole.CORE_ROUTER
         )
-        middle = 0 < i < req.routers - 1
         plan.devices.append(DevicePlan(
             name=f"R{i + 1}", model=router_model, category="router",
-            role=role,
-            x=_column_x(i),
-            y=LAYOUT_Y_ROUTER - LAYOUT_RING_LIFT if ring and middle else LAYOUT_Y_ROUTER,
+            role=role, x=_column_x(i), y=LAYOUT_Y_ROUTER,
         ))
 
     # Switches + PCs + Laptops
@@ -221,6 +221,43 @@ def _create_devices(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int
             x=x_start + req.routers * column_width + LAYOUT_CLOUD_X_OFFSET,
             y=LAYOUT_Y_ROUTER,
         ))
+
+
+def _apply_layout(plan: TopologyPlan, req: TopologyRequest, laptops_list: list[int]) -> None:
+    """Replace the row-by-row positions with the topology-aware layout (layout.py).
+
+    WiFi laptops have no cable, so they are attached to the AP of their LAN (or its
+    switch) for drawing only.
+    """
+    names = {d.name for d in plan.devices}
+    attach: dict[str, str] = {}
+    wifi_aps = {lan: f"WAP{k + 1}" for k, lan in enumerate(_wifi_lan_indices(req, laptops_list))}
+    lt = 0
+    for lan, count in enumerate(laptops_list):
+        for _ in range(count):
+            lt += 1
+            name = f"LT{lt}"
+            if name not in names or not req.wireless_laptops:
+                continue
+            for parent in (wifi_aps.get(lan), f"AP{lan + 1}",
+                           f"SW{lan * req.switches_per_router + 1}"):
+                if parent and parent in names:
+                    attach[name] = parent
+                    break
+    canvas = (req.canvas_width, req.canvas_height) if req.canvas_width and req.canvas_height else None
+    plan.warnings[:] = [w for w in plan.warnings if not w.startswith("Layout: ")]
+    res = layout([(d.name, d.category) for d in plan.devices],
+                 [(l.device_a, l.device_b) for l in plan.links], canvas, attach)
+    for d in plan.devices:
+        if d.name in res.positions:
+            d.x, d.y = res.positions[d.name]
+    plan.warnings.extend(f"Layout: {n}" for n in res.notes)
+
+
+def fit_plan_to_canvas(plan: TopologyPlan, req: TopologyRequest, canvas: tuple[int, int]) -> None:
+    """Lay `plan` out again for a `canvas` (width, height) read after planning."""
+    req.canvas_width, req.canvas_height = canvas
+    _apply_layout(plan, req, _normalize_laptops(req))
 
 
 def _create_links(plan: TopologyPlan, req: TopologyRequest, pcs_list: list[int], laptops_list: list[int]):

@@ -82,7 +82,12 @@ writes a label; font size is not settable. `pt_clear_annotations(kind)` removes 
 never devices or links (drawings included — redraw circles after clearing notes).
 There is no drawing *tool*, but PT's `drawCircle` **does** work from raw JS once you pass all
 seven arguments — see "Drawing IS possible" below. Colours still don't take.
-Canvas coordinates match `pt_add_device`: routers ~y=100, switches ~y=250, hosts ~y=400.
+Canvas coordinates match `pt_add_device` (top-left of the icon). Their range is the user's view:
+`pt_canvas_info()` → `view`, `zoom`, `usable_x`/`usable_y`, devices' `bbox`. `pt_auto_layout(apply=True)`
+rearranges the live topology by its links and fits it to that view (reply: `shape`, `fits`, `moved`,
+`mismatched`, per-device `positions`). Placing by hand for a specific design: core in the middle, one
+direction per LAN (switch first, hosts beyond it side by side 80-90 px apart), no link drawn through
+another device, nothing outside `usable_x`/`usable_y`.
 Recipe for a diagram worth showing: `pt_full_build` → `pt_add_note` per subnet and link →
 `drawCircle` per LAN → `pt_screenshot` → adjust and repeat.
 **Backup / workspace:** `pt_backup_config(device, include_xml)` (real startup-config + serial,

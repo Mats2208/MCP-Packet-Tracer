@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- **Topology-aware layout fitted to the user's canvas** (`domain/services/layout.py`). Plans used to be
+  three fixed rows (routers y=100, switches 250, hosts 400, servers 640): 3 routers with 3 PCs looked
+  like 2 with 2, and on a 14" MacBook, whose logical view measures 1512x599, the servers row fell
+  below the view. Routers now form the core from their own links (a pair or chain in a row with the
+  end LANs pointing outward and the middle ones alternating down and up, a ring as a polygon, a hub
+  as a star), each LAN hangs off its router away from the core, a WAN cloud takes the free side, and
+  the drawing is scaled per axis and centred in the visible view. `pt_full_build` reads that view
+  (`getMainViewAreaWidth/Height`, measured) when it deploys a valid plan, `pt_plan_topology` when a
+  bridge is up; without one the layout plans for 1500x600. A lab bigger than the view gets a note
+  instead of piled-up devices. Checked live on PT 9.0.1 (macOS) with 2 routers + 2 PCs each,
+  3 routers + 3 PCs, a triangle and 2 routers with WAN and a server.
+- **`pt_canvas_info`**: size of the visible view, zoom, the devices' bbox and the usable x/y range,
+  so the model knows its axes before placing devices by hand.
+- **`pt_auto_layout`**: rearranges the live topology the same way in one call and reads every
+  position back (`apply=False` previews). Measured: a scrambled 12-device lab, 12/12 moved.
+- Skill: a "Canvas and layout" section, plus the measured view-size API in the Script-Engine reference.
+
 Linux verified for the first time, on 2026-11-03: Ubuntu 26.04.1 LTS, Packet Tracer 9.0.1 from
 Cisco's `.deb`, `packet-tracer-mcp` 0.11.0 through `uvx`, Claude Code as the client. The server,
 both bridge channels and the device panel work; the run found the bugs below.

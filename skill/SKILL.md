@@ -10,7 +10,7 @@ description: >-
 
 # Packet Tracer MCP — operating guide
 
-The `packet-tracer` MCP (96 tools) plans, deploys, configures and **reads back** a *running* Packet
+The `packet-tracer` MCP (98 tools) plans, deploys, configures and **reads back** a *running* Packet
 Tracer. The `pt_*` tools are your only interface, plus raw JS via `pt_send_raw`.
 
 ## ⛔ Prime directive: DISCOVER, never invent
@@ -46,6 +46,17 @@ user to open **Extensions → MCP BUILDER** (or dismiss a stuck error modal).
 - **Large design:** a TopologyPlan `.json` → `pt_validate_plan(plan_path=…)` → `pt_live_deploy(plan_path=…)`.
 - **Save:** `pt_save_project(filename="lab1")` (`overwrite=True` to replace); `pt_open_project(path=…)`
   replaces the open topology.
+
+### Canvas and layout
+
+- The visible view depends on the screen: **`pt_canvas_info()`** gives its size (1512x599 on a 14"
+  MacBook, ~1900x700 on 1920x1080), zoom and `usable_x`/`usable_y`. Call it before placing devices by
+  hand; x/y is an icon's top-left (~50x40 px, labels below).
+- `pt_full_build` / `pt_plan_topology` already lay out **by topology** and fit that view (routers as
+  the core: row, ring or star; each LAN off its router, away from the core; WAN on the free side).
+  Don't move devices afterwards unless asked.
+- After building or extending by hand: **`pt_auto_layout()`** (`apply=False` previews). "needs about
+  WxH" = bigger than the view: suggest maximising PT or zooming out.
 
 ### Verify every change, then read it back
 
@@ -119,7 +130,7 @@ returns strings, wrap everything in `try/catch`; `getProcess("Aaa")` and `Policy
 
 | Read | When |
 |---|---|
-| [reference/tools.md](reference/tools.md) | full catalog (96 tools) with arguments, advanced builds, more recipes |
+| [reference/tools.md](reference/tools.md) | full catalog (98 tools) with arguments, advanced builds, more recipes |
 | [reference/script-engine-api.md](reference/script-engine-api.md) | raw JS for `pt_send_raw`, modules, plans too big for a parameter |
 | [reference/rough-edges.md](reference/rough-edges.md) | something behaves oddly: measured PT 9 traps and workarounds |
 

@@ -25,6 +25,9 @@ If a method is not here, do **not** assume it exists.
 - `d.moveToLocation(x, y)` → `true`, and `d.getXCoordinate()` / `getYCoordinate()` then read back exactly
   (x, y) (measured). It is what `pt_move_device` uses; in a single `pt_send_raw` you can rearrange dozens
   of devices. The position read right after creation differs from the one asked: PT adjusts it.
+- `ipc.appWindow().getMainViewAreaWidth()` / `getMainViewAreaHeight()` → visible logical view in px
+  (measured 1512x599 on a 14" MacBook, window 1512x921); `lw.getCurrentZoom()` → 0 at 100 %.
+  `lw.centerOn(x, y)` answers undefined and does not scroll while the scene fits the view.
 - `d.getType()` → numeric type: 0 router, 1 switch, 16 multilayer switch (3560), 12 IP phone (7960, measured); full map in the repo's `src/packet_tracer_mcp/shared/constants.py`.
 - `d.addModule(slot, allModuleTypes[model], modelName)` → bool  (**slot is a STRING**)
 - `d.getProcess("AclProcess")` → AclProcess | null (routers) · `d.enterCommand(cmd, mode)`
