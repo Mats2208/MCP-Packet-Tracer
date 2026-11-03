@@ -8,11 +8,13 @@ Read when something in Packet Tracer behaves oddly.
   reject a wrong model); generic `PT-*` modules carry no constraint, so still pick sensibly.
 - **`pt_add_module` no longer reports a false timeout** (fixed 2026-10-07); `pt_install_modules_batch`
   reports `installed` per module (see round 2 below).
-- **`three_router_triangle` closes the ring (R3↔R1)** and `hub_spoke` wires R1→every spoke — the
-  orchestrator honors the template shape (was a flat chain before). ⚠️ **`hub_spoke` is limited by the
-  hub's port count**: a 2911 has 3 Gigabit ports, so it cannot serve 5 spokes plus its own LAN. Asking
-  for more no longer fails silently — the plan comes back with `TOPOLOGY_DISCONNECTED`. Pick a router
-  with more ports, add a module, or use `multi_lan` (a chain needs only 3 ports per router).
+- **`three_router_triangle` closes the ring (R3↔R1)** and `hub_spoke` wires R1→every spoke. When a
+  router runs out of Ethernet (a 2911 has 3 Gigabit: its LAN, the WAN and the core links share them),
+  the planner puts the extra router-router links on **serial**: it adds an HWIC-2T (1941/2901/2911,
+  slots `"0/0".."0/3"`, 1941 only two) or NIM-2T (ISR4321/4331, `"0/1"`…) to `plan.modules` and cables
+  `Serial0/x/y` with `cable="serial"`. Measured on PT 9.0.1: up/up with **no clock rate**, OSPF FULL over
+  it. Past the last free slot (a 2911 hub serves 10 spokes) the link is left out and the plan says
+  `Planner: no free port for R1 <-> R12` plus `TOPOLOGY_DISCONNECTED`: pick an ISR4331 or fewer spokes.
 - **`pt://capabilities` is derived from the live tool registry** (`supported_live.nat/acl/modules/…`) — it
   can no longer drift; trust it *and* the tools.
 - **`pt_live_deploy` "N/N verified" checks device/link existence only** (one canvas read for the whole
@@ -79,14 +81,19 @@ with the default outline.
 - **An IOS interface with no IP address stays shut down.** The CLI generator only emits `no shutdown`
   for addressed interfaces, so a link you cabled but never addressed shows up as a red triangle on the
   canvas and as a down link in `pt_health_check`. Give it an address, even a throwaway `/30`.
-- **PT does not associate a wireless host with the nearest AP.** Measured: a laptop with its own LAN's
-  AP right beside it did a *fresh* association and a *fresh* DHCP and still chose the AP of another LAN,
-  taking that LAN's address. Between APs sharing the default SSID the choice is arbitrary. The AP side
-  is settable (`pt_wireless_ap`: `WirelessServerProcess.setSsid` + `resetAllAssociations`, measured on
-  PT 9.0): renaming an AP's SSID drops its clients and keeps them off it. The client side is not
-  (`WirelessClientProcess.addProfile` throws), so a laptop only ever joins "Default". If you need
-  deterministic addressing, use `wireless_laptops=False` and cable the laptops. A dropped client's
-  port still reads `isPortUp()`/`getLink()` true: confirm association with a ping, not the port.
+- **PT does not associate a wireless host with the nearest AP**: among APs on the default SSID the
+  choice is arbitrary (measured: LT3/LT4 of LAN 2 leased 192.168.0.x from LAN 1's AP). The client side
+  cannot be pointed at an SSID (`WirelessClientProcess.addProfile` throws), but the AP side can filter:
+  **`pt_live_deploy` / `pt_full_build` give every AP a MAC filter allowing only its own clients** (each
+  WiFi device's `ap` in the plan; the planner fills it) and re-request their leases — measured, they
+  moved to 192.168.1.x. The report line `📶 WiFi clients pinned…` confirms it. On a canvas built by hand:
+  `pt_wireless_ap(device="AP2", mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])`, then
+  `pt_host_ip_config(device="LT3", mode="dhcp")`. A dropped client's port still reads
+  `isPortUp()`/`getLink()` true: confirm association with its address or a ping, not the port.
+- **Every PC and laptop takes DHCP; only servers are static.** The last host of each subnet used to be
+  static (an old fallback); the deploy now re-requests any lease lost to STP. The report line
+  `DHCP leases (live, use these to ping)` lists each host's real address — ping those, not the
+  addressing table (a re-requested lease can land on another address).
 - **`PT_MCP_BRIDGE_TOKEN` is validated.** If the server refuses to start with `BridgeTokenError`, the
   variable is set to something shorter than 32 chars or outside `[A-Za-z0-9_-]`. Fix it or unset it so
   the on-disk token is used. It fails loudly on purpose: a bad value there would disable the only real

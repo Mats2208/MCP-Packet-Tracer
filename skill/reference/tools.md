@@ -165,20 +165,23 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
   host IPv6 is set afterwards with `pt_host_ip_config(host, ipv6_address="2001:db8:0:1::10/64")`
   (`port.addIpv6Address(addr, prefix, 0, false)`, measured on PT 9.0; read back via `getIpv6Addresses()`).
 - **WiFi laptops:** `wireless_laptops=True` swaps each Laptop-PT NIC to `PT-LAPTOP-NM-1W` (slot `"0"`)
-  → `Wireless0`, and adds **one `AccessPoint-PT` per LAN**, each wired to that LAN's own switch.
-  ⚠️ **Wireless addressing is NOT deterministic.** Laptops auto-associate on the default SSID and
-  the client side has **no working profile API** (`WirelessClientProcess.addProfile` throws), so with
-  more than one AP a laptop can associate to *any* of them and take a DHCP lease from **another
-  LAN's pool**. The AP side *is* settable: `pt_wireless_ap` renames the SSID (clients drop off it). Measured on PT 9.0.1: LT10, sitting right next to its own LAN's AP, still associated to
-  the LAN-1 AP and got `192.168.0.13`; only with that AP powered off did it take `192.168.4.25`.
-  The planner now emits a `WIRELESS_AMBIGUOUS_ASSOCIATION` **warning** when ≥2 APs coexist.
-  Always confirm with `pt_inspect_ports`; for deterministic addressing use `wireless_laptops=False`.
+  → `Wireless0`, adds **one `AccessPoint-PT` per LAN** wired to that LAN's switch, and records each
+  laptop's AP (`"ap": "WAP2"` in the plan). Every AP says "Default" and PT lets a laptop join any of
+  them, so the deploy gives each AP a **MAC filter allowing only its own laptops** and re-requests their
+  leases (measured on PT 9.0.1: LT3/LT4 went from LAN 1's 192.168.0.x to their own 192.168.1.x). A
+  hand-written plan with ≥2 APs needs `ap` on each wireless device, or it gets
+  `WIRELESS_AMBIGUOUS_ASSOCIATION`.
+- **Serial when Ethernet runs out:** router-router links that would take the port a LAN or the WAN needs
+  go over serial; the planner adds the HWIC-2T / NIM-2T to `plan.modules` and the deploy installs it
+  (measured: up/up, no clock rate needed, OSPF FULL). Read `plan.modules` and any `Planner:` warning.
 
 ## Recipes
 
 - *"2 routers, 2 switches, 4 PCs, DHCP, static"* → `pt_full_build(routers=2, switches_per_router=1,
   pcs_per_lan=2, dhcp=True, routing="static", deploy=True)`.
-- 4 serial ports on R1 (2911) → `pt_install_modules_batch([{device:"R1",slot:"0/0",module:"HWIC-2T"},
+- Hub with 5 spokes on 2911s → `pt_full_build(template="hub_spoke", routers=6, routing="ospf")`: two
+  spokes on Gigabit, three on serial (2× HWIC-2T added on R1 by the planner).
+- 4 serial ports on R1 (2911) by hand → `pt_install_modules_batch([{device:"R1",slot:"0/0",module:"HWIC-2T"},
   {device:"R1",slot:"0/1",module:"HWIC-2T"}])`.
 - Block telnet to a server on R1 → `pt_apply_acl(router="R1", name_or_number="101", acl_type="extended",
   entries=[{action:"deny",protocol:"tcp",source:"any",destination:"host 192.168.0.10",dest_port_op:"eq",
@@ -198,10 +201,10 @@ them as typed codes. The validator walks the graph, so an empty `errors[]` is me
 
 | Code | What it means | What to do |
 |---|---|---|
-| `TOPOLOGY_DISCONNECTED` | The cabled devices form more than one component | Usually the hub ran out of ports (a 2911 has 3 Gigabit). Bigger model, a module, or fewer routers. **Do not deploy** |
+| `TOPOLOGY_DISCONNECTED` | The cabled devices form more than one component | Usually a router ran out of Ethernet AND serial slots (see the `Planner:` warning). Bigger model (ISR4331) or fewer links. **Do not deploy** |
 | `OSPF_NO_NETWORKS` | An OSPF process with zero `network` statements | That router has no addressed, linked interface |
 | `OSPF_INVALID_ROUTER_ID` | `router-id 0.0.0.0` | Same root cause as above |
-| `WIRELESS_AMBIGUOUS_ASSOCIATION` | **warning**: two or more APs share the default SSID | Confirm with `pt_inspect_ports` / a ping which subnet each wireless host landed in |
+| `WIRELESS_AMBIGUOUS_ASSOCIATION` | **warning**: ≥2 APs and a wireless device with no `ap` | Set `"ap": "<AP>"` on it (the deploy then MAC-filters each AP), or pin it live with `pt_wireless_ap(mac_filter=True, allow_listed=True, mac_list=[...])` |
 | `IP_CONFLICT` / `INVALID_IP_ADDRESS` | Duplicate or malformed address | Re-address |
 | `DHCP_GATEWAY_MISMATCH` | **warning**: the pool gateway is on no interface of that router | Check the pool |
 

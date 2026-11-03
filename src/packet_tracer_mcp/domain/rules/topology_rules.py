@@ -127,42 +127,35 @@ def validate_routing(plan: TopologyPlan) -> list[PlanError]:
 
 
 def validate_wireless(plan: TopologyPlan) -> list[PlanError]:
-    """Warns when the WiFi association cannot be predicted. Returns WARNINGS.
+    """Warns when a WiFi client's AP is not known. Returns WARNINGS.
 
-    One AP per LAN MAKES IT POSSIBLE for each laptop to take an address from its own
-    subnet, but does not guarantee it. Measured against PT 9.0.1 over 6 LANs: with the
-    AP of LAN 1 powered on, a laptop that had the AP of ITS LAN next to it still kept
-    192.168.0.5 — from the LAN 1 pool. After powering off the other AP and restarting
-    it, it got 192.168.4.25, the one that corresponded to it.
-
-    In other words, PT does not pick the nearest AP: the association is sticky and,
-    among APs that share the default SSID, arbitrary. The plan cannot fix it: the AP's
-    SSID is settable (WirelessServerProcess.setSsid, pt_wireless_ap), but a client
-    only joins "Default" and its profile API (WirelessClientProcess.addProfile) is
-    broken, so per-LAN SSIDs would just strand the other LANs' laptops. The only
-    honest thing is for the plan to say so instead of promising an addressing
-    scheme it does not control.
+    Every AccessPoint-PT broadcasts "Default" and PT does not pick the nearest one:
+    with one AP per LAN, LT3 and LT4 of LAN 2 leased 192.168.0.x from LAN 1 (measured
+    on PT 9.0.1, 2026-11-03). The client side cannot be pointed at an SSID (its
+    profile API throws), but the AP side can filter: pt_live_deploy gives every AP a
+    MAC filter that allows only the clients whose DevicePlan.ap names it, and the
+    laptops then lease from their own LAN (measured). The planner fills `ap` for the
+    laptops it creates; a hand-written plan with several APs needs it on each client.
     """
-    aps = plan.devices_by_category("accesspoint")
+    aps = {d.name for d in plan.devices_by_category("accesspoint")}
     wireless_hosts = [d for d in plan.devices if d.wireless]
     if len(aps) < 2 or not wireless_hosts:
+        return []
+    unpinned = [d.name for d in wireless_hosts if getattr(d, "ap", "") not in aps]
+    if not unpinned:
         return []
 
     return [PlanError(
         code=ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION,
-        device=wireless_hosts[0].name,
+        device=unpinned[0],
         message=(
-            f"There are {len(aps)} access points sharing the default SSID and "
-            f"{len(wireless_hosts)} wireless host(s). In PT's logical view the "
-            "RF range is global, so each host can associate with "
-            "ANY of them and get an address from another LAN's DHCP pool."
+            f"{len(aps)} access points share the default SSID and {len(unpinned)} wireless "
+            f"host(s) have no `ap` ({', '.join(unpinned[:5])}): PT lets each one join ANY AP "
+            "and lease from another LAN's pool."
         ),
         suggestion=(
-            "Check with pt_inspect_ports which subnet each wireless host "
-            "ended up in. pt_wireless_ap can rename an AP's SSID so clients "
-            "(which only join the default one) stay off it, but PT has no "
-            "working client profile API to point a laptop at a given SSID; "
-            "for deterministic addressing use wireless_laptops=False and "
-            "cable the laptops to their switch."
+            'Set "ap": "<AP name>" on each wireless device: the deploy then gives every AP a '
+            "MAC filter allowing only its own clients. On a live canvas, the same by hand: "
+            "pt_wireless_ap(device, mac_filter=True, allow_listed=True, mac_list=[their Wireless0 MACs])."
         ),
     )]

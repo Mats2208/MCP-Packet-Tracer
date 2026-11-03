@@ -38,6 +38,9 @@ user to open **Extensions → MCP BUILDER** (or dismiss a stuck error modal).
 
 - **New topology, one shot:** `pt_full_build(routers=2, routing="ospf")` (refuses an invalid plan). Stepwise:
   `pt_list_devices` → `pt_plan_topology` → `pt_validate_plan` → `pt_live_deploy`. Read `errors[]` first.
+  The deploy report is the truth: hosts take DHCP (servers static), so ping the addresses in
+  `DHCP leases (live…)`, not the table. A router out of Ethernet gets serial links + an HWIC-2T/NIM-2T
+  in `plan.modules` (measured: no clock rate needed); a `Planner:` warning means a link was left out.
 - **Edit a live topology:** `pt_bridge_status` → `pt_query_topology` → `pt_add_device` / `pt_add_link` /
   `pt_delete_link` / `pt_move_device` / `pt_rename_device` → **`pt_fast_forward()`** after cabling
   (STP converges at once instead of ~30 s; measured) → verify.
@@ -102,10 +105,10 @@ Take real names from `pt_query_topology`. **(measured)** = run live on PT 9.
   (restarts phones) → `pt_read_dhcp_leases(device="CME")`, `pt_cli(device="CME", commands=["show ephone"])`
   (REGISTERED). Phone IP is on `Vlan1`. `mac` and `voice_vlan` not measured.
 - **2811 network** (measured: OSPF FULL, leases): `pt_full_build(router_model="2811", routing="ospf")`.
-- **Wi-Fi AP** (measured): `pt_wireless_ap(device="AP1", ssid="LAB-A")` (laptops only join "Default", so its
-  clients drop); `pt_wireless_ap(device="AP1", mac_filter=True, allow_listed=True, mac_list=["00D0.BC56.D4CD"])`
-  keeps only the listed clients. List each client's **Wireless0** MAC (`pt_read_device_panel`), not its
-  Bluetooth one. Judge association by `pt_host_command(device="LT1", command="ping 192.168.0.1")`, not the port.
+- **Wi-Fi** (measured): `pt_full_build(laptops_per_lan=2, wireless_laptops=True)` pins each laptop to its
+  LAN's AP (MAC filter per AP; report line `📶 WiFi clients pinned`). By hand: `pt_wireless_ap(device="AP2",
+  mac_filter=True, allow_listed=True, mac_list=[Wireless0 MACs])` then `pt_host_ip_config(device="LT3", mode="dhcp")`.
+  Laptops only join "Default": renaming an AP's SSID drops its clients. Judge association by the address, not the port.
 - **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
   routers via `pt_plan_topology(dual_stack=True)`.
 - **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
