@@ -150,10 +150,21 @@ class TestAmbiguousWirelessAssociationIsWarned:
         params.update(kw)
         return plan_from_request(TopologyRequest(**params))
 
-    def test_several_aps_with_wireless_hosts_raises_a_warning(self):
-        _, result = self._plan(routers=3)
-        codes = {w.code for w in result.warnings}
-        assert ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION in codes
+    def test_planned_clients_carry_their_ap_and_do_not_warn(self):
+        # The planner records each laptop's AP and the deploy pins it there with a
+        # MAC filter (measured on PT 9.0.1), so the association is no longer arbitrary.
+        plan, result = self._plan(routers=3)
+        assert {d.name: d.ap for d in plan.devices if d.wireless} == {
+            "LT1": "WAP1", "LT2": "WAP1", "LT3": "WAP2", "LT4": "WAP2", "LT5": "WAP3", "LT6": "WAP3"}
+        assert ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION not in {w.code for w in result.warnings}
+
+    def test_a_client_without_ap_still_raises_the_warning(self):
+        from src.packet_tracer_mcp.domain.services.validator import validate_plan
+        plan, _ = self._plan(routers=3)
+        next(d for d in plan.devices if d.name == "LT4").ap = ""
+        warnings = validate_plan(plan).warnings
+        hit = [w for w in warnings if w.code == ErrorCode.WIRELESS_AMBIGUOUS_ASSOCIATION]
+        assert hit and hit[0].device == "LT4"
 
     def test_the_warning_does_not_invalidate_the_plan(self):
         """Es una limitacion de PT, no un error del plan: se despliega igual."""

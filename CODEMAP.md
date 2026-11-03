@@ -38,7 +38,7 @@ To find a tool: search this file for its name, then open that file and search `d
 | `adapters/mcp/device_panel_tools.py` | pt_cli, pt_host_command, pt_host_ip_config, pt_read_device_panel, pt_remove_module, pt_ui_capture, pt_ui_close, pt_ui_mode, pt_ui_open |
 | `adapters/mcp/tools/acl.py` | pt_apply_acl, pt_apply_acl_object, pt_remove_acl, pt_remove_acl_object |
 | `adapters/mcp/tools/activity.py` | pt_activity_build_initial, pt_activity_check, pt_activity_create, pt_activity_create_exam, pt_activity_exit_wizard, pt_activity_mark, pt_activity_open, pt_activity_points, pt_activity_reset, pt_activity_save, pt_activity_set_instructions, pt_activity_status, pt_activity_tree |
-| `adapters/mcp/tools/canvas.py` | pt_add_note, pt_clear_annotations, pt_screenshot |
+| `adapters/mcp/tools/canvas.py` | pt_add_note, pt_auto_layout, pt_canvas_info, pt_clear_annotations, pt_screenshot |
 | `adapters/mcp/tools/convergence.py` | pt_read_acl, pt_read_arp, pt_read_cdp, pt_read_dhcp_leases, pt_read_mac_table, pt_read_nat, pt_read_ospf, pt_read_routes, pt_read_stp |
 | `adapters/mcp/tools/inspect.py` | pt_device_power, pt_diff, pt_health_check, pt_inspect_ports |
 | `adapters/mcp/tools/live.py` | pt_bridge_status, pt_full_build, pt_live_deploy, pt_open_project, pt_save_project, pt_verify_connectivity |

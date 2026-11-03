@@ -1420,6 +1420,20 @@
    "type": "object"
   }
  },
+ "pt_auto_layout": {
+  "description": "Rearrange the devices on the canvas by topology and fit them to the visible view.\n\nReads the live devices and links: routers form the core (2 or a chain: a row with\nthe end LANs pointing outward, middle LANs alternating down/up; a ring: a polygon;\na hub: a star), each LAN hangs off its router away from the core (switch, then its\nhosts side by side), a WAN cloud takes the free side. Moves everything in one call\nand reads each position back.\n\nUse it after building by hand, after adding devices, or when a lab looks crowded.\npt_full_build / pt_plan_topology already plan with this layout.\n\nParameters:\n- apply: False only returns the new positions without moving anything.",
+  "inputSchema": {
+   "properties": {
+    "apply": {
+     "default": true,
+     "title": "Apply",
+     "type": "boolean"
+    }
+   },
+   "title": "pt_auto_layoutArguments",
+   "type": "object"
+  }
+ },
  "pt_backup_config": {
   "description": "Backs up a PT device's startup configuration.\n\nReturns the real startup-config (the one the device rereads on restart),\nplus its serial number, config-register, boot images and uptime.\nUse it to save a known state before touching something, or to\ncompare two devices.\n\nParameters:\n- device: name of the router or switch in PT.\n- include_xml: if True, adds the device's full XML dump\n  (topology + config + modules). It is tens of thousands of characters:\n  useful for archiving, heavy to read.\n\nExample: pt_backup_config(device=\"R1\")",
   "inputSchema": {
@@ -1446,6 +1460,14 @@
   "inputSchema": {
    "properties": {},
    "title": "pt_bridge_statusArguments",
+   "type": "object"
+  }
+ },
+ "pt_canvas_info": {
+  "description": "Size of PT's visible logical view and where the devices are, so you know which\nx/y range to use before pt_add_device / pt_move_device / pt_add_note.\n\nReturns view [width, height] in canvas px (depends on the screen and the window:\n1512x599 on a 14\" MacBook, about 1900x700 on a maximised 1920x1080), zoom (0 =\n100 %), the device count and their bbox [x0, y0, x1, y1]. x/y of a device is the\ntop-left corner of its icon (about 50x40 px, labels below): keep x within\n[40, width-90] and y within [40, height-90] so everything is visible.",
+  "inputSchema": {
+   "properties": {},
+   "title": "pt_canvas_infoArguments",
    "type": "object"
   }
  },

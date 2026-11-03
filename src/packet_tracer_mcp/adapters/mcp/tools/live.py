@@ -8,7 +8,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from ....domain.models.plans import TopologyPlan
 from ....domain.models.requests import TopologyRequest
-from ....domain.services.orchestrator import plan_from_request
+from ....domain.services.orchestrator import fit_plan_to_canvas, plan_from_request
 from ....domain.services.explainer import explain_plan
 from ....domain.services.estimator import estimate_from_plan
 from ....domain.services.validator import validate_plan
@@ -28,7 +28,8 @@ from ..bridge_context import BridgeContext, DEPLOY_BATCH
 from ....infrastructure.execution.live_checks import (  # noqa: F401 (re-exported for tests)
     PING_TIMEOUT_S, device_check_status, ping_no_result_message, reconcile_commands,
     verify_and_reconcile, file_open_js, file_open_outcome, DEVICE_COUNT_JS,
-    dhcp_address_report, dhcp_host_ports, dhcp_lease_report, read_host_ips, renew_dhcp_leases,
+    dhcp_address_report, dhcp_host_ports, dhcp_lease_report, pin_wifi_clients, read_host_ips,
+    renew_dhcp_leases,
     save_project_js,
     console_ping_arm_js, console_ping_poll_js,
 )
@@ -134,6 +135,12 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
             wireless_laptops=wireless_laptops,
         )
         plan, validation = plan_from_request(request)
+        # Fit the drawing to the user's real canvas, read only when this plan is going
+        # to be deployed (an invalid plan sends nothing to PT).
+        if deploy and validation.is_valid:
+            size = ctx.canvas_size()
+            if size:
+                fit_plan_to_canvas(plan, request, size)
         explanation = explain_plan(plan)
         estimation = estimate_from_plan(plan)
 
@@ -396,13 +403,15 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
                                    lambda c: _channel_send(_js_guard(c)), plan, commands,
                                    delay=command_delay)
 
-        # DHCP requests lost while STP was settling: ask again.
+        # DHCP requests lost while STP was settling: ask again. WiFi laptops are first
+        # pinned to their LAN's AP, or they lease from whichever AP they heard first.
         dhcp_lines: list[str] = []
+        send = lambda js, t: _bridge_send_and_wait(js, timeout=t)  # noqa: E731
         dhcp_hosts = dhcp_host_ports(plan, set(static_host_ips(plan)))
         if dhcp_hosts:
             ctx.settle_stp()
-            send = lambda js, t: _bridge_send_and_wait(js, timeout=t)  # noqa: E731
-            dhcp_lines = dhcp_lease_report(*renew_dhcp_leases(send, dhcp_hosts))
+            dhcp_lines = pin_wifi_clients(send, plan)
+            dhcp_lines += dhcp_lease_report(*renew_dhcp_leases(send, dhcp_hosts))
             dhcp_lines += dhcp_address_report(plan, read_host_ips(send, dhcp_hosts))
 
         report = ["Topology deployed to Packet Tracer!", f"  Commands sent: {sent}"]

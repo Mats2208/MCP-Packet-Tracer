@@ -1,6 +1,6 @@
 # MCP Tools
 
-Packet Tracer MCP exposes **109 tools**, grouped below by purpose. Tools that touch
+Packet Tracer MCP exposes **111 tools**, grouped below by purpose. Tools that touch
 a running Packet Tracer require the [live bridge](live-deploy.md) to be connected.
 
 !!! tip "Discover first"
@@ -252,6 +252,8 @@ describing the network and starts showing it.
 |------|--------------|
 | `pt_screenshot` | Capture the logical canvas to an image file and return its path. |
 | `pt_add_note` | Write a text note on the canvas — label a subnet, name a trunk. |
+| `pt_canvas_info` | Size of the visible logical view, zoom and the devices' bounding box: the x/y range to use. |
+| `pt_auto_layout` | Rearrange the live topology by its links and fit it to the visible view. |
 | `pt_clear_annotations` | Remove notes and drawings. Never touches devices or links. |
 
 !!! tip "Self-documenting topologies"

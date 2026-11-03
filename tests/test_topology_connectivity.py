@@ -142,15 +142,34 @@ class TestOspfSanity:
 
 
 class TestHubSpokePortExhaustion:
-    def test_hub_spoke_beyond_hub_capacity_is_reported(self):
-        """Un 2911 tiene 3 puertos Gig: no puede ser hub de 5 spokes + su LAN."""
+    def test_hub_spoke_beyond_gigabit_ports_uses_serial_modules(self):
+        """A 2911 has 3 Gigabit ports: 5 spokes + its LAN used to drop links silently.
+        The spokes past the Ethernet ports now go over serial (HWIC-2T added to the
+        plan), the hub keeps a port for its LAN, and the plan is valid. Measured on
+        PT 9.0.1: a serial link added this way comes up and OSPF goes FULL over it."""
         req = TopologyRequest(
             template=TopologyTemplate.HUB_SPOKE, routers=6,
             switches_per_router=1, pcs_per_lan=1,
             router_model="2911", routing=RoutingProtocol.OSPF,
         )
         plan, result = plan_from_request(req)
-        assert not result.is_valid, "un hub sin puertos para sus spokes no puede ser valido"
+        assert result.is_valid, [str(e) for e in result.errors]
+        hub_links = [l for l in plan.links if "R1" in (l.device_a, l.device_b)]
+        assert len([l for l in hub_links if l.cable == "serial"]) == 3
+        assert any(l.device_b.startswith("SW") or l.device_a.startswith("SW") for l in hub_links)
+        assert {(m.device, m.slot, m.module) for m in plan.modules if m.device == "R1"} == {
+            ("R1", "0/0", "HWIC-2T"), ("R1", "0/1", "HWIC-2T")}
+
+    def test_hub_spoke_beyond_every_slot_is_reported(self):
+        """2 Ethernet + 4 HWIC-2T = 10 spokes at most on a 2911: an 11th is reported."""
+        req = TopologyRequest(
+            template=TopologyTemplate.HUB_SPOKE, routers=12,
+            switches_per_router=1, pcs_per_lan=1,
+            router_model="2911", routing=RoutingProtocol.OSPF,
+        )
+        plan, result = plan_from_request(req)
+        assert not result.is_valid, "a spoke with no path to the hub cannot be valid"
+        assert any(w.startswith("Planner: no free port for R1 <-> R12") for w in plan.warnings)
 
     def test_hub_spoke_within_capacity_stays_valid(self):
         req = TopologyRequest(

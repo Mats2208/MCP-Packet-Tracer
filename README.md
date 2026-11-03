@@ -99,7 +99,7 @@ carries a per-machine token (see [Security](#security)).
 | **PKA Builder** | Open and grade `.pka` activities item by item, or build a whole exam from one spec: answer network, instructions, graded items, initial network | `pt_activity_create_exam`, `pt_activity_check`, `pt_activity_*` |
 | **Document** | Canvas screenshots, notes and drawings on the canvas, `.pkt` save/open, config backup, exported plans and configs | `pt_screenshot`, `pt_add_note`, `pt_save_project`, `pt_backup_config`, `pt_export` |
 
-All 109 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
+All 111 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
 
 ## Installation
 
