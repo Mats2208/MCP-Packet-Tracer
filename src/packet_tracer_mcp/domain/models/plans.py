@@ -24,6 +24,9 @@ class DevicePlan(BaseModel):
     vlan: int = 0
     # Laptop connected over WiFi (wireless NIC + auto-association to an AP).
     wireless: bool = False
+    # The AP of this WiFi client's LAN. The deploy pins the client to it (every AP-PT
+    # says "Default", so a laptop otherwise joins whichever AP it hears first).
+    ap: str = ""
 
 
 class LinkPlan(BaseModel):
