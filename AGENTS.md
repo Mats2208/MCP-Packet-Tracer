@@ -96,3 +96,25 @@ offline half was.
   `try{...}catch{}`.
 - `%LOCALAPPDATA%`, not `%APPDATA%`, for machine-local secrets — the latter
   roams.
+
+## Notas heredadas de la memoria
+
+> Pasadas desde `~/.claude/projects/-Users-mats-PROYECTOS/memory` el 08/11/2026 (F8 de JARVIS).
+
+### mcp-packet-tracer-pka
+
+Desde 2026-10-30 el MCP `packet-tracer` (scope user) corre desde `~/PROYECTOS/MCP-Packet-Tracer-PKA`, repo privado, 12 commits sobre v0.11.0 del público (`MCP-Packet-Tracer`). `upstream` tiene el push desactivado.
+
+**Why:** las actividades `.pka` se hicieron y midieron solo en Windows; Mateo no quiere publicarlas sin tests reales en Mac y Linux.
+
+**How to apply:** el estado y el roadmap están en `PkaIndex.md` (raíz del repo). Probar en vivo sin robar el foco ([[no-robar-foco]]). Relacionado: [[mcp-packet-tracer-release]]. `mcp-packet-tracer-dev` queda solo en GitHub, sin clon local.
+
+**Backend Mac (2026-10-30):** `infrastructure/ui/macax.py`, sin commitear. Nunca activar PT por defecto: el usuario escribía en su terminal y activar PT para el panel de archivos mezcla su teclado, por eso va opt-in con `PT_UI_ALLOW_FOREGROUND=1`. Points y conectividad se omiten en Mac con aviso.
+
+**Estado 2026-10-30:** Mac cerrado salvo `confirmPassword`, que rechaza la contraseña correcta (el diálogo de PT la acepta). Siguiente sesión: repetir el examen y medir `confirmPassword` en Windows, y Linux en vivo (x86_64, `.deb`, NetAcad). No usar la clave de desafío para saltarlo.
+
+**HTML en Mac cerrado (2026-10-30):** solo `Import Page` con `PT_UI_ALLOW_FOREGROUND=1`, ya activo en su MCP. Sin API por ruta y `setNodeValue` no sirve; no volver a buscar otra vía.
+
+**Cierre (2026-10-30):** todo subido a `origin` del repo PKA (`a51818e`), con `PT_UI_ALLOW_FOREGROUND=1` en su MCP. Estado y roadmap en `PkaIndex.md`. Sigue: repetir el examen y medir `confirmPassword` en Windows, y arreglar el foco con HTML activo. Mateo decidió no discutir más los términos de Cisco: PT crea el `.pka` y él publica exámenes propios; no volver a plantearlo salvo que pregunte.
+
+**2026-11-03 (cierre):** PRs #37-#41 mergeadas en el público; PKA al día con upstream/main (111 tools) y la skill de PKA copiada a `~/.claude/skills/packet-tracer`. #41 trajo layout por topología ajustado al canvas, `pt_canvas_info`, `pt_auto_layout`, WiFi fijado por filtro MAC + reinicio de laptops, todos los PCs por DHCP y enlaces seriales cuando faltan puertos; todo probado en vivo. Sin release nueva en PyPI todavía. Canvas de la Mac: 1512x599. Para ver PT sin robar foco usar `pt_screenshot`: la captura de ventana de macOS queda congelada si PT no está al frente.
