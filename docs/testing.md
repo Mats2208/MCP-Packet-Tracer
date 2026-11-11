@@ -1,6 +1,6 @@
 # Testing
 
-The project ships **1,634 offline tests**, and none of them needs Packet Tracer.
+The project ships **1,697 offline tests**, and none of them needs Packet Tracer.
 
 ```bash
 pip install -e ".[test]"

@@ -4,9 +4,9 @@
 
 **Tell your agent _"build an exam on OSPF with 2 routers"_, and Packet Tracer itself builds, marks and saves the `.pka`.**
 
-[![Status](https://img.shields.io/badge/status-private%20beta-d29922?style=flat-square)](#status)
+[![Status](https://img.shields.io/badge/status-beta-d29922?style=flat-square)](#status)
 [![Packet Tracer](https://img.shields.io/badge/packet%20tracer-9.0.1-1BA0D7?style=flat-square)](#platforms)
-[![Tests](https://img.shields.io/badge/tests-1634%20offline-3fb950?style=flat-square)](tests/test_activity.py)
+[![Tests](https://img.shields.io/badge/tests-1697%20offline-3fb950?style=flat-square)](tests/test_activity.py)
 [![Protocol](https://img.shields.io/badge/protocol-MCP-00B4D8?style=flat-square)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
@@ -30,9 +30,9 @@
 
 ## Status
 
-**Private beta, updated 2026-10-30.** Windows has the whole flow, macOS has it with three limits, and Linux can't create activities yet. The work lives here until the Windows re-run closes.
+**Beta, updated 2026-11-11.** Windows has the whole flow, macOS has it with three limits, and Linux can't create activities yet. The items below are known limits, tracked in the roadmap.
 
-| | Ready to use | Blocking release |
+| | Ready to use | Still open |
 |---|---|---|
 | **macOS** | Whole exam through the MCP, reopened and graded | Focus with HTML on |
 | **Windows** | Whole flow, measured before the shared driver changed | Repeat the run after that change |
@@ -130,7 +130,7 @@ pt_activity_check(refresh=True)   # after opening, PT's score is stale until the
 
 ## Roadmap
 
-**Before release**
+**Next**
 
 - [ ] Repeat the whole exam on Windows, because the shared Wizard driver changed.
 - [ ] Measure `confirmPassword` on Windows.

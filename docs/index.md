@@ -22,7 +22,7 @@ fully cabled, configured and running topology.
 
 | | Feature | Details |
 |---|---------|---------|
-| **PKA Builder** | Open, grade and build `.pka` activities | [Exams from one spec](pka-builder.md) |
+| **PKA Builder** | Custom, graded `.pka` exams for CCNA instructors and students | [Exams from one spec](pka-builder.md) |
 | **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
 | **IP addressing** | Automatic /24 LANs + /30 WAN links | Sequential assignment, gateway at `.1` |
 | **DHCP** | Auto pool generation | One pool per LAN, gateway excluded |

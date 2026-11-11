@@ -7,6 +7,14 @@ initial network, saved `.pka`.
 The activity is made by Packet Tracer itself: this project creates no `.pka` outside it. This page says what
 works on each platform and what was measured.
 
+## Who it is for
+
+- **CCNA instructors** write a lab in one sentence or one spec, choose what is graded and how many points each
+  item is worth, and hand students a `.pka` with a clean initial network. Variants for each group take minutes.
+- **Students** ask for practice exams on the topics they are weak on, open them in Packet Tracer, grade them
+  with *Check Results* or `pt_activity_check`, and ask the agent why an item is still wrong. A
+  password-protected class activity stays locked, so the agent can't hand them the answers.
+
 ## Platform matrix
 
 Measured on Packet Tracer 9.0.1. "Not tested" means nobody has run it, not that it fails.

@@ -4,6 +4,8 @@
 
 **Describe a network in plain words. Your AI plans it, validates it, and builds it live in Cisco Packet Tracer — then pings it to prove it works.**
 
+**New — [PKA Builder](#pka-builder-custom-exams-for-ccna-classes):** CCNA instructors and students turn one sentence into a custom, graded Packet Tracer exam (`.pka`).
+
 <sub>Install it by asking your agent: <i>"Install the Packet Tracer MCP from github.com/Mats2208/MCP-Packet-Tracer and set everything up for me."</i></sub>
 
 [![PyPI](https://img.shields.io/pypi/v/packet-tracer-mcp?style=flat-square&logo=pypi&logoColor=white&color=blue&label=pypi)](https://pypi.org/project/packet-tracer-mcp/)
@@ -16,15 +18,18 @@
 
 <table>
 <tr>
-<td align="center"><strong>109</strong><br/><sub>MCP tools</sub></td>
+<td align="center"><strong>111</strong><br/><sub>MCP tools</sub></td>
 <td align="center"><strong>6</strong><br/><sub>MCP resources</sub></td>
 <td align="center"><strong>3</strong><br/><sub>MCP prompts</sub></td>
 <td align="center"><strong>74</strong><br/><sub>device models</sub></td>
 <td align="center"><strong>150</strong><br/><sub>modules</sub></td>
 <td align="center"><strong>15</strong><br/><sub>cable types</sub></td>
-<td align="center"><strong>1,634</strong><br/><sub>offline tests</sub></td>
+<td align="center"><strong>13</strong><br/><sub>activity tools</sub></td>
+<td align="center"><strong>1,697</strong><br/><sub>offline tests</sub></td>
 </tr>
 </table>
+
+**[Video](#video)** &nbsp;•&nbsp; **[PKA Builder](#pka-builder-custom-exams-for-ccna-classes)** &nbsp;•&nbsp; **[What it can do](#what-it-can-do)** &nbsp;•&nbsp; **[Install](#installation)** &nbsp;•&nbsp; **[Quick start](#quick-start)** &nbsp;•&nbsp; **[Docs](https://mats2208.github.io/MCP-Packet-Tracer/)**
 
 </div>
 
@@ -58,6 +63,105 @@
 </td>
 </tr>
 </table>
+
+## PKA Builder: custom exams for CCNA classes
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/pka-banner.png" alt="PKA Builder — custom Packet Tracer exams for CCNA instructors and students" width="100%"/>
+</p>
+
+**Instructors and students preparing for the CCNA can turn one sentence into a graded Packet Tracer activity.**
+Describe the lab, and Packet Tracer itself builds the answer network, writes formatted instructions, marks what
+is graded, prepares the starting network and saves the `.pka`. Open it as a student and *Check Results* grades
+it item by item, the same way the activities you already know do.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/pka-builder.gif" alt="Animated walkthrough: a prompt becomes a 10-step build, a saved .pka, and an exam graded from 0% to 100%" width="760"/>
+</p>
+<p align="center"><sub>Animated walkthrough of the flow: one prompt, the 10 build steps, and the exam a student opens and grades</sub></p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🧑‍🏫 For instructors
+
+- **Write a lab in one sentence**: *"OSPF between 2 routers, graded on the interfaces and the neighbours."*
+- **Choose what is graded** item by item (`pt_activity_tree`, `pt_activity_mark`) and how many **points** each is worth.
+- **Hand out a clean start**: the answer network stays hidden, the initial network is what students get.
+- **Formatted instructions**: title, addressing table, scenario and requirements, rendered as HTML inside PT.
+- **English or Spanish** headings in the instructions (`language: "en"` or `"es"`).
+- **Make variants** of the same exam for every group in minutes, then open each submission with `pt_activity_open` and grade it with `pt_activity_check`.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧑‍🎓 For students
+
+- **Practice on your own custom exams**: ask for the topic you are weak on, at the size you want.
+- **See exactly what is wrong**: `pt_activity_check` lists each graded item with its path, value and points.
+- **Ask your agent why** an item fails: it reads routes, OSPF neighbours, VLANs and ACLs from the live network.
+- **Retry until 100 %**, then reset (`pt_activity_reset`) and do it again from scratch.
+- **Fair play with class labs**: if the instructor protected an activity with a password, it stays locked. The agent can't open it to hand you the answers.
+
+</td>
+</tr>
+</table>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/pka-audience.png" alt="Instructors describe a lab and ship a .pka; students practice, check results and retry until 100%" width="760"/>
+</p>
+
+### Try it
+
+```text
+"Build a VLAN exam with one switch and 4 PCs in 2 VLANs, worth 10 points, instructions in Spanish."
+"Make me a practice exam on static routing with 3 routers. Don't show me the answer."
+"Open ~/Downloads/lab3.pka, check my results and tell me what is still wrong."
+```
+
+Or call the tool with a spec (check it first with `dry_run=True`):
+
+```python
+pt_activity_create_exam(spec={
+    "title": "OSPF exam",
+    "language": "en",
+    "situation": "Configure **R1**.",
+    "addressing": [{"device": "R1", "interface": "GigabitEthernet0/0", "ip": "192.168.0.1", "mask": "255.255.255.0"}],
+    "requirements": ["Address R1"],
+    "items": [["R1", "Ports", "GigabitEthernet0/0", "IP Address"]],
+    "plan_path": "plan.json",
+    "output_path": "/absolute/path/ospf-exam.pka",
+})
+```
+
+<table>
+<tr>
+<td width="55%">
+<p align="center"><img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/pka-activity.png" alt="A generated exam reopened in Packet Tracer's activity window, with an addressing table and a requirements list" width="100%"/></p>
+<p align="center"><sub>A real generated exam, reopened as a student sees it (macOS, Packet Tracer 9.0.1)</sub></p>
+</td>
+<td width="45%" valign="top">
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Open, grade, mark, save | ✅ | ✅ | not tested |
+| Build a whole exam | ✅ | ✅ | — |
+| Points per item | ✅ | — | — |
+| Connectivity tests | ✅ | — | — |
+| HTML instructions | ✅ | ✅ ¹ | — |
+
+<sub>¹ needs `PT_UI_ALLOW_FOREGROUND=1`: PT comes to the front for a few seconds.</sub>
+
+</td>
+</tr>
+</table>
+
+**How it stays clean.** Every `.pka` is created and saved by your own copy of Packet Tracer: this project never
+reads, writes or decrypts the file format. Reading, marking and grading use Packet Tracer's published Extensions
+API; activity creation operates the Activity Wizard window the way a person would. The exams are yours, not
+Cisco or Networking Academy content. Status, limits and roadmap in **[PkaIndex](PkaIndex.md)**, the full
+reference in **[PKA Builder](docs/pka-builder.md)**.
 
 ---
 
@@ -96,7 +200,7 @@ carries a per-machine token (see [Security](#security)).
 | **Inside each device** | Type in a router's CLI tab, run `ping`/`ipconfig` on a PC, configure Server-PT DHCP/DNS/HTTP/FTP/EMAIL, use the Web Browser and Email apps | `pt_cli`, `pt_host_command`, `pt_server_*`, `pt_web_browser` |
 | **Verify** | Real ping with parsed results, health check, plan-vs-live diff, per-port inspection; every CLI change reports which IOS lines were rejected; structured reads of routes, OSPF, ARP, CDP, STP, ACL, NAT, MAC tables and DHCP leases | `pt_verify_connectivity`, `pt_health_check`, `pt_diff`, `pt_inspect_ports`, `pt_read_routes`, `pt_read_ospf`, … |
 | **Explain** | Send a simple PDU, step the simulation and read PT's own per-layer decision log for each packet | `pt_send_pdu`, `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` |
-| **PKA Builder** | Open and grade `.pka` activities item by item, or build a whole exam from one spec: answer network, instructions, graded items, initial network | `pt_activity_create_exam`, `pt_activity_check`, `pt_activity_*` |
+| **[PKA Builder](#pka-builder-custom-exams-for-ccna-classes)** | Open and grade `.pka` activities item by item, or build a whole exam from one spec: answer network, instructions, graded items, initial network | `pt_activity_create_exam`, `pt_activity_check`, `pt_activity_*` |
 | **Document** | Canvas screenshots, notes and drawings on the canvas, `.pkt` save/open, config backup, exported plans and configs | `pt_screenshot`, `pt_add_note`, `pt_save_project`, `pt_backup_config`, `pt_export` |
 
 All 111 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
@@ -260,21 +364,6 @@ It is **headless by default**. On Windows, say *"show it in Packet Tracer"* (or 
 `capture=True` saves a PNG. Windows are driven with UI Automation and a click posted to the
 canvas — your real mouse and keyboard are never used.
 
-## PKA Builder
-
-The agent works with Packet Tracer activities too. It opens a `.pka`, grades it item by item and reports what
-is wrong. It also builds an exam from one spec, with Packet Tracer itself doing the work: it deploys the answer
-network, imports formatted instructions, marks what is graded, prepares the initial network and saves the
-`.pka`. A password-protected activity stays locked without the instructor's password.
-
-```text
-"Build an exam on OSPF with 2 routers, graded on the interfaces and the neighbours."
-```
-
-Windows does the whole flow. macOS needs the Accessibility permission, HTML instructions need
-`PT_UI_ALLOW_FOREGROUND=1` (Packet Tracer comes forward for a few seconds), and points per item and connectivity
-tests are not available there yet. Status and scope in **[PkaIndex](PkaIndex.md)**, details in **[PKA Builder](docs/pka-builder.md)**.
-
 ## Clients
 
 Any MCP client drives this server — Claude Code, Cursor, Claude Desktop, VS Code with
@@ -362,8 +451,10 @@ not a public issue. [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/
 
 ## What's new
 
-**Unreleased** — **PKA Builder**: 13 `pt_activity_*` tools open, grade and build `.pka` activities, and
-`pt_activity_create_exam` builds a whole exam from one spec. The Activity Wizard now also runs on macOS.
+**Unreleased** — **PKA Builder** for CCNA classes: 13 `pt_activity_*` tools open, grade and build `.pka`
+activities, and `pt_activity_create_exam` builds a whole exam from one spec. The Activity Wizard runs on Windows
+and macOS. Also: plans laid out by topology and fitted to your canvas (`pt_canvas_info`, `pt_auto_layout`), and
+Linux verified live on Ubuntu 26.04.
 
 **v0.11.0** — live reads that flag what has not converged (routes, OSPF, ARP, CDP, STP, ACL, NAT, MAC tables,
 DHCP leases), real PDUs with PT's own per-layer reason, Fast Forward Time, CME voice measured end to end, HSRP,
@@ -376,7 +467,7 @@ the skill inside the package, and 17 device-panel tools that work inside each de
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/CONTRIBUTING.md). The
-test suite (1,634 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
+test suite (1,697 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
 
 ## License
 
