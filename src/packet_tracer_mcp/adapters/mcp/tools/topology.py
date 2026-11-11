@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from mcp.server.fastmcp import FastMCP
+from ....domain.services.activity import forbidden_raw_js
 from ..bridge_context import BridgeContext, TIMEOUT_MSG
 from ....infrastructure.catalog.devices import resolve_model, category_of_model
 from ....infrastructure.catalog.cables import CABLE_TYPES, cable_type_name, infer_cable
@@ -541,7 +542,16 @@ def register(mcp: FastMCP, ctx: BridgeContext) -> None:
         Parameters:
         - js_code: JavaScript to execute in PT's Script Engine
         - wait_result: if True, waits for a response via reportResult()
+
+        Refused: activity password material (getHashedPassword,
+        getChallengeKeyAsBase64, getChallengeKeyAsInts) and reading the bytes
+        of a .pka/.pkt.
         """
+        blocked = forbidden_raw_js(js_code)
+        if blocked:
+            return ("Refused: this MCP does not read activity secrets or the bytes of a "
+                    f".pka/.pkt ({', '.join(blocked)}). Use pt_activity_open with the "
+                    "instructor's password.")
         err = _check_bridge()
         if err:
             return err

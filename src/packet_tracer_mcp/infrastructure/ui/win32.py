@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from typing import Iterator
 
 _PW_RENDERFULLCONTENT = 2
+_WM_SETTEXT, _BM_CLICK = 0x000C, 0x00F5
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_IDOK, _IDCANCEL = 1, 2
 _WM_MOUSEMOVE, _WM_LBUTTONDOWN, _WM_LBUTTONUP = 0x0200, 0x0201, 0x0202
 _MK_LBUTTON = 0x0001
 _SW_SHOWNOACTIVATE, _SW_RESTORE = 4, 9
@@ -94,6 +97,9 @@ def _load() -> None:
         (user32, "GetForegroundWindow"): ([], wt.HWND),
         (user32, "SetForegroundWindow"): ([wt.HWND], wt.BOOL),
         (user32, "IsWindow"): ([wt.HWND], wt.BOOL),
+        (user32, "FindWindowExW"): ([wt.HWND, wt.HWND, wt.LPCWSTR, wt.LPCWSTR], wt.HWND),
+        (user32, "SendMessageW"): ([wt.HWND, wt.UINT, wt.WPARAM, wt.LPCWSTR], ctypes.c_ssize_t),
+        (user32, "GetDlgItem"): ([wt.HWND, ctypes.c_int], wt.HWND),
         (user32, "AttachThreadInput"): ([wt.DWORD, wt.DWORD, wt.BOOL], wt.BOOL),
         (user32, "SendInput"): ([wt.UINT, ctypes.c_void_p, ctypes.c_int], wt.UINT),
         (user32, "SetWindowPos"): ([wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
@@ -143,6 +149,50 @@ def top_windows(pid: int) -> list[tuple[int, str]]:
 
     user32.EnumWindows(_WNDENUMPROC(cb), 0)
     return found
+
+
+def _image_name(pid: int) -> str:
+    """Executable of process `pid`, lower-case ("" if it can't be read)."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+    kernel32.OpenProcess.restype = wt.HANDLE
+    kernel32.CloseHandle.argtypes = [wt.HANDLE]
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        size = wt.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(size.value)
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD)]
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return ""
+        return os.path.basename(buf.value).lower()
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def pt_pids() -> list[int]:
+    """Running Packet Tracer processes, found without the bridge.
+
+    The bridge can't be asked: this answers whether it is safe to talk to it.
+    """
+    _load()
+    pids: set[int] = set()
+
+    def cb(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd):
+            n = user32.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value.startswith(("Cisco Packet Tracer", "Activity Wizard")):
+                owner = wt.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+                pids.add(owner.value)
+        return True
+
+    user32.EnumWindows(_WNDENUMPROC(cb), 0)
+    return sorted(p for p in pids if _image_name(p).startswith("packettracer"))
 
 
 def find_window(pid: int, title: str) -> int | None:
@@ -315,6 +365,44 @@ def keep_user_focus(pid: int) -> Iterator[FocusGuard]:
         _guard_lock.release()
 
 
+VK_RETURN = 0x0D
+VK_DOWN = 0x28
+
+
+def post_key(hwnd: int, vk: int) -> None:
+    """A key posted to `hwnd`: it never touches the user's keyboard."""
+    _load()
+    scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+    lp = 1 | (scan << 16)
+    user32.PostMessageW(hwnd, 0x0100, vk, lp)
+    user32.PostMessageW(hwnd, 0x0101, vk, lp | 0xC0000000)
+
+
+def post_double_click(hwnd: int, screen_x: int, screen_y: int) -> None:
+    """Double click posted to `hwnd`: Qt then opens a cell's inline editor."""
+    _load()
+    pt = wt.POINT(int(screen_x), int(screen_y))
+    user32.ScreenToClient(hwnd, ctypes.byref(pt))
+    lp = ((pt.y & 0xFFFF) << 16) | (pt.x & 0xFFFF)
+    user32.PostMessageW(hwnd, _WM_MOUSEMOVE, 0, lp)
+    user32.PostMessageW(hwnd, _WM_LBUTTONDOWN, _MK_LBUTTON, lp)
+    user32.PostMessageW(hwnd, _WM_LBUTTONUP, 0, lp)
+    user32.PostMessageW(hwnd, 0x0203, _MK_LBUTTON, lp)  # WM_LBUTTONDBLCLK
+    user32.PostMessageW(hwnd, _WM_LBUTTONUP, 0, lp)
+
+
+def post_text(hwnd: int, text: str) -> None:
+    """Characters posted to `hwnd`; the user's keyboard is not involved."""
+    _load()
+    native = ctypes.windll.user32
+    for ch in text:
+        vk = native.VkKeyScanW(ch) & 0xFF
+        lp = 1 | (native.MapVirtualKeyW(vk, 0) << 16)
+        user32.PostMessageW(hwnd, 0x0100, vk, lp)
+        user32.PostMessageW(hwnd, 0x0102, ord(ch), lp)
+        user32.PostMessageW(hwnd, 0x0101, vk, lp | 0xC0000000)
+
+
 def capture(hwnd: int) -> tuple[int, int, bytes]:
     """(width, height, top-down BGRA) of the window, even when it is covered."""
     _load()
@@ -341,6 +429,31 @@ def capture(hwnd: int) -> tuple[int, int, bytes]:
         gdi32.DeleteObject(bmp)
         gdi32.DeleteDC(mdc)
         user32.ReleaseDC(hwnd, hdc)
+
+
+def fill_file_dialog(dialog: int, path: str) -> bool:
+    """Type `path` into a native (#32770) file dialog and press Open.
+
+    Measured on PT 9.0.1 with "Import Instruction Page". False when the dialog
+    doesn't have the expected ComboBoxEx32 > ComboBox > Edit chain or an Open button.
+    """
+    _load()
+    combo_ex = user32.FindWindowExW(dialog, None, "ComboBoxEx32", None)
+    combo = user32.FindWindowExW(combo_ex, None, "ComboBox", None) if combo_ex else None
+    edit = user32.FindWindowExW(combo, None, "Edit", None) if combo else None
+    button = user32.GetDlgItem(dialog, _IDOK)
+    if not edit or not button:
+        return False
+    user32.SendMessageW(edit, _WM_SETTEXT, 0, path)
+    user32.PostMessageW(button, _BM_CLICK, 0, 0)
+    return True
+
+
+def cancel_dialog(dialog: int) -> bool:
+    """Press Cancel on a native dialog: a modal is never left behind."""
+    _load()
+    button = user32.GetDlgItem(dialog, _IDCANCEL)
+    return bool(button) and bool(user32.PostMessageW(button, _BM_CLICK, 0, 0))
 
 
 def post_click(hwnd: int, screen_x: int, screen_y: int) -> tuple[int, int]:

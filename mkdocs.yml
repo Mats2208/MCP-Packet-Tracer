@@ -76,6 +76,7 @@ nav:
       - Claude Code Skill: skill.md
   - Reference:
       - MCP Tools: tools.md
+      - PKA Builder: pka-builder.md
       - MCP Resources: resources.md
       - Supported Devices: devices.md
       - Cable Types: cables.md

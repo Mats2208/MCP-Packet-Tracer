@@ -26,7 +26,7 @@ path.
 domain/         models (pydantic), rules (validation), services (planning)
 application/    use cases — orchestrate rules + generators, no I/O of their own
 infrastructure/ generators (JS + IOS CLI), execution (bridge, executors), catalog
-adapters/mcp/   the ~50 MCP tools; a thin layer over the use cases
+adapters/mcp/   the 109 MCP tools; a thin layer over the use cases
 ```
 
 Two conventions that matter:

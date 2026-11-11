@@ -35,7 +35,7 @@ You do **not** need any third-party extension.
 
 1. Download the latest extension from
    **[Releases](https://github.com/Mats2208/MCP-Packet-Tracer/releases/latest)**
-   (the `.pts` file — currently **`MCP-Control-Center.pts`**).
+   (the `.pts` file — **`MCP-Control-Center.pts`**).
 2. In Packet Tracer: **Extensions → Scripting → Configure PT Script Modules**
 3. Click **Add…**, select the downloaded `.pts`, and confirm.
 

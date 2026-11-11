@@ -2,7 +2,7 @@
 
 Read when choosing a tool or its arguments.
 
-## Tool catalog (98)
+## Tool catalog (111)
 
 **Discovery / read-only:** `pt_list_devices`, `pt_get_device_details(model|alias)`, `pt_list_templates`,
 `pt_list_modules(router_model, category)`, `pt_list_projects`, `pt_load_project`, `pt_bridge_status`,
@@ -20,6 +20,11 @@ real `.pkt`, which is NOT what `pt_export` does (that one dumps the plan and scr
 PT 9.0.1) and by the active file; a relative path is confined to the MCP working directory, a missing file
 is refused before PT is touched. `pt_export`/`pt_deploy`/`pt_list_projects`/`pt_load_project` take an
 `output_dir` that must stay inside the working directory.
+**Activities (.pka):** `pt_activity_points(points)` (not on macOS), `pt_activity_open(path, password="")`, `pt_activity_status`,
+`pt_activity_check(only_incorrect=True, refresh=False)`, `pt_activity_create(force=False)`,
+`pt_activity_set_instructions(html)`, `pt_activity_tree(path)`, `pt_activity_mark(items, clear_others=False)`,
+`pt_activity_build_initial(reset_config=True)`, `pt_activity_save(path, overwrite=False)`,
+`pt_activity_exit_wizard`, `pt_activity_reset`, `pt_activity_create_exam(spec, start_at="", force=False, dry_run=False)`.
 **Live deploy & edit:** `pt_live_deploy(plan_json | plan_path)` refuses an invalid plan, checks the whole
 plan with **one** canvas read, reconciles dropped devices and re-reads once. `pt_add_device(name, model, x, y)`,
 `pt_add_link(device1, port1, device2, port2, cable_type="")`, `pt_delete_link(device_name, interface_name)`,
@@ -140,7 +145,7 @@ when it does not match.
 API; `ui` also opens the device window on the matching tab/app so the user can watch. Per call,
 `show=True/False` overrides it and `capture=True` saves a PNG (path returned). `pt_ui_open(device,
 tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the user says "show me",
-"screenshots", "use the tabs" → `pt_ui_mode("ui")`. Needs Windows + `pip install packet-tracer-mcp[ui]`.
+"screenshots", "use the tabs" → `pt_ui_mode("ui")`. Needs Windows + `pip install packet-tracer-mcp[ui]`. (The Activity Wizard also runs on macOS, with the Accessibility permission.)
 **Resources:** `pt://catalog/devices`, `/cables`, `/aliases`, `/templates`, `pt://capabilities`.
 
 ## Large custom designs
@@ -203,6 +208,15 @@ tab, app, section)`, `pt_ui_capture(device)`, `pt_ui_close(device)`. When the us
 - **Static IPv6 on a host** (measured): `pt_host_ip_config(device="PC1", ipv6_address="2001:db8:0:1::10/64")`;
   routers via `pt_plan_topology(dual_stack=True)`.
 - **Mail domain** (measured): `pt_server_service(device="Server0", service="email", domain="lab.com", users=[{"username":"alice","password":"secret"}])`.
+
+## Activities (.pka)
+
+One call: `pt_activity_create_exam(spec)` (`dry_run=True` first; on failure repeat with `start_at=`). By hand:
+`pt_activity_create` → build the answer network → `pt_activity_set_instructions(html)` → `pt_activity_tree` /
+`pt_activity_mark(items)` → `pt_activity_build_initial` → strip config → `pt_activity_save(path)` →
+`pt_activity_exit_wizard` → `pt_activity_open(path)` → `pt_activity_check(refresh=True)`.
+Spec: `items` (paths graded), `points` ([{path, points}]), `connectivity` ([{source, destination, reachable}]), `initial_commands`, `initial_hosts`. See rough-edges.
+On macOS, with the Accessibility permission, the whole flow works but: instructions are plain text unless `PT_UI_ALLOW_FOREGROUND=1`, and `points` / `connectivity` are skipped with a warning.
 - Read a device's ports safely → `pt_send_raw('try{var d=ipc.network().getDevice("R1");reportResult(d?d.getPorts().join(","):"missing")}catch(e){reportResult("ERR:"+e)}', wait_result=True)`.
 
 ## Validation: plan error codes

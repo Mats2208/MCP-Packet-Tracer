@@ -13,7 +13,7 @@ fully cabled, configured and running topology.
 
 - :material-rocket-launch: **[Get started](installation.md)** — install the server and connect your MCP client in one command.
 - :material-lightning-bolt: **[Live deploy](live-deploy.md)** — stream commands straight into a running Packet Tracer.
-- :material-tools: **[Tool reference](tools.md)** — all 98 MCP tools, grouped and documented.
+- :material-tools: **[Tool reference](tools.md)** — all 111 MCP tools, grouped and documented.
 - :material-sitemap: **[Architecture](architecture.md)** — how the planner, generators and HTTP bridge fit together.
 
 </div>
@@ -22,6 +22,7 @@ fully cabled, configured and running topology.
 
 | | Feature | Details |
 |---|---------|---------|
+| **PKA Builder** | Custom, graded `.pka` exams for CCNA instructors and students | [Exams from one spec](pka-builder.md) |
 | **Planning** | Natural language → topology | A single prompt becomes a complete `TopologyPlan` |
 | **IP addressing** | Automatic /24 LANs + /30 WAN links | Sequential assignment, gateway at `.1` |
 | **DHCP** | Auto pool generation | One pool per LAN, gateway excluded |

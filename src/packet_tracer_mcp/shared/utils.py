@@ -147,11 +147,11 @@ def resolve_save_dir(directory: str) -> str:
     return str(target)
 
 
-def resolve_open_path(path: str) -> Path:
-    """The .pkt file pt_open_project opens, checked on this machine's disk first.
+def resolve_open_path(path: str, suffix: str = ".pkt") -> Path:
+    """The file pt_open_project / pt_activity_open opens, checked on this machine's disk first.
 
     Opening a lab the user already has is the point of the tool, so an absolute
-    path anywhere is allowed; it must end in .pkt and be an existing file. A
+    path anywhere is allowed; it must end in `suffix` and be an existing file. A
     relative path is resolved inside the MCP's working directory and may not
     leave it. Raises ValueError otherwise.
     """
@@ -163,8 +163,8 @@ def resolve_open_path(path: str) -> Path:
         candidate = candidate.resolve()
     else:
         candidate = resolve_within(Path.cwd(), raw)
-    if candidate.suffix.lower() != ".pkt":
-        raise ValueError("The file must end in .pkt")
+    if candidate.suffix.lower() != suffix:
+        raise ValueError(f"The file must end in {suffix}")
     if not candidate.is_file():
         raise ValueError(f"file not found: {candidate}")
     return candidate
