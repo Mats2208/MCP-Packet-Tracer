@@ -16,12 +16,13 @@
 
 <table>
 <tr>
-<td align="center"><strong>79</strong><br/><sub>MCP tools</sub></td>
+<td align="center"><strong>109</strong><br/><sub>MCP tools</sub></td>
 <td align="center"><strong>6</strong><br/><sub>MCP resources</sub></td>
 <td align="center"><strong>3</strong><br/><sub>MCP prompts</sub></td>
 <td align="center"><strong>74</strong><br/><sub>device models</sub></td>
 <td align="center"><strong>150</strong><br/><sub>modules</sub></td>
 <td align="center"><strong>15</strong><br/><sub>cable types</sub></td>
+<td align="center"><strong>1,634</strong><br/><sub>offline tests</sub></td>
 </tr>
 </table>
 
@@ -95,9 +96,10 @@ carries a per-machine token (see [Security](#security)).
 | **Inside each device** | Type in a router's CLI tab, run `ping`/`ipconfig` on a PC, configure Server-PT DHCP/DNS/HTTP/FTP/EMAIL, use the Web Browser and Email apps | `pt_cli`, `pt_host_command`, `pt_server_*`, `pt_web_browser` |
 | **Verify** | Real ping with parsed results, health check, plan-vs-live diff, per-port inspection; every CLI change reports which IOS lines were rejected; structured reads of routes, OSPF, ARP, CDP, STP, ACL, NAT, MAC tables and DHCP leases | `pt_verify_connectivity`, `pt_health_check`, `pt_diff`, `pt_inspect_ports`, `pt_read_routes`, `pt_read_ospf`, … |
 | **Explain** | Send a simple PDU, step the simulation and read PT's own per-layer decision log for each packet | `pt_send_pdu`, `pt_simulation_mode`, `pt_simulation_step`, `pt_read_packet_trace` |
+| **PKA Builder** | Open and grade `.pka` activities item by item, or build a whole exam from one spec: answer network, instructions, graded items, initial network | `pt_activity_create_exam`, `pt_activity_check`, `pt_activity_*` |
 | **Document** | Canvas screenshots, notes and drawings on the canvas, `.pkt` save/open, config backup, exported plans and configs | `pt_screenshot`, `pt_add_note`, `pt_save_project`, `pt_backup_config`, `pt_export` |
 
-All 98 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
+All 111 tools are listed in the **[tool reference](https://mats2208.github.io/MCP-Packet-Tracer/tools/)**.
 
 ## Installation
 
@@ -162,14 +164,14 @@ Tracer's own `extensions` folder, in a subfolder (`…/extensions/MCPControlCent
 asks *"detected a new script module… enable?"* — click **Yes**. Or add it by hand with
 **Extensions → Scripting → Configure PT Script Modules → Add…**. Full walkthrough in [Live deploy](#live-deploy) below.
 
-> **v0.6.0+ requires V5.** The bridge authenticates with a per-machine token that the V5 extension reads automatically; builds before V5 can't authenticate.
+> **v0.6.0+ requires extension V5 or newer** (current: V6). The bridge authenticates with a per-machine token the extension reads automatically; builds before V5 can't authenticate.
 
 <details>
 <summary>Prefer pip?</summary>
 
 ```bash
 pip install packet-tracer-mcp            # then use `python -m packet_tracer_mcp --stdio` as the command
-pip install "packet-tracer-mcp[ui]"      # Windows: adds UI mode (opening and capturing device windows)
+pip install "packet-tracer-mcp[ui]"      # Windows: adds UI mode and the Activity Wizard
 ```
 
 Requires Python 3.11+. On macOS (Homebrew) and recent Linux distros a plain `pip install` is refused
@@ -202,12 +204,17 @@ ping. More in the **[Quick Start guide](https://mats2208.github.io/MCP-Packet-Tr
 | File-bridge (extension window closed) | ✅ | ✅ | ✅ |
 | Device panel (`pt_cli`, `pt_host_command`, services…) | ✅ | ✅ | ✅ |
 | UI mode (open/capture device windows) | ✅ | — | — |
+| Activities: open, grade, mark, save | ✅ | ✅ | not tested yet |
+| Activities: create and exam (Wizard) | ✅ | ✅ HTML instructions need `PT_UI_ALLOW_FOREGROUND=1`; no points or connectivity tests | — |
+| Activities: grade a password-protected `.pka` | not measured | ❌ the API rejects the right password | — |
 
-macOS was verified end to end on Packet Tracer 9.0.1: all 79 tools were run against a live
-canvas, and the bugs that run found are fixed in this release. Windows 11 was verified the same
-day on PT 9.0.1: the agent install (extension copied to `Program Files`, one UAC prompt, PT's
-"enable?" dialog), both bridge channels on the first call, OSPF + DHCP builds checked with real
-pings, and UI mode capturing device windows.
+Activities, status and limits: see [PkaIndex](PkaIndex.md).
+
+macOS and Windows 11 were verified on Packet Tracer 9.0.1: every tool of that release ran against a live
+canvas on macOS, and on Windows the agent install, both bridge channels, OSPF + DHCP builds checked with real
+pings, and UI mode. The activity tools were measured on both; on macOS a whole exam was built through the MCP,
+reopened and graded 0 % → 100 %. The Wizard driver is shared and changed after the Windows run, so that run is
+pending. On Linux the core tools were verified live (below); the activity tools have only run offline there.
 
 Linux was verified on 2026-11-03 with Ubuntu 26.04.1 LTS (kernel 7.0, GNOME 50 on Wayland),
 Packet Tracer 9.0.1 from Cisco's `.deb`, `packet-tracer-mcp` 0.11.0 through `uvx` (uv 0.13.3)
@@ -237,7 +244,7 @@ once via **Extensions → Scripting → Configure PT Script Modules → Add…**
 token from disk — there is nothing to paste or configure.
 
 <p align="center"><img src="https://raw.githubusercontent.com/Mats2208/MCP-Packet-Tracer/main/demo/install-demo.gif" alt="Installing the MCP Control Center extension in Packet Tracer" width="760"/></p>
-<p align="center"><sub>Adding the MCP Control Center extension (V5) to Packet Tracer</sub></p>
+<p align="center"><sub>Adding the MCP Control Center extension to Packet Tracer</sub></p>
 
 📖 Full steps → **[Live Deploy Setup](https://mats2208.github.io/MCP-Packet-Tracer/live-deploy/)**.
 
@@ -252,6 +259,21 @@ It is **headless by default**. On Windows, say *"show it in Packet Tracer"* (or 
 `pt_ui_mode("ui")`) and every panel tool also opens the device's window on the matching tab;
 `capture=True` saves a PNG. Windows are driven with UI Automation and a click posted to the
 canvas — your real mouse and keyboard are never used.
+
+## PKA Builder
+
+The agent works with Packet Tracer activities too. It opens a `.pka`, grades it item by item and reports what
+is wrong. It also builds an exam from one spec, with Packet Tracer itself doing the work: it deploys the answer
+network, imports formatted instructions, marks what is graded, prepares the initial network and saves the
+`.pka`. A password-protected activity stays locked without the instructor's password.
+
+```text
+"Build an exam on OSPF with 2 routers, graded on the interfaces and the neighbours."
+```
+
+Windows does the whole flow. macOS needs the Accessibility permission, HTML instructions need
+`PT_UI_ALLOW_FOREGROUND=1` (Packet Tracer comes forward for a few seconds), and points per item and connectivity
+tests are not available there yet. Status and scope in **[PkaIndex](PkaIndex.md)**, details in **[PKA Builder](docs/pka-builder.md)**.
 
 ## Clients
 
@@ -325,7 +347,7 @@ Regression coverage lives in [`tests/test_bridge_security.py`](https://github.co
 and [`tests/test_injection_regressions.py`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/tests/test_injection_regressions.py);
 the full suite runs offline with `python -m pytest` — no Packet Tracer required.
 
-> **v0.6.0+ requires the V5 extension.** Versions before v0.6.0 shipped an
+> **v0.6.0+ requires extension V5 or newer.** Versions before v0.6.0 shipped an
 > unauthenticated bridge and are vulnerable to exactly the attack above.
 > **Upgrade — there is no safe configuration of the old bridge.**
 
@@ -340,20 +362,21 @@ not a public issue. [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/
 
 ## What's new
 
-**Unreleased (v0.10.0)** — install it by asking your agent: [`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md)
-walks any coding agent through the whole setup on Windows, macOS or Linux. The skill ships inside
-the package (`uvx packet-tracer-mcp install-skill`), `uvx packet-tracer-mcp` runs the server with no
-Python install, and 17 device-panel tools let the agent work inside each device window.
+**Unreleased** — **PKA Builder**: 13 `pt_activity_*` tools open, grade and build `.pka` activities, and
+`pt_activity_create_exam` builds a whole exam from one spec. The Activity Wizard now also runs on macOS.
 
-**v0.9.0** — on PyPI, and a hunt for **silent false OKs**: a topology split into islands that
-validation approved, a bridge returning the previous operation's result, a connectivity "OK" with
-75% packet loss. None of them crashed; all of them lied. Older releases in the
+**v0.11.0** — live reads that flag what has not converged (routes, OSPF, ARP, CDP, STP, ACL, NAT, MAC tables,
+DHCP leases), real PDUs with PT's own per-layer reason, Fast Forward Time, CME voice measured end to end, HSRP,
+BGP, QoS, EtherChannel, Wi-Fi AP settings, and static IPv6 on hosts.
+
+**v0.10.0** — install by asking your agent ([`llms-install.md`](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/llms-install.md)),
+the skill inside the package, and 17 device-panel tools that work inside each device. Older releases in the
 **[Changelog](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/CHANGELOG.md)**.
 
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/Mats2208/MCP-Packet-Tracer/blob/main/CONTRIBUTING.md). The
-test suite (1,297 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
+test suite (1,634 tests) runs offline with `uv run --extra test python -m pytest` — no Packet Tracer needed.
 
 ## License
 

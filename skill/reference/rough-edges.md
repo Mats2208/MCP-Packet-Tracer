@@ -125,6 +125,36 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
 - **CDP is empty for about a minute after a deploy** (it announces every 60 s): an empty `pt_read_cdp`
   right after building is not a cabling fault.
 
+### Activities — verified against PT 9.0.1 (2026-10-30)
+
+- **While a modal is open nothing may reach the bridge.** A `fileOpen` queued behind a Wizard dialog hung
+  PT. The MCP finds modals by window title and refuses to send (`pt_send_raw` included).
+- **Marks count after save + reopen.** `setCheck` writes `getComparatorTree()`; the assessed tree is fixed
+  at load. After opening, counters are stale until a network change: `pt_activity_check(refresh=True)`.
+- **Chains.** `setCheck(true)` must run from the root; unchecking a leaf leaves empty parents that grade
+  as wrong (`clear_others=True` clears all). `getChildNodeBy("VLAN 10")` is null: scan by index.
+- **Instructions keep their HTML only through Import Page** (native file dialog). SetValue on
+  `m_txtInstruction` stores plain text, even with a BOM.
+- **Do not use `{{DeviceConfig.isInConfig:...}}` templates:** they save but grade 0/25 on a correct network.
+- **The Wizard steals the focus** when it opens; **a password** blocks almost all the API until
+  `confirmPassword`. No API sets points per item (GUI only, not automated here).
+- **macOS (measured 2026-10-30, PT 9.0.1, arm64).** The Wizard is driven by Accessibility, which needs the
+  permission for the terminal or app that runs the server. AXIdentifier equals UIA's AutomationId. AXPress
+  works on plain buttons and tabs; on checkable navigation buttons it only toggles the state, so they get
+  AXFocused + Space posted to PT. Message boxes have an **empty title**: find them by AXModal, read
+  `qt_msgbox_label`. Posted mouse events are ignored, so Points cells and Test Condition combos can't be
+  reached: `pt_activity_points` refuses, and an exam skips both with a warning.
+- **macOS, password:** `pt_activity_open(password=...)` is rejected even with the right password (verified:
+  PT's own dialog rejected a wrong one and took it), so a protected `.pka` can only be reported as locked.
+  A message box's text can't always be read over AX, and it shows up before its buttons have names. Keys need the widget's window
+  raised inside PT, which `key_window` does; a commit to a Wizard field needs a real key, not just AXValue.
+- **macOS, HTML instructions:** Import Page is the only way that keeps the HTML; no API imports by path, and
+  `setNodeValue` on the tree's Instruction node doesn't reach the instructions (measured).
+- **Import Page on macOS needs PT active** for about 3 s, and what the user types meanwhile lands in the
+  panel. So it is opt-in (`PT_UI_ALLOW_FOREGROUND=1`, user idle 5 s); by default instructions are plain text.
+  ⌘⇧G must go to the `openAndSavePanelService` pid: sent to PT it opens Script Project Manager.
+- **PT has no "modified" flag:** `pt_activity_create` treats any open activity as possibly unsaved.
+
 ### ☠️ Measured PT crashes (2026-10-30)
 
 - **IoT environment / empty MCU pin.** One call doing `digitalWrite(0, 1023)` on an MCU-PT pin with no
@@ -231,7 +261,12 @@ and fast-forwarding PT's clock past STP (`pt_fast_forward`). What is still a tra
   gives the foreground back on Windows (`keyboard focus given back` in the reply's GUI steps; measured 3 of 3
   after an empty SendInput, AttachThreadInput alone failed). A few keys can still slip in the tens of ms before
   the restore, and if the person was already in PT nothing is restored. Stay headless (`show=False`) unless the
-  window is the point. macOS and Linux have no UI mode: always headless, so this cannot happen there.
+  window is the point. macOS and Linux have no UI mode, but opening a `.pka` does take the foreground on
+  macOS (measured): the activity tools guard it there too.
 - A laptop has two MACs: `Bluetooth` comes first in its port list, `Wireless0` is the one a MAC filter needs.
 - `pt_send_pdu` trace `failures` include ordinary drops (ARP broadcasts, OSPF hellos on hosts): read the ICMP
   frames, not the count.
+- Exams: `{{DeviceConfig.isInConfig:...}}` templates save but never grade; mark real tree items instead. `setCheck` needs
+  the whole chain from the root, and a graded tree is fixed when the file loads: save and reopen. A score stays stale
+  until the network changes (`pt_activity_check(refresh=True)`). Items matching a default value and "must not reach"
+  tests start as correct, so a fresh exam opens above 0 %. Connectivity tests come from the answer network's PDUs.

@@ -1,12 +1,13 @@
 # Testing
 
-The project ships a **187-test** suite covering the domain and application logic.
+The project ships **1,634 offline tests**, and none of them needs Packet Tracer.
 
 ```bash
-pip install -e . pytest
+pip install -e ".[test]"
 python -m pytest -q
-# 64 passed
 ```
+
+Node.js is needed for the tests that run the generated JavaScript; they are skipped without it.
 
 ## What's covered
 
@@ -18,16 +19,17 @@ python -m pytest -q
 - **ACL** — standard/extended/named CLI generation.
 - **Full build** — end-to-end pipeline integration.
 - **Runtime regressions** — guards against known issues.
+- **Bridge security** — tokens, CORS, DNS rebinding, injection regressions.
+- **Activities** — exam spec, steps and resume, the Wizard driver over fakes.
+- **Tool API** — a snapshot of every tool, and tool counts in the docs.
 
 ## Live (manual) testing
 
 The bridge/PT-facing tools (`pt_live_deploy`, `pt_add_*`, `pt_delete_*`,
 `pt_apply_acl`, …) require a running Packet Tracer with the
 [live bridge](live-deploy.md) connected; they're validated manually against PT.
-A full QA pass of the first 46 tools was performed on **PT 9.0.0**. The four
-inspection tools added later — `pt_audit_security`, `pt_inspect_ports`,
-`pt_read_vlans` and `pt_device_power` — were each verified individually against
-**PT 9.0.0.0810** when they landed, against a live 2911 and 2960-24TT.
+Releases are checked against a live PT 9.0 / 9.0.1 canvas; `CHANGELOG.md` records what each one measured. The
+Wizard needs a real GUI, so activity creation is only proved by a live run.
 
 !!! note "Unit tests don't start the MCP server"
     They exercise domain/application code directly. To verify the server actually
