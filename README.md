@@ -451,7 +451,7 @@ not a public issue. [SECURITY.md](https://github.com/Mats2208/MCP-Packet-Tracer/
 
 ## What's new
 
-**Unreleased** — **PKA Builder** for CCNA classes: 13 `pt_activity_*` tools open, grade and build `.pka`
+**v0.12.0** — **PKA Builder** for CCNA classes: 13 `pt_activity_*` tools open, grade and build `.pka`
 activities, and `pt_activity_create_exam` builds a whole exam from one spec. The Activity Wizard runs on Windows
 and macOS. Also: plans laid out by topology and fitted to your canvas (`pt_canvas_info`, `pt_auto_layout`), and
 Linux verified live on Ubuntu 26.04.

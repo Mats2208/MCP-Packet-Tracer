@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
+
+PKA Builder: custom, graded Packet Tracer activities for CCNA instructors and students, built by Packet Tracer
+itself. 111 tools. The MCP Control Center extension is the same as in 0.11.0.
+
+### PKA Builder
 
 - **PKA Builder:** `pt_activity_*` and `pt_activity_create_exam` (see `docs/pka-builder.md` for the platform
   matrix, limits and scope). The Wizard now runs on macOS through Accessibility (`macax.py`), without points or
